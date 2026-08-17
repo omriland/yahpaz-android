@@ -1,0 +1,88 @@
+package com.yahpz.domain
+
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+
+fun digitsOnly(value: String): String = value.filter { it.isDigit() }
+
+fun plateDigits(value: String): String = digitsOnly(value)
+
+fun formatPlate(raw: String): String {
+    val digits = digitsOnly(raw)
+    return when (digits.length) {
+        7 -> "${digits.take(2)}-${digits.substring(2, 5)}-${digits.takeLast(2)}"
+        8 -> "${digits.take(3)}-${digits.substring(3, 5)}-${digits.takeLast(3)}"
+        else -> raw
+    }
+}
+
+fun plateNumberForSave(raw: String?): String? {
+    val trimmed = raw?.trim().orEmpty()
+    if (trimmed.isEmpty()) return null
+    return formatPlate(trimmed)
+}
+
+fun formatDate(value: String): String {
+    val ymd = value.take(10)
+    val parts = ymd.split("-")
+    if (parts.size != 3) return value
+    return "${parts[2]}.${parts[1]}.${parts[0]}"
+}
+
+fun hebrewWeekdayLetter(value: String): String {
+    val ymd = value.take(10)
+    val parts = ymd.split("-").mapNotNull { it.toIntOrNull() }
+    if (parts.size != 3) return ""
+    val date = LocalDate.of(parts[0], parts[1], parts[2])
+    val letters = listOf("", "א", "ב", "ג", "ד", "ה", "ו", "ש")
+    // iOS Calendar weekday: Sunday=1 … Saturday=7
+    val iosWeekday = if (date.dayOfWeek.value == 7) 1 else date.dayOfWeek.value + 1
+    return if (iosWeekday in 1..7) letters[iosWeekday] else ""
+}
+
+fun formatDateTime(iso: String): String {
+    val instant = runCatching { Instant.parse(iso) }.getOrNull() ?: return iso
+    val formatter = DateTimeFormatter.ofPattern("dd.MM.yyyy, HH:mm", Locale.Builder().setLanguage("he").setRegion("IL").build())
+        .withZone(ZoneId.of("Asia/Jerusalem"))
+    return formatter.format(instant)
+}
+
+fun firstName(fullName: String): String = fullName.split(" ").firstOrNull() ?: fullName
+
+fun passwordStrengthError(password: String): String? {
+    val missing = mutableListOf<String>()
+    if (password.length < 8) missing += "8 תווים לפחות"
+    if (!password.contains(Regex("[A-Z]"))) missing += "אות גדולה"
+    if (!password.contains(Regex("[^A-Za-z0-9]"))) missing += "תו מיוחד (למשל !)"
+    if (missing.isEmpty()) return null
+    return "הסיסמה אינה עומדת בדרישות. יש לכלול: ${formatHebrewList(missing)}."
+}
+
+fun formatHebrewList(items: List<String>): String = when (items.size) {
+    1 -> items[0]
+    2 -> "${items[0]} ו${items[1]}"
+    else -> "${items.dropLast(1).joinToString(", ")} ו${items.last()}"
+}
+
+val SHIFT_KIND_LABELS = mapOf(
+    "morning" to "בוקר",
+    "midday" to "צהריים",
+    "reinforcement" to "תגבור",
+    "escort" to "ליווי",
+    "other" to "אחר",
+)
+
+val VEHICLE_TYPE_LABELS = mapOf(
+    "patrol_north" to "ניידת צפון",
+    "patrol_center" to "ניידת מרכז",
+    "personal" to "רכב פרטי",
+)
+
+fun addCalendarDays(ymd: String, days: Int): String {
+    val parts = ymd.split("-").mapNotNull { it.toIntOrNull() }
+    if (parts.size != 3) return ymd
+    return LocalDate.of(parts[0], parts[1], parts[2]).plusDays(days.toLong()).toString()
+}
