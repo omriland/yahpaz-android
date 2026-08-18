@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ListAlt
 import androidx.compose.material.icons.outlined.CalendarMonth
-import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -170,7 +169,6 @@ private fun MainTabs(app: AppModel, ui: AppUiState) {
                 val items = listOf(
                     Triple(AppTab.INBOX, "האירועים שלי", Icons.AutoMirrored.Outlined.ListAlt),
                     Triple(AppTab.SHIFTS, "המשמרות שלי", Icons.Outlined.CalendarMonth),
-                    Triple(AppTab.AVAILABILITY, "זמינות", Icons.Outlined.Circle),
                     Triple(AppTab.PROFILE, "פרופיל", Icons.Outlined.Person),
                 )
                 items.forEach { (tab, label, icon) ->
@@ -195,7 +193,6 @@ private fun MainTabs(app: AppModel, ui: AppUiState) {
             when (ui.tab) {
                 AppTab.INBOX -> InboxScreen(app, ui)
                 AppTab.SHIFTS -> MyShiftsScreen(app, ui)
-                AppTab.AVAILABILITY -> AvailabilityScreen(app, ui)
                 AppTab.PROFILE -> ProfileScreen(app, ui)
             }
         }

@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -36,7 +35,7 @@ import com.yahpz.domain.returnDateToInput
 import kotlinx.coroutines.launch
 
 @Composable
-fun AvailabilityScreen(app: AppModel, ui: AppUiState) {
+fun AvailabilityScreen(app: AppModel, ui: AppUiState, onSaved: () -> Unit = {}) {
     val scope = rememberCoroutineScope()
     var status by remember { mutableStateOf(ui.profile?.availability ?: AvailabilityStatus.AVAILABLE) }
     var returnDate by remember { mutableStateOf(returnDateToInput(ui.profile?.availableFrom.orEmpty())) }
@@ -59,7 +58,7 @@ fun AvailabilityScreen(app: AppModel, ui: AppUiState) {
 
     Column(
         modifier = Modifier
-            .fillMaxSize()
+            .fillMaxWidth()
             .background(FieldTheme.page)
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
@@ -117,6 +116,7 @@ fun AvailabilityScreen(app: AppModel, ui: AppUiState) {
                         if (status == AvailabilityStatus.UNAVAILABLE && returnDate.isNotBlank()) returnDate else null,
                     )
                     busy = false
+                    if (error == null) onSaved()
                 }
             },
         )

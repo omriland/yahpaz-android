@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-enum class AppTab { INBOX, SHIFTS, AVAILABILITY, PROFILE }
+enum class AppTab { INBOX, SHIFTS, PROFILE }
 
 data class AppUiState(
     val booting: Boolean = true,
