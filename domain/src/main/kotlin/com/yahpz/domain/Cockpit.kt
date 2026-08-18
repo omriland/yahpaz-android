@@ -11,7 +11,7 @@ import java.util.Locale
 /** Mirrors web `COCKPIT_WINDOW_MS` — events created in the last two hours. */
 const val COCKPIT_WINDOW_MS = 2L * 60L * 60L * 1000L
 
-const val COCKPIT_TITLE = "מצב מבצעי"
+const val COCKPIT_TITLE = "הקוקפיט"
 const val COCKPIT_CAPTION = "אירועים פתוחים מהשעתיים האחרונות"
 const val COCKPIT_SEARCH_PLACEHOLDER = "חיפוש לפי מספר אירוע, כביש, מיקום או אחמ״ש"
 const val COCKPIT_LOAD_FAILED = "טעינת המצב המבצעי נכשלה"

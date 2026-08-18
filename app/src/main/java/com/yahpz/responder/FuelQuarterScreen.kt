@@ -42,7 +42,7 @@ import com.yahpz.domain.unitFuelQuarterKpisFromRows
 import kotlinx.coroutines.launch
 
 @Composable
-fun FuelQuarterScreen(app: AppModel, ui: AppUiState, onBack: () -> Unit) {
+fun FuelQuarterScreen(app: AppModel, ui: AppUiState, onBack: (() -> Unit)? = null) {
     val scope = rememberCoroutineScope()
     val initial = remember { defaultFuelQuarter() }
     var year by remember { mutableIntStateOf(ui.fuelQuarterYear ?: initial.year) }
@@ -70,7 +70,11 @@ fun FuelQuarterScreen(app: AppModel, ui: AppUiState, onBack: () -> Unit) {
             .padding(top = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        ToolsBackRow(FUEL_QUARTER_TITLE, onBack)
+        if (onBack != null) {
+            ToolsBackRow(FUEL_QUARTER_TITLE, onBack)
+        } else {
+            Text(FUEL_QUARTER_TITLE, style = TypeScale.title, color = FieldTheme.textPrimary)
+        }
         Text(FUEL_QUARTER_CAPTION, style = TypeScale.caption, color = FieldTheme.textMuted)
 
         FormField(

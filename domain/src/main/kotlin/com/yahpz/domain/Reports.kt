@@ -99,7 +99,7 @@ val REPORT_SPECS: List<ReportSpec> = listOf(
     ),
     ReportSpec(
         id = ReportKindId.FUEL_REFUND,
-        title = "החזר דלק",
+        title = "טבלה מסכמת",
         includes = "סיכום הק״מ שדווחו לכל מתנדב בטווח התאריכים שנבחר",
         audience = ReportAudience.ADMIN,
         searchPlaceholder = "חיפוש לפי שם או או״ק",

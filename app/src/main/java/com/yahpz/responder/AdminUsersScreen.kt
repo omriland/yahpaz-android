@@ -123,7 +123,7 @@ private sealed class AdminConfirm {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AdminUsersScreen(app: AppModel, ui: AppUiState, onBack: () -> Unit) {
+fun AdminUsersScreen(app: AppModel, ui: AppUiState, onBack: (() -> Unit)? = null) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val today = remember { israelToday() }
@@ -167,7 +167,11 @@ fun AdminUsersScreen(app: AppModel, ui: AppUiState, onBack: () -> Unit) {
                     .padding(top = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                ToolsBackRow(USERS_TITLE, onBack)
+                if (onBack != null) {
+                    ToolsBackRow(USERS_TITLE, onBack)
+                } else {
+                    Text(USERS_TITLE, style = TypeScale.title, color = FieldTheme.textPrimary)
+                }
                 SearchField(
                     value = query,
                     onValueChange = { query = it },

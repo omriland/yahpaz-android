@@ -67,7 +67,7 @@ private sealed class ClosedListEditor {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ClosedListsScreen(app: AppModel, onBack: () -> Unit) {
+fun ClosedListsScreen(app: AppModel, onBack: (() -> Unit)? = null) {
     val scope = rememberCoroutineScope()
     var selectedKey by remember { mutableStateOf<ClosedListKey?>(null) }
     var items by remember { mutableStateOf<List<ClosedListItem>?>(null) }
@@ -116,7 +116,11 @@ fun ClosedListsScreen(app: AppModel, onBack: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         if (selectedKey == null) {
-            ToolsBackRow("הגדרות", onBack)
+            if (onBack != null) {
+                ToolsBackRow("הגדרות", onBack)
+            } else {
+                Text("הגדרות", style = TypeScale.title, color = FieldTheme.textPrimary)
+            }
             Text(SETTINGS_LIST_GROUP_LABEL, style = TypeScale.label, color = FieldTheme.textSecondary)
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),

@@ -1,6 +1,6 @@
 package com.yahpz.domain
 
-const val OPEN_DOC_TITLE = "דוח תיעוד פתוח"
+const val OPEN_DOC_TITLE = "אירועים שהוזנו ע״י אחמ״ש ולא נסגרו ע״י מתנדב"
 const val OPEN_DOC_EMPTY_TITLE = "אין דיווחים פתוחים בתקופה זו"
 const val OPEN_DOC_FAILED_TITLE = "טעינת הדוח נכשלה. בדקו את החיבור ונסו שוב."
 const val OPEN_DOC_RANGE_ERROR = "יש להזין תאריך התחלה וסיום תקינים"

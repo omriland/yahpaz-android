@@ -234,10 +234,12 @@ private fun MainTabs(app: AppModel, ui: AppUiState) {
         }
     }
     val overlay = ui.toolsDestination
+    val adminTab = contentTab == AppTab.TOOLS && isAdminTabDestination(overlay)
+    val showingMain = overlay == ToolsDestination.HUB || adminTab
     val reduceMotion = rememberReducedMotion()
     var moreOpen by remember { mutableStateOf(false) }
 
-    BackHandler(enabled = overlay != ToolsDestination.HUB) {
+    BackHandler(enabled = overlay != ToolsDestination.HUB && !adminTab) {
         when (overlay) {
             ToolsDestination.REPORT -> app.setToolsDestination(
                 if (contentTab == AppTab.REPORTS) ToolsDestination.HUB else ToolsDestination.REPORT_CATALOG,
@@ -293,7 +295,7 @@ private fun MainTabs(app: AppModel, ui: AppUiState) {
         },
     ) { padding ->
         Box(Modifier.padding(padding).fillMaxSize()) {
-            if (overlay == ToolsDestination.HUB) {
+            if (showingMain) {
                 Crossfade(
                     targetState = contentTab,
                     animationSpec = tween(if (reduceMotion) 0 else 200),
@@ -369,7 +371,7 @@ private fun TabBody(app: AppModel, ui: AppUiState, tab: AppTab) {
         AppTab.CONTACTS -> ContactsScreen(app, ui)
         AppTab.UNIT_EVENTS -> UnitEventsScreen(app, ui)
         AppTab.UNIT_SHIFTS -> UnitShiftsScreen(app, ui)
-        AppTab.TOOLS -> ToolsHubScreen(app, ui)
+        AppTab.TOOLS -> AdminShell(app, ui)
         AppTab.REPORTS -> ReportsCatalogScreen(app, ui, title = "דוחות", onBack = null)
         AppTab.PROFILE -> ProfileScreen(app, ui)
     }

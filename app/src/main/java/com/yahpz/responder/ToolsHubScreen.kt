@@ -2,7 +2,9 @@ package com.yahpz.responder
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
@@ -20,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.yahpz.domain.visibleReportSpecs
 
@@ -49,6 +53,64 @@ fun ToolsHubScreen(app: AppModel, @Suppress("UNUSED_PARAMETER") ui: AppUiState) 
             app.setToolsDestination(ToolsDestination.CLOSED_LISTS)
         }
         Spacer(Modifier.height(24.dp))
+    }
+}
+
+private data class AdminSegmentChip(val destination: ToolsDestination, val label: String)
+
+private val ADMIN_SEGMENT_CHIPS = listOf(
+    AdminSegmentChip(ToolsDestination.ADMIN_USERS, "משתמשים"),
+    AdminSegmentChip(ToolsDestination.REPORT_CATALOG, "דוחות וסטטיסטיקות"),
+    AdminSegmentChip(ToolsDestination.FUEL_QUARTER, "ניהול דלק"),
+    AdminSegmentChip(ToolsDestination.CLOSED_LISTS, "הגדרות"),
+)
+
+fun isAdminTabDestination(destination: ToolsDestination): Boolean =
+    ADMIN_SEGMENT_CHIPS.any { it.destination == destination }
+
+@Composable
+fun AdminShell(app: AppModel, ui: AppUiState) {
+    val segment = if (isAdminTabDestination(ui.toolsDestination)) {
+        ui.toolsDestination
+    } else {
+        ToolsDestination.ADMIN_USERS
+    }
+    Column(Modifier.fillMaxSize().background(FieldTheme.page)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            ADMIN_SEGMENT_CHIPS.forEach { chip ->
+                val selected = chip.destination == segment
+                Text(
+                    chip.label,
+                    style = TypeScale.label,
+                    color = if (selected) FieldTheme.accent else FieldTheme.textSecondary,
+                    modifier = Modifier
+                        .heightIn(min = 44.dp)
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(if (selected) FieldTheme.accentSubtle else FieldTheme.sunken)
+                        .clickable { app.setToolsDestination(chip.destination) }
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                )
+            }
+        }
+        Box(Modifier.weight(1f)) {
+            when (segment) {
+                ToolsDestination.ADMIN_USERS -> AdminUsersScreen(app, ui, onBack = null)
+                ToolsDestination.REPORT_CATALOG -> ReportsCatalogScreen(
+                    app, ui,
+                    title = "דוחות וסטטיסטיקות",
+                    onBack = null,
+                )
+                ToolsDestination.FUEL_QUARTER -> FuelQuarterScreen(app, ui, onBack = null)
+                ToolsDestination.CLOSED_LISTS -> ClosedListsScreen(app, onBack = null)
+                else -> AdminUsersScreen(app, ui, onBack = null)
+            }
+        }
     }
 }
 

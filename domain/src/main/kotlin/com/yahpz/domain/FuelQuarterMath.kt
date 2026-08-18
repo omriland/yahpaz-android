@@ -120,7 +120,7 @@ fun quarterLocalDateRange(year: Int, quarter: Int): Pair<String, String> {
 
 fun israelTodayDate(): LocalDate = LocalDate.now(ZoneId.of("Asia/Jerusalem"))
 
-const val FUEL_QUARTER_TITLE = "כרטיסי דלק לרבעון"
+const val FUEL_QUARTER_TITLE = "ניהול דלק"
 const val FUEL_QUARTER_CAPTION = "ק״מ, כרטיסים ויתרות לפי רבעון — נספרים רק אירועים שתועדו במלואם"
 const val FUEL_QUARTER_LOAD_FAILED = "לא הצלחנו לטעון את כרטיסי הדלק."
 const val FUEL_QUARTER_EMPTY = "אין כוננים עם ק״מ או יתרה ברבעון זה."

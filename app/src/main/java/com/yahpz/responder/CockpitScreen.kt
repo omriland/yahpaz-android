@@ -128,7 +128,7 @@ fun CockpitScreen(app: AppModel, ui: AppUiState, onBack: () -> Unit) {
                 placeholder = COCKPIT_SEARCH_PLACEHOLDER,
             )
             when {
-                events == null && !failed -> LoadingBlock("טוען מצב מבצעי…")
+                events == null && !failed -> LoadingBlock("טוען את הקוקפיט…")
                 failed && events.isNullOrEmpty() -> EmptyState(
                     title = COCKPIT_LOAD_FAILED,
                     caption = COCKPIT_LOAD_FAILED_CAPTION,

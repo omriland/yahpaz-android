@@ -158,7 +158,11 @@ class AppModel : ViewModel() {
         _state.update {
             it.copy(
                 tab = tab,
-                toolsDestination = ToolsDestination.HUB,
+                toolsDestination = if (tab == AppTab.TOOLS) {
+                    ToolsDestination.ADMIN_USERS
+                } else {
+                    ToolsDestination.HUB
+                },
             )
         }
     }

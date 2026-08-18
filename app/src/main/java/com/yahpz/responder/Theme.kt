@@ -68,9 +68,9 @@ object TypeScale {
     val section: TextStyle
         @Composable get() = TextStyle(fontFamily = plex, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
     val body: TextStyle
-        @Composable get() = TextStyle(fontFamily = plex, fontWeight = FontWeight.Normal, fontSize = 16.sp)
+        @Composable get() = TextStyle(fontFamily = plex, fontWeight = FontWeight.Normal, fontSize = 17.sp)
     val bodyStrong: TextStyle
-        @Composable get() = TextStyle(fontFamily = plex, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+        @Composable get() = TextStyle(fontFamily = plex, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
     val label: TextStyle
         @Composable get() = TextStyle(fontFamily = plex, fontWeight = FontWeight.Medium, fontSize = 13.sp, letterSpacing = 0.13.sp)
     val caption: TextStyle
