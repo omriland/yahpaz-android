@@ -13,7 +13,7 @@ data class AppVersionManifest(
     val minVersionCode: Int,
     val latestVersionCode: Int = minVersionCode,
     val latestVersionName: String = "",
-    val apkUrl: String = "https://yahpz.com/android/yahpaz.apk",
+    val apkUrl: String = "",
     val messageHe: String = DEFAULT_FORCE_UPDATE_MESSAGE,
 )
 
