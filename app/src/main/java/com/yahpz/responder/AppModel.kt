@@ -3,6 +3,7 @@ package com.yahpz.responder
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.yahpz.domain.AvailabilityStatus
+import com.yahpz.domain.normalizeReturnDate
 import com.yahpz.domain.ProfileVehicle
 import com.yahpz.domain.StampTone
 import com.yahpz.domain.parseTrackToken
@@ -212,7 +213,11 @@ class AppModel : ViewModel() {
             current.copy(
                 profile = current.profile?.copy(
                     availability = status,
-                    availableFrom = if (status == AvailabilityStatus.AVAILABLE) null else availableFrom,
+                    availableFrom = if (status == AvailabilityStatus.AVAILABLE) {
+                        null
+                    } else {
+                        availableFrom?.let { normalizeReturnDate(it) ?: it }
+                    },
                 ),
             )
         }
@@ -241,6 +246,8 @@ class AppModel : ViewModel() {
                     profile = profile,
                     roles = roles,
                     mustChangePassword = profile.mustChangePassword,
+                    vehiclesLoading = true,
+                    vehiclesFailed = false,
                 )
             }
             reloadEvents()
