@@ -3,6 +3,7 @@ package com.yahpz.responder
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.yahpz.domain.AvailabilityStatus
+import com.yahpz.domain.ProfileVehicle
 import com.yahpz.domain.StampTone
 import com.yahpz.domain.parseTrackToken
 import kotlinx.coroutines.CancellationException
@@ -27,6 +28,9 @@ data class AppUiState(
     val shifts: List<ShiftListItem> = emptyList(),
     val shiftsFailed: Boolean = false,
     val shiftsLoading: Boolean = false,
+    val vehicles: List<ProfileVehicle> = emptyList(),
+    val vehiclesFailed: Boolean = false,
+    val vehiclesLoading: Boolean = false,
     val tab: AppTab = AppTab.INBOX,
     val toast: String? = null,
     val toastTone: StampTone = StampTone.DONE,
@@ -167,6 +171,31 @@ class AppModel : ViewModel() {
         }
     }
 
+    suspend fun reloadVehicles() {
+        if (_state.value.userId == null) return
+        val hadVehicles = _state.value.vehicles.isNotEmpty()
+        _state.update {
+            it.copy(
+                vehiclesLoading = if (hadVehicles) it.vehiclesLoading else true,
+                vehiclesFailed = false,
+            )
+        }
+        try {
+            val vehicles = YahpazAPI.fetchMyVehicles()
+            _state.update { it.copy(vehicles = vehicles, vehiclesFailed = false) }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            if (hadVehicles) {
+                showToast("טעינת הרכבים נכשלה. בדקו את החיבור ונסו שוב.", StampTone.PENDING)
+            } else {
+                _state.update { it.copy(vehiclesFailed = true) }
+            }
+        } finally {
+            _state.update { it.copy(vehiclesLoading = false) }
+        }
+    }
+
     fun showToast(text: String, tone: StampTone = StampTone.DONE) {
         _state.update { it.copy(toast = text, toastTone = tone) }
         toastJob?.cancel()
@@ -216,10 +245,19 @@ class AppModel : ViewModel() {
             }
             reloadEvents()
             reloadShifts()
+            reloadVehicles()
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            _state.update { it.copy(userId = null, profile = null) }
+            _state.update {
+                it.copy(
+                    userId = null,
+                    profile = null,
+                    vehicles = emptyList(),
+                    vehiclesFailed = false,
+                    vehiclesLoading = false,
+                )
+            }
             throw error
         }
     }

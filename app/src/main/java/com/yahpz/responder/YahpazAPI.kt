@@ -11,9 +11,12 @@ import com.yahpz.domain.israelToday
 import com.yahpz.domain.mapTreatedPlateRows
 import com.yahpz.domain.parsedOdometer
 import com.yahpz.domain.passwordStrengthError
+import com.yahpz.domain.ProfileVehicle
+import com.yahpz.domain.VehicleRowInput
 import com.yahpz.domain.plateDigits
 import com.yahpz.domain.plateNumberForSave
 import com.yahpz.domain.validateResponderFillDraft
+import com.yahpz.domain.visibleProfileVehicles
 import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.Email
@@ -168,6 +171,16 @@ object YahpazAPI {
         }.decodeList<ShiftAssignmentIdRow>().map { it.shiftId }
         if (ids.isEmpty()) return emptyList()
         return fetchByIds(ids, "shifts", shiftListSelect)
+    }
+
+    suspend fun fetchMyVehicles(): List<ProfileVehicle> {
+        val userId = sessionUserId() ?: return emptyList()
+        val rows = client.from("vehicles").select(Columns.raw("plate_number, model, archived")) {
+            filter { eq("user_id", userId) }
+        }.decodeList<VehicleOption>()
+        return visibleProfileVehicles(
+            rows.map { VehicleRowInput(it.plateNumber, it.model, it.archived) },
+        )
     }
 
     private suspend inline fun <reified T : Any> fetchByIds(
