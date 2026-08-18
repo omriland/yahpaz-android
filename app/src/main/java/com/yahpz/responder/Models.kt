@@ -225,6 +225,15 @@ data class VehicleOption(
     val archived: Boolean? = null,
 )
 
+@Serializable
+data class CrewVehicleRow(
+    val id: String,
+    @SerialName("user_id") val userId: String,
+    @SerialName("plate_number") val plateNumber: String,
+    val model: String? = null,
+    val archived: Boolean? = null,
+)
+
 data class ResponderVehicle(val plate: String, val model: String) {
     val label: String
         get() {
@@ -925,6 +934,7 @@ data class ShiftFormDetail(
         vehicleType = vehicleType,
         notes = notes.orEmpty(),
         responderIds = responders.map { it.responderId },
+        personalVehicleId = personalVehicleId,
     )
 }
 

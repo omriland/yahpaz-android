@@ -26,8 +26,16 @@ const val EVENT_DRAFT_FORM_ERROR = "יש למלא תאריך, סוג אירוע 
 const val EVENT_DRAFT_FORM_LOCATION_ERROR = "יש למלא תאריך, סוג אירוע, כביש ומיקום כדי ליצור אירוע."
 const val EVENT_DRAFT_SAVE_FAILED = "שמירת האירוע נכשלה. בדקו את החיבור ונסו שוב."
 const val EVENT_DRAFT_SAVED = "האירוע נשמר."
+const val EVENT_NEW_TITLE = "אירוע חדש"
 const val EVENT_EDIT_TITLE = "עריכת אירוע"
+const val EVENT_SAVE_TITLE = "שמירת אירוע"
+const val EVENT_SAVE_AND_NEW_TITLE = "שמירת אירוע ויצירת חדש"
+const val EVENT_ASSIGN_OPEN = "הקצאת כוננים"
+const val EVENT_ASSIGN_CLOSE = "סגירת הקצאה"
+const val EVENT_ASSIGN_REMOVE = "הסרת כונן"
+const val EVENT_ASSIGN_EMPTY = "בלי כונן משובץ האירוע נשאר בהזנה ואינו מוצג לכוננים."
 const val EVENT_EDIT_LOAD_FAILED = "טעינת האירוע נכשלה. בדקו את החיבור ונסו שוב."
+const val UNIT_EVENTS_LOAD_FAILED = "טעינת האירועים נכשלה. בדקו את החיבור ונסו שוב."
 
 /** Single system שלוחה that makes מיקום mandatory. Matches the web `systemDistricts`. */
 const val SYSTEM_DISTRICT_CODE = "station_other_duplicated"
@@ -84,7 +92,7 @@ fun eventDraftStatus(responderCount: Int): EventStatus =
     if (responderCount == 0) EventStatus.DRAFT else EventStatus.IN_PROGRESS
 
 fun eventDraftSummary(responderCount: Int): String = when (responderCount) {
-    0 -> "לא שובצו כוננים — האירוע יישמר כטיוטה"
+    0 -> "טרם הוקצו כוננים · אירוע בהזנה"
     1 -> "כונן אחד משובץ"
     else -> "$responderCount כוננים משובצים"
 }
@@ -118,9 +126,10 @@ fun filterAssignableProfiles(profiles: List<AssignableProfile>, query: String): 
 }
 
 const val EVENT_CANCEL_ADMIN_ONLY = "רק מנהל יכול לבטל סימון בוטל."
+const val EVENT_CANCELLED_LABEL = "בוטל"
 
-fun eventCancelToggleLabel(isCancelled: Boolean): String =
-    if (isCancelled) "ביטול סימון “בוטל”" else "סימון האירוע כבוטל"
+@Suppress("UNUSED_PARAMETER")
+fun eventCancelToggleLabel(isCancelled: Boolean): String = EVENT_CANCELLED_LABEL
 
 fun eventCancelToast(isCancelled: Boolean): String =
     if (isCancelled) "האירוע סומן כבוטל." else "סימון הביטול הוסר."

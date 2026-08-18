@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.yahpz.domain.SHIFT_KIND_LABELS
+import com.yahpz.domain.UNIT_SHIFTS_LOAD_FAILED
 import com.yahpz.domain.VEHICLE_TYPE_LABELS
 import com.yahpz.domain.eventStamp
 import com.yahpz.domain.fieldsMatchQuery
@@ -94,7 +95,7 @@ fun UnitShiftsScreen(app: AppModel, ui: AppUiState) {
             )
             when {
                 ui.unitShiftsFailed -> EmptyState(
-                    title = "טעינת משמרות היחידה נכשלה. בדקו את החיבור ונסו שוב.",
+                    title = UNIT_SHIFTS_LOAD_FAILED,
                     actionTitle = "רענון",
                     onAction = { scope.launch { app.reloadUnitShifts() } },
                 )
@@ -131,7 +132,7 @@ fun UnitShiftsScreen(app: AppModel, ui: AppUiState) {
                 Text("פרטי המשמרת", style = TypeScale.section, color = FieldTheme.textPrimary)
                 LedgerRow("תאריך", "${formatDate(shift.shiftDate)} (${hebrewWeekdayLetter(shift.shiftDate)})")
                 LedgerRow("שם משמרת", SHIFT_KIND_LABELS[shift.shiftKind] ?: shift.shiftKind)
-                LedgerRow("רכב", VEHICLE_TYPE_LABELS[shift.vehicleType] ?: shift.vehicleType)
+                LedgerRow("סוג רכב", VEHICLE_TYPE_LABELS[shift.vehicleType] ?: shift.vehicleType)
                 if (shift.vehicleType == "personal") {
                     LedgerRow("לוחית", formatPlate(shift.personalVehicle?.plateNumber.orEmpty()))
                 }

@@ -65,7 +65,7 @@ class EventDraftTest {
     fun `crewless events save as drafts`() {
         assertEquals(EventStatus.DRAFT, eventDraftStatus(0))
         assertEquals(EventStatus.IN_PROGRESS, eventDraftStatus(1))
-        assertTrue(eventDraftSummary(0).contains("טיוטה"))
+        assertEquals("טרם הוקצו כוננים · אירוע בהזנה", eventDraftSummary(0))
         assertEquals("כונן אחד משובץ", eventDraftSummary(1))
         assertEquals("3 כוננים משובצים", eventDraftSummary(3))
     }
@@ -122,10 +122,23 @@ class EventDraftTest {
     }
 
     @Test
-    fun `cancel copy flips with the current flag`() {
-        assertEquals("סימון האירוע כבוטל", eventCancelToggleLabel(isCancelled = false))
-        assertEquals("ביטול סימון “בוטל”", eventCancelToggleLabel(isCancelled = true))
+    fun `cancel copy is the web checkbox label`() {
+        assertEquals("בוטל", EVENT_CANCELLED_LABEL)
+        assertEquals("בוטל", eventCancelToggleLabel(isCancelled = false))
+        assertEquals("בוטל", eventCancelToggleLabel(isCancelled = true))
         assertEquals("האירוע סומן כבוטל.", eventCancelToast(isCancelled = true))
         assertEquals("סימון הביטול הוסר.", eventCancelToast(isCancelled = false))
+    }
+
+    @Test
+    fun `event form copy matches the web`() {
+        assertEquals("אירוע חדש", EVENT_NEW_TITLE)
+        assertEquals("עריכת אירוע", EVENT_EDIT_TITLE)
+        assertEquals("שמירת אירוע", EVENT_SAVE_TITLE)
+        assertEquals("שמירת אירוע ויצירת חדש", EVENT_SAVE_AND_NEW_TITLE)
+        assertEquals("הקצאת כוננים", EVENT_ASSIGN_OPEN)
+        assertEquals("סגירת הקצאה", EVENT_ASSIGN_CLOSE)
+        assertEquals("הסרת כונן", EVENT_ASSIGN_REMOVE)
+        assertEquals("טעינת האירועים נכשלה. בדקו את החיבור ונסו שוב.", UNIT_EVENTS_LOAD_FAILED)
     }
 }

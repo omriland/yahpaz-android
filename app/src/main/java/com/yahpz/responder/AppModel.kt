@@ -18,6 +18,8 @@ import com.yahpz.domain.ReportKindId
 import com.yahpz.domain.ReportRow
 import com.yahpz.domain.SHIFT_DRAFT_SAVED
 import com.yahpz.domain.ShiftDraft
+import com.yahpz.domain.UNIT_EVENTS_LOAD_FAILED
+import com.yahpz.domain.UNIT_SHIFTS_LOAD_FAILED
 import com.yahpz.domain.broadcastResultCopy
 import com.yahpz.domain.canToggleEventCancelled
 import com.yahpz.domain.defaultReportRange
@@ -349,7 +351,7 @@ class AppModel : ViewModel() {
                 unitEventsFailed = failed,
             )
         },
-        failureMessage = "טעינת אירועי היחידה נכשלה. בדקו את החיבור ונסו שוב.",
+        failureMessage = UNIT_EVENTS_LOAD_FAILED,
         fetch = { YahpazAPI.fetchUnitEvents() },
     )
 
@@ -362,7 +364,7 @@ class AppModel : ViewModel() {
                 unitShiftsFailed = failed,
             )
         },
-        failureMessage = "טעינת משמרות היחידה נכשלה. בדקו את החיבור ונסו שוב.",
+        failureMessage = UNIT_SHIFTS_LOAD_FAILED,
         fetch = { YahpazAPI.fetchUnitShifts() },
     )
 
@@ -496,17 +498,21 @@ class AppModel : ViewModel() {
         }
     }
 
-    suspend fun createUnitEvent(draft: EventDraft): String? {
+    suspend fun createUnitEvent(draft: EventDraft, stayOnForm: Boolean = false): String? {
         YahpazAPI.createUnitEvent(draft, _state.value.lookups.districts)?.let { return it }
         reloadUnitEvents()
         viewModelScope.launch { reloadEvents() }
         showToast(EVENT_DRAFT_SAVED, StampTone.DONE)
-        // `setTab` also drops the tools destination, so the form is left behind.
-        setTab(AppTab.UNIT_EVENTS)
+        if (!stayOnForm) setTab(AppTab.UNIT_EVENTS)
         return null
     }
 
-    suspend fun updateUnitEvent(eventId: String, draft: EventDraft, previousIsCancelled: Boolean): String? {
+    suspend fun updateUnitEvent(
+        eventId: String,
+        draft: EventDraft,
+        previousIsCancelled: Boolean,
+        stayOnForm: Boolean = false,
+    ): String? {
         YahpazAPI.updateUnitEvent(
             eventId = eventId,
             draft = draft,
@@ -517,7 +523,7 @@ class AppModel : ViewModel() {
         reloadUnitEvents()
         viewModelScope.launch { reloadEvents() }
         showToast(EVENT_DRAFT_SAVED, StampTone.DONE)
-        setTab(AppTab.UNIT_EVENTS)
+        if (!stayOnForm) setTab(AppTab.UNIT_EVENTS)
         return null
     }
 

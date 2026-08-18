@@ -20,14 +20,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.yahpz.domain.EVENT_ASSIGN_CLOSE
+import com.yahpz.domain.EVENT_ASSIGN_EMPTY
+import com.yahpz.domain.EVENT_ASSIGN_OPEN
+import com.yahpz.domain.EVENT_CANCELLED_LABEL
 import com.yahpz.domain.EVENT_EDIT_LOAD_FAILED
 import com.yahpz.domain.EVENT_EDIT_TITLE
+import com.yahpz.domain.EVENT_NEW_TITLE
+import com.yahpz.domain.EVENT_SAVE_AND_NEW_TITLE
+import com.yahpz.domain.EVENT_SAVE_TITLE
 import com.yahpz.domain.EventDraft
 import com.yahpz.domain.EventDraftErrors
 import com.yahpz.domain.applyDistrictRoadDefault
 import com.yahpz.domain.canToggleEventCancelled
-import com.yahpz.domain.districtNeedsLocation
-import com.yahpz.domain.eventCancelToggleLabel
 import com.yahpz.domain.eventDraftSummary
 import com.yahpz.domain.israelToday
 import com.yahpz.domain.returnDateToInput
@@ -35,7 +40,7 @@ import com.yahpz.domain.toggleEventResponder
 import com.yahpz.domain.validateEventDraft
 import kotlinx.coroutines.launch
 
-const val NEW_EVENT_TITLE = "אירוע חדש"
+const val NEW_EVENT_TITLE = EVENT_NEW_TITLE
 
 @Composable
 fun EventFormScreen(
@@ -102,6 +107,48 @@ fun EventFormScreen(
         isCancelled = isCancelled,
     )
 
+    fun resetCreateForm() {
+        eventDate = returnDateToInput(israelToday())
+        policeEventId = ""
+        eventTypeId = ""
+        roadId = ""
+        districtId = ""
+        location = ""
+        notes = ""
+        responderIds = emptyList()
+        isCancelled = false
+        previousIsCancelled = false
+        errors = EventDraftErrors()
+        formError = null
+    }
+
+    fun persist(createNew: Boolean) {
+        val current = draft()
+        val next = validateEventDraft(current, ui.lookups.districts)
+        errors = next
+        if (!next.isEmpty) {
+            formError = next.formMessage
+            return
+        }
+        formError = null
+        scope.launch {
+            saving = true
+            formError = if (eventId != null) {
+                app.updateUnitEvent(eventId, current, previousIsCancelled, stayOnForm = createNew)
+            } else {
+                app.createUnitEvent(current, stayOnForm = createNew)
+            }
+            if (formError == null && createNew) {
+                if (eventId != null) {
+                    app.setToolsDestination(ToolsDestination.NEW_EVENT)
+                } else {
+                    resetCreateForm()
+                }
+            }
+            saving = false
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -111,7 +158,7 @@ fun EventFormScreen(
             .padding(top = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        ToolsBackRow(if (editing) EVENT_EDIT_TITLE else NEW_EVENT_TITLE, onBack)
+        ToolsBackRow(if (editing) EVENT_EDIT_TITLE else EVENT_NEW_TITLE, onBack)
         when {
             loadFailed -> EmptyState(
                 title = EVENT_EDIT_LOAD_FAILED,
@@ -126,25 +173,23 @@ fun EventFormScreen(
             )
             ui.lookups.isEmpty -> LoadingBlock("טוען רשימות…")
             else -> {
-                if (editing) {
-                    GhostButton(
-                        title = eventCancelToggleLabel(isCancelled),
-                        enabled = !isCancelled || ui.canAdmin,
-                        onClick = {
-                            val next = !isCancelled
-                            formError = canToggleEventCancelled(next, ui.canAdmin)
-                            if (formError == null) isCancelled = next
-                        },
-                    )
-                }
+                FormCheckbox(
+                    label = EVENT_CANCELLED_LABEL,
+                    checked = isCancelled,
+                    enabled = !isCancelled || ui.canAdmin,
+                    onCheckedChange = { next ->
+                        formError = canToggleEventCancelled(next, ui.canAdmin)
+                        if (formError == null) isCancelled = next
+                    },
+                )
                 ReturnDateField(
-                    label = "תאריך האירוע",
+                    label = "תאריך",
                     value = eventDate,
                     onValueChange = { eventDate = it },
                 )
                 errors.eventDate?.let { Text(it, style = TypeScale.caption, color = FieldTheme.alert) }
                 FormField(
-                    label = "מספר אירוע (לא חובה)",
+                    label = "מספר אירוע",
                     value = policeEventId,
                     onValueChange = { policeEventId = it },
                     keyboardType = KeyboardType.Number,
@@ -161,7 +206,7 @@ fun EventFormScreen(
                     error = errors.eventType,
                 )
                 LookupPickerField(
-                    label = "שלוחה (לא חובה)",
+                    label = "שלוחה",
                     options = ui.lookups.districts,
                     selectedId = districtId,
                     onSelect = { next ->
@@ -188,53 +233,40 @@ fun EventFormScreen(
                     error = errors.road,
                 )
                 FormField(
-                    label = if (districtNeedsLocation(ui.lookups.districts, districtId)) {
-                        "מיקום"
-                    } else {
-                        "מיקום (לא חובה)"
-                    },
+                    label = "מיקום",
                     value = location,
                     onValueChange = { location = it },
-                    placeholder = "צומת, ק״מ או תיאור",
+                    placeholder = "למשל: מחלף שורק, לכיוון צפון",
                     error = errors.location,
                 )
-                CrewPickerField(
-                    label = "כוננים",
+                CrewAssignmentSection(
+                    assignOpenLabel = EVENT_ASSIGN_OPEN,
+                    assignCloseLabel = EVENT_ASSIGN_CLOSE,
                     profiles = ui.assignableProfiles,
                     selectedIds = responderIds,
-                    onToggle = { responderIds = toggleEventResponder(responderIds, it) },
-                    placeholder = "שיבוץ כוננים",
+                    onAdd = { responderIds = toggleEventResponder(responderIds, it) },
+                    onRemove = { responderIds = toggleEventResponder(responderIds, it) },
                     caption = eventDraftSummary(responderIds.size),
+                    emptyHint = EVENT_ASSIGN_EMPTY,
+                    emptyRoster = "אין משתמשים פעילים להקצאה.",
+                    emptyQuery = "לא נמצאו כוננים להקצאה",
                 )
                 FormArea(
-                    label = "הערות (לא חובה)",
+                    label = "הערות",
                     value = notes,
                     onValueChange = { notes = it },
                     minHeight = 96,
                 )
                 formError?.let { Text(it, style = TypeScale.caption, color = FieldTheme.alert) }
                 PrimaryButton(
-                    title = "שמירת האירוע",
+                    title = EVENT_SAVE_TITLE,
                     busy = saving,
-                    onClick = {
-                        val current = draft()
-                        val next = validateEventDraft(current, ui.lookups.districts)
-                        errors = next
-                        if (!next.isEmpty) {
-                            formError = next.formMessage
-                            return@PrimaryButton
-                        }
-                        formError = null
-                        scope.launch {
-                            saving = true
-                            formError = if (eventId != null) {
-                                app.updateUnitEvent(eventId, current, previousIsCancelled)
-                            } else {
-                                app.createUnitEvent(current)
-                            }
-                            saving = false
-                        }
-                    },
+                    onClick = { persist(createNew = false) },
+                )
+                GhostButton(
+                    title = EVENT_SAVE_AND_NEW_TITLE,
+                    enabled = !saving,
+                    onClick = { persist(createNew = true) },
                 )
             }
         }

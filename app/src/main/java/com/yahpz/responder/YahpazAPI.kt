@@ -751,6 +751,14 @@ object YahpazAPI {
             order("full_name", Order.ASCENDING)
         }.decodeList<AssignableProfileRow>().map { it.asProfile }
 
+    suspend fun fetchVehiclesForResponders(responderIds: List<String>): List<CrewVehicleRow> {
+        if (responderIds.isEmpty()) return emptyList()
+        return client.from("vehicles").select(Columns.raw("id, user_id, plate_number, model, archived")) {
+            filter { isIn("user_id", responderIds.distinct()) }
+            order("plate_number", Order.ASCENDING)
+        }.decodeList<CrewVehicleRow>().filter { it.archived != true }
+    }
+
     /** Insert the event then its pending crew. Mirrors the web `saveEventForm` create path. */
     suspend fun createUnitEvent(draft: EventDraft, districts: List<LookupOption>): String? {
         val errors = validateEventDraft(draft, districts)
@@ -798,6 +806,7 @@ object YahpazAPI {
                     shiftDate = shiftDate,
                     shiftKind = draft.shiftKind,
                     vehicleType = draft.vehicleType,
+                    personalVehicleId = if (draft.vehicleType == "personal") draft.personalVehicleId else null,
                     notes = draft.notes.nilIfEmpty(),
                     shiftLeadId = userId,
                     lastSavedBy = userId,
@@ -929,7 +938,7 @@ object YahpazAPI {
         return try {
             val detail = fetchShiftFormDetail(shiftId)
             val personalVehicleId = if (draft.vehicleType == "personal") {
-                detail.personalVehicleId
+                draft.personalVehicleId
             } else {
                 null
             }

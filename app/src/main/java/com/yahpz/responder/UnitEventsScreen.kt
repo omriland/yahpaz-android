@@ -30,12 +30,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.yahpz.domain.ParticipationStatus
 import com.yahpz.domain.cancelledStamp
-import com.yahpz.domain.eventCancelToggleLabel
+import com.yahpz.domain.EVENT_CANCELLED_LABEL
+import com.yahpz.domain.EVENT_EDIT_TITLE
 import com.yahpz.domain.eventStamp
 import com.yahpz.domain.fieldsMatchQuery
 import com.yahpz.domain.formatDate
 import com.yahpz.domain.mineFillCtaLabel
 import com.yahpz.domain.participationStamp
+import com.yahpz.domain.UNIT_EVENTS_LOAD_FAILED
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -96,7 +98,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
             )
             when {
                 ui.unitEventsFailed -> EmptyState(
-                    title = "טעינת אירועי היחידה נכשלה. בדקו את החיבור ונסו שוב.",
+                    title = UNIT_EVENTS_LOAD_FAILED,
                     actionTitle = "רענון",
                     onAction = { scope.launch { app.reloadUnitEvents() } },
                 )
@@ -187,20 +189,21 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                         Text(it, style = TypeScale.caption, color = FieldTheme.alert)
                     }
                     PrimaryButton(
-                        title = "עריכה",
+                        title = EVENT_EDIT_TITLE,
                         onClick = {
                             val id = current.id
                             detail = null
                             app.openEditEvent(id)
                         },
                     )
-                    GhostButton(
-                        title = eventCancelToggleLabel(current.isCancelled),
+                    FormCheckbox(
+                        label = EVENT_CANCELLED_LABEL,
+                        checked = current.isCancelled,
                         enabled = !cancelling && (!current.isCancelled || ui.canAdmin),
-                        onClick = {
+                        onCheckedChange = { next ->
                             scope.launch {
                                 cancelling = true
-                                cancelError = app.setEventCancelled(current.id, !current.isCancelled)
+                                cancelError = app.setEventCancelled(current.id, next)
                                 cancelling = false
                             }
                         },
