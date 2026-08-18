@@ -52,6 +52,31 @@ fun formatDateTime(iso: String): String {
 
 fun firstName(fullName: String): String = fullName.split(" ").firstOrNull() ?: fullName
 
+/** Grouped decimal like the web `Intl.NumberFormat('he-IL')`: whole numbers lose the fraction. */
+fun formatNumber(value: Double): String {
+    val rounded = Math.round(value * 10.0) / 10.0
+    return if (rounded == Math.floor(rounded)) {
+        String.format(Locale.US, "%,d", rounded.toLong())
+    } else {
+        String.format(Locale.US, "%,.1f", rounded)
+    }
+}
+
+/**
+ * Road names sort as pure numbers first ascending, then names containing letters
+ * (e.g. `עירוני (101)`) by Hebrew name.
+ */
+fun compareRoadNames(left: String, right: String): Int {
+    val leftNumber = left.trim().toIntOrNull()
+    val rightNumber = right.trim().toIntOrNull()
+    if (leftNumber != null && rightNumber != null) return leftNumber - rightNumber
+    if ((leftNumber == null) != (rightNumber == null)) return if (leftNumber != null) -1 else 1
+    return left.trim().compareTo(right.trim())
+}
+
+fun <T> sortByRoadName(items: List<T>, name: (T) -> String): List<T> =
+    items.sortedWith { left, right -> compareRoadNames(name(left), name(right)) }
+
 fun passwordStrengthError(password: String): String? {
     val missing = mutableListOf<String>()
     if (password.length < 8) missing += "8 תווים לפחות"

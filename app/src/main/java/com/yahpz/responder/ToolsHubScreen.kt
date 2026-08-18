@@ -21,9 +21,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.yahpz.domain.OPEN_DOC_TITLE
 import com.yahpz.domain.highestRoleLabel
 import com.yahpz.domain.toolsTabLabel
+import com.yahpz.domain.visibleReportSpecs
 
 @Composable
 fun ToolsHubScreen(app: AppModel, ui: AppUiState) {
@@ -45,6 +45,16 @@ fun ToolsHubScreen(app: AppModel, ui: AppUiState) {
         if (ui.canManageUnit) {
             ToolsSectionLabel("היחידה")
             ToolCard(
+                title = NEW_EVENT_TITLE,
+                caption = "הזנת אירוע ושיבוץ כוננים לתיעוד",
+                onClick = { app.setToolsDestination(ToolsDestination.NEW_EVENT) },
+            )
+            ToolCard(
+                title = NEW_SHIFT_TITLE,
+                caption = "פתיחת משמרת ושיבוץ צוות",
+                onClick = { app.setToolsDestination(ToolsDestination.NEW_SHIFT) },
+            )
+            ToolCard(
                 title = "אירועי היחידה",
                 caption = "כל האירועים האחרונים ביחידה",
                 onClick = { app.setTab(AppTab.UNIT_EVENTS) },
@@ -54,11 +64,17 @@ fun ToolsHubScreen(app: AppModel, ui: AppUiState) {
                 caption = "כל המשמרות האחרונות ביחידה",
                 onClick = { app.setTab(AppTab.UNIT_SHIFTS) },
             )
-            ToolCard(
-                title = OPEN_DOC_TITLE,
-                caption = "דיווחים שממתינים לתיעוד בטווח תאריכים",
-                onClick = { app.setToolsDestination(ToolsDestination.OPEN_DOC_REPORT) },
-            )
+        }
+        val reports = visibleReportSpecs(ui.roles)
+        if (reports.isNotEmpty()) {
+            ToolsSectionLabel("דוחות")
+            reports.forEach { spec ->
+                ToolCard(
+                    title = spec.title,
+                    caption = spec.includes,
+                    onClick = { app.openReport(spec.id) },
+                )
+            }
         }
         if (ui.canAdmin) {
             ToolsSectionLabel("ניהול")

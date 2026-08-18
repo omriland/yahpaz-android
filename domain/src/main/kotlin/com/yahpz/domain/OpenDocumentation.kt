@@ -104,6 +104,27 @@ fun buildOpenDocRows(
     )
 }
 
+fun openDocReportRows(rows: List<OpenDocRow>): List<ReportRow> = rows.map { row ->
+    ReportRow(
+        id = row.id,
+        eventId = row.eventId,
+        title = row.responderDisplay,
+        subtitle = listOfNotNull(
+            formatDate(row.eventDate),
+            row.policeEventId?.takeIf { it.isNotEmpty() },
+            placeDisplay(row.roadName, row.location).takeIf { it.isNotEmpty() },
+        ).joinToString(" · "),
+        detail = row.leadDisplay.takeIf { it.isNotEmpty() }?.let { "אחמ״ש: $it" },
+        stampLabel = row.fillStatusLabel,
+        stampTone = if (row.fillStatus == OpenDocFillStatus.IN_PROGRESS) StampTone.DRAFT else StampTone.PENDING,
+        searchText = listOf(
+            row.responderDisplay,
+            row.policeEventId.orEmpty(),
+            placeDisplay(row.roadName, row.location),
+        ).joinToString(" "),
+    )
+}
+
 fun openDocSummary(count: Int): String = when (count) {
     0 -> OPEN_DOC_EMPTY_TITLE
     1 -> "דיווח אחד ממתין לתיעוד"

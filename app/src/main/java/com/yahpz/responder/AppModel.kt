@@ -2,11 +2,20 @@ package com.yahpz.responder
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.yahpz.domain.AssignableProfile
 import com.yahpz.domain.AvailabilityStatus
-import com.yahpz.domain.OPEN_DOC_DEFAULT_RANGE_DAYS
-import com.yahpz.domain.OpenDocRow
-import com.yahpz.domain.addCalendarDays
+import com.yahpz.domain.EVENT_DRAFT_SAVED
+import com.yahpz.domain.EventDraft
+import com.yahpz.domain.REPORT_FAILED_TITLE
+import com.yahpz.domain.ReportKindId
+import com.yahpz.domain.ReportRow
+import com.yahpz.domain.SHIFT_DRAFT_SAVED
+import com.yahpz.domain.ShiftDraft
+import com.yahpz.domain.canToggleEventCancelled
+import com.yahpz.domain.defaultReportRange
+import com.yahpz.domain.eventCancelToast
 import com.yahpz.domain.isAdmin
+import com.yahpz.domain.reportSpec
 import com.yahpz.domain.isResponder
 import com.yahpz.domain.israelToday
 import com.yahpz.domain.managesUnit
@@ -24,7 +33,7 @@ import kotlinx.coroutines.launch
 
 enum class AppTab { INBOX, SHIFTS, CONTACTS, UNIT_EVENTS, UNIT_SHIFTS, TOOLS, PROFILE }
 
-enum class ToolsDestination { HUB, OPEN_DOC_REPORT, ADMIN_USERS }
+enum class ToolsDestination { HUB, REPORT, ADMIN_USERS, NEW_EVENT, NEW_SHIFT }
 
 data class AppUiState(
     val booting: Boolean = true,
@@ -53,11 +62,16 @@ data class AppUiState(
     val adminUsers: List<AdminUserListItem> = emptyList(),
     val adminUsersFailed: Boolean = false,
     val adminUsersLoading: Boolean = false,
-    val openDocRows: List<OpenDocRow> = emptyList(),
-    val openDocFailed: Boolean = false,
-    val openDocLoading: Boolean = false,
-    val openDocFrom: String? = null,
-    val openDocTo: String? = null,
+    val reportKind: ReportKindId = ReportKindId.OPEN_DOCUMENTATION,
+    val reportRows: List<ReportRow> = emptyList(),
+    val reportFailed: Boolean = false,
+    val reportLoading: Boolean = false,
+    val reportFrom: String? = null,
+    val reportTo: String? = null,
+    val lookups: EventLookups = EventLookups(),
+    val assignableProfiles: List<AssignableProfile> = emptyList(),
+    val lookupsLoading: Boolean = false,
+    val lookupsFailed: Boolean = false,
     val tab: AppTab = AppTab.INBOX,
     val toolsDestination: ToolsDestination = ToolsDestination.HUB,
     val toast: String? = null,
@@ -316,25 +330,86 @@ class AppModel : ViewModel() {
         fetch = { YahpazAPI.fetchAdminUsers() },
     )
 
-    suspend fun reloadOpenDocumentation(from: String, to: String) {
-        _state.update { it.copy(openDocFrom = from, openDocTo = to) }
+    /** Reports share one slot of state, so opening a different kind clears the previous rows. */
+    fun openReport(kind: ReportKindId) {
+        _state.update { current ->
+            val switching = current.reportKind != kind
+            current.copy(
+                tab = AppTab.TOOLS,
+                toolsDestination = ToolsDestination.REPORT,
+                reportKind = kind,
+                reportRows = if (switching) emptyList() else current.reportRows,
+                reportFrom = if (switching) null else current.reportFrom,
+                reportTo = if (switching) null else current.reportTo,
+                reportFailed = false,
+            )
+        }
+    }
+
+    suspend fun reloadReport(from: String, to: String) {
+        val kind = _state.value.reportKind
+        _state.update { it.copy(reportFrom = from, reportTo = to) }
         loadSection(
-            read = { it.openDocRows },
+            read = { it.reportRows },
             write = { state, rows, loading, failed ->
                 state.copy(
-                    openDocRows = rows ?: state.openDocRows,
-                    openDocLoading = loading,
-                    openDocFailed = failed,
+                    reportRows = rows ?: state.reportRows,
+                    reportLoading = loading,
+                    reportFailed = failed,
                 )
             },
-            failureMessage = "טעינת הדוח נכשלה. בדקו את החיבור ונסו שוב.",
-            fetch = { YahpazAPI.fetchOpenDocumentation(from, to) },
+            failureMessage = REPORT_FAILED_TITLE,
+            fetch = { YahpazAPI.fetchReport(kind, from, to) },
         )
     }
 
-    fun defaultOpenDocRange(): Pair<String, String> {
-        val today = israelToday()
-        return addCalendarDays(today, -OPEN_DOC_DEFAULT_RANGE_DAYS) to today
+    fun defaultReportRange(kind: ReportKindId): Pair<String, String> =
+        defaultReportRange(reportSpec(kind), israelToday())
+
+    /** Closed lists and the assignable crew back both create forms, so they load together. */
+    suspend fun reloadLookups() {
+        if (_state.value.userId == null) return
+        _state.update { it.copy(lookupsLoading = true, lookupsFailed = false) }
+        try {
+            val lookups = YahpazAPI.fetchEventLookups()
+            val profiles = YahpazAPI.fetchAssignableProfiles()
+            _state.update {
+                it.copy(lookups = lookups, assignableProfiles = profiles, lookupsFailed = false)
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            _state.update { it.copy(lookupsFailed = true) }
+        } finally {
+            _state.update { it.copy(lookupsLoading = false) }
+        }
+    }
+
+    suspend fun createUnitEvent(draft: EventDraft): String? {
+        YahpazAPI.createUnitEvent(draft, _state.value.lookups.districts)?.let { return it }
+        reloadUnitEvents()
+        viewModelScope.launch { reloadEvents() }
+        showToast(EVENT_DRAFT_SAVED, StampTone.DONE)
+        // `setTab` also drops the tools destination, so the form is left behind.
+        setTab(AppTab.UNIT_EVENTS)
+        return null
+    }
+
+    suspend fun createUnitShift(draft: ShiftDraft): String? {
+        YahpazAPI.createUnitShift(draft)?.let { return it }
+        reloadUnitShifts()
+        viewModelScope.launch { reloadShifts() }
+        showToast(SHIFT_DRAFT_SAVED, StampTone.DONE)
+        setTab(AppTab.UNIT_SHIFTS)
+        return null
+    }
+
+    suspend fun setEventCancelled(eventId: String, isCancelled: Boolean): String? {
+        canToggleEventCancelled(isCancelled, _state.value.canAdmin)?.let { return it }
+        YahpazAPI.setEventCancelled(eventId, isCancelled)?.let { return it }
+        reloadUnitEvents()
+        showToast(eventCancelToast(isCancelled), StampTone.DONE)
+        return null
     }
 
     fun showToast(text: String, tone: StampTone = StampTone.DONE) {
@@ -398,6 +473,7 @@ class AppModel : ViewModel() {
             if (managesUnit(roles)) {
                 viewModelScope.launch { reloadUnitEvents() }
                 viewModelScope.launch { reloadUnitShifts() }
+                viewModelScope.launch { reloadLookups() }
             }
             if (isAdmin(roles)) viewModelScope.launch { reloadAdminUsers() }
         } catch (error: CancellationException) {

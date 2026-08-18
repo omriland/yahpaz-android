@@ -14,9 +14,15 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
+import com.yahpz.domain.AssignableProfile
 import com.yahpz.domain.AvailabilityStatus
 import com.yahpz.domain.ContactSearchFields
 import com.yahpz.domain.EventStatus
+import com.yahpz.domain.EventsByResponderEventInput
+import com.yahpz.domain.EventsByResponderResponderInput
+import com.yahpz.domain.KmExceptionEventInput
+import com.yahpz.domain.KmExceptionResponderInput
+import com.yahpz.domain.LookupOption
 import com.yahpz.domain.MineSearchFields
 import com.yahpz.domain.MineShiftItem
 import com.yahpz.domain.OpenDocEventInput
@@ -379,6 +385,179 @@ data class OpenDocEventRow(
             },
         )
 }
+
+@Serializable
+data class LookupRow(
+    val id: String,
+    val name: String = "",
+    val code: String? = null,
+) {
+    val asOption: LookupOption get() = LookupOption(id = id, name = name, code = code)
+}
+
+data class EventLookups(
+    val districts: List<LookupOption> = emptyList(),
+    val eventTypes: List<LookupOption> = emptyList(),
+    val roads: List<LookupOption> = emptyList(),
+) {
+    val isEmpty: Boolean get() = eventTypes.isEmpty() && roads.isEmpty()
+}
+
+@Serializable
+data class AssignableProfileRow(
+    val id: String,
+    @SerialName("full_name") val fullName: String = "",
+    val callsign: String = "",
+) {
+    val asProfile: AssignableProfile get() = AssignableProfile(id = id, fullName = fullName, callsign = callsign)
+}
+
+@Serializable
+data class ReportResponderRow(
+    @SerialName("responder_id") val responderId: String = "",
+    @SerialName("total_km")
+    @Serializable(with = OptionalDoubleSerializer::class)
+    val totalKm: Double? = null,
+    @Serializable(with = OptionalPersonNameSerializer::class)
+    val profile: PersonName? = null,
+)
+
+/** One select serves both the by-responder and the km-exception reports. */
+@Serializable
+data class ReportEventRow(
+    val id: String,
+    @SerialName("event_date") val eventDate: String,
+    @SerialName("is_cancelled") val isCancelled: Boolean = false,
+    @SerialName("police_event_id") val policeEventId: String? = null,
+    val location: String? = null,
+    @SerialName("event_type")
+    @Serializable(with = OptionalNamedSerializer::class)
+    val eventType: Named? = null,
+    @Serializable(with = OptionalNamedSerializer::class)
+    val district: Named? = null,
+    @Serializable(with = OptionalNamedSerializer::class)
+    val road: Named? = null,
+    @SerialName("shift_lead")
+    @Serializable(with = OptionalPersonNameSerializer::class)
+    val shiftLead: PersonName? = null,
+    val responders: List<ReportResponderRow> = emptyList(),
+) {
+    val asEventsByResponderInput: EventsByResponderEventInput
+        get() = EventsByResponderEventInput(
+            id = id,
+            eventDate = eventDate,
+            isCancelled = isCancelled,
+            policeEventId = policeEventId,
+            location = location,
+            eventTypeName = eventType?.name,
+            districtName = district?.name,
+            roadName = road?.name,
+            leadName = shiftLead?.fullName,
+            leadCallsign = shiftLead?.callsign,
+            responders = responders.map { row ->
+                EventsByResponderResponderInput(
+                    responderId = row.responderId,
+                    totalKm = row.totalKm,
+                    name = row.profile?.fullName,
+                    callsign = row.profile?.callsign,
+                )
+            },
+        )
+
+    val asKmExceptionInput: KmExceptionEventInput
+        get() = KmExceptionEventInput(
+            id = id,
+            eventDate = eventDate,
+            isCancelled = isCancelled,
+            policeEventId = policeEventId,
+            location = location,
+            eventTypeName = eventType?.name,
+            roadName = road?.name,
+            leadName = shiftLead?.fullName,
+            leadCallsign = shiftLead?.callsign,
+            responders = responders.map { row ->
+                KmExceptionResponderInput(
+                    totalKm = row.totalKm,
+                    name = row.profile?.fullName,
+                    callsign = row.profile?.callsign,
+                )
+            },
+        )
+}
+
+@Serializable
+data class FuelParticipationRow(
+    @SerialName("responder_id") val responderId: String = "",
+    @SerialName("event_id") val eventId: String = "",
+    @SerialName("total_km")
+    @Serializable(with = OptionalDoubleSerializer::class)
+    val totalKm: Double? = null,
+)
+
+@Serializable
+data class FuelShiftRow(
+    @SerialName("total_km")
+    @Serializable(with = OptionalDoubleSerializer::class)
+    val totalKm: Double? = null,
+    @Serializable(with = OptionalVehicleOwnerSerializer::class)
+    val vehicles: VehicleOwner? = null,
+)
+
+@Serializable
+data class VehicleOwner(@SerialName("user_id") val userId: String? = null)
+
+object OptionalVehicleOwnerSerializer : OneOrNullSerializer<VehicleOwner>(VehicleOwner.serializer())
+
+@Serializable
+data class EventInsert(
+    @SerialName("event_date") val eventDate: String,
+    @SerialName("police_event_id") val policeEventId: String? = null,
+    @SerialName("district_id") val districtId: String? = null,
+    @SerialName("event_type_id") val eventTypeId: String? = null,
+    @SerialName("road_id") val roadId: String? = null,
+    val location: String? = null,
+    val notes: String? = null,
+    @SerialName("is_cancelled") val isCancelled: Boolean = false,
+    val status: String,
+    @SerialName("shift_lead_id") val shiftLeadId: String,
+    @SerialName("updated_at") val updatedAt: String,
+)
+
+@Serializable
+data class EventResponderInsert(
+    @SerialName("event_id") val eventId: String,
+    @SerialName("responder_id") val responderId: String,
+    @SerialName("emergency_means") val emergencyMeans: Boolean = false,
+    val status: String = ParticipationStatus.PENDING.raw,
+)
+
+@Serializable
+data class EventCancelWrite(
+    @SerialName("is_cancelled") val isCancelled: Boolean,
+    @SerialName("updated_at") val updatedAt: String,
+)
+
+@Serializable
+data class ShiftInsert(
+    @SerialName("shift_date") val shiftDate: String,
+    @SerialName("shift_kind") val shiftKind: String,
+    @SerialName("vehicle_type") val vehicleType: String,
+    @SerialName("personal_vehicle_id") val personalVehicleId: String? = null,
+    @SerialName("odometer_start") val odometerStart: Double? = null,
+    @SerialName("odometer_end") val odometerEnd: Double? = null,
+    @SerialName("total_km") val totalKm: Double? = null,
+    val notes: String? = null,
+    val status: String = ShiftStatus.DRAFT.raw,
+    @SerialName("shift_lead_id") val shiftLeadId: String,
+    @SerialName("last_saved_by") val lastSavedBy: String,
+    @SerialName("updated_at") val updatedAt: String,
+)
+
+@Serializable
+data class ShiftResponderInsert(
+    @SerialName("shift_id") val shiftId: String,
+    @SerialName("responder_id") val responderId: String,
+)
 
 @Serializable
 data class RoleRow(val role: String)

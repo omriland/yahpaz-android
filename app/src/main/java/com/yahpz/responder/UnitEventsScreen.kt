@@ -30,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.yahpz.domain.ParticipationStatus
 import com.yahpz.domain.cancelledStamp
+import com.yahpz.domain.eventCancelToggleLabel
 import com.yahpz.domain.eventStamp
 import com.yahpz.domain.fieldsMatchQuery
 import com.yahpz.domain.formatDate
@@ -44,6 +45,8 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
     var query by remember { mutableStateOf("") }
     var detail by remember { mutableStateOf<EventListItem?>(null) }
     var refreshing by remember { mutableStateOf(false) }
+    var cancelling by remember { mutableStateOf(false) }
+    var cancelError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(ui.userId) {
         if (ui.userId != null && ui.unitEvents.isEmpty()) app.reloadUnitEvents()
@@ -76,7 +79,16 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                 .padding(top = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("אירועי היחידה", style = TypeScale.title, color = FieldTheme.textPrimary)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("אירועי היחידה", style = TypeScale.title, color = FieldTheme.textPrimary)
+                TextButton(onClick = { app.setToolsDestination(ToolsDestination.NEW_EVENT) }) {
+                    Text(NEW_EVENT_TITLE, style = TypeScale.bodyStrong, color = FieldTheme.accent)
+                }
+            }
             SearchField(
                 value = query,
                 onValueChange = { query = it },
@@ -111,7 +123,10 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
     }
 
     detail?.let { event ->
-        val mine = ui.userId?.let { event.ownParticipation(it) }
+        // Re-read from state so a cancel toggle refreshes the open sheet.
+        val current = ui.unitEvents.firstOrNull { it.id == event.id } ?: event
+        val mine = ui.userId?.let { current.ownParticipation(it) }
+        val stamp = if (current.isCancelled) cancelledStamp() else eventStamp(current.status)
         ModalBottomSheet(onDismissRequest = { detail = null }) {
             Column(
                 Modifier
@@ -119,17 +134,34 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text("פרטי האירוע", style = TypeScale.section, color = FieldTheme.textPrimary)
-                LedgerRow("תאריך", formatDate(event.eventDate))
-                LedgerRow("מספר אירוע", event.policeEventId.orEmpty())
-                LedgerRow("סוג אירוע", event.typeLabel)
-                LedgerRow("כביש", event.road?.name.orEmpty())
-                LedgerRow("מיקום", event.location.orEmpty())
-                LedgerRow("אחמ״ש", event.shiftLead?.display.orEmpty())
-                Text("כוננים (${event.responders.size})", style = TypeScale.section, color = FieldTheme.textPrimary)
-                event.responders.forEach { row ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("פרטי האירוע", style = TypeScale.section, color = FieldTheme.textPrimary)
+                    StampChip(stamp)
+                }
+                LedgerRow("תאריך", formatDate(current.eventDate))
+                LedgerRow("מספר אירוע", current.policeEventId.orEmpty())
+                LedgerRow("סוג אירוע", current.typeLabel)
+                LedgerRow("כביש", current.road?.name.orEmpty())
+                LedgerRow("מיקום", current.location.orEmpty())
+                LedgerRow("סטטוס", stamp.label)
+                LedgerRow("אחמ״ש", current.shiftLead?.display.orEmpty())
+                Text("כוננים (${current.responders.size})", style = TypeScale.section, color = FieldTheme.textPrimary)
+                if (current.responders.isEmpty()) {
+                    Text(
+                        "טרם שובצו כוננים לאירוע",
+                        style = TypeScale.caption,
+                        color = FieldTheme.textMuted,
+                    )
+                }
+                current.responders.forEach { row ->
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 44.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -144,11 +176,27 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                 if (mine != null) {
                     mineFillCtaLabel(mine)?.let { label ->
                         PrimaryButton(title = label, onClick = {
-                            val id = event.id
+                            val id = current.id
                             detail = null
                             app.openFill(id)
                         })
                     }
+                }
+                if (ui.canManageUnit) {
+                    cancelError?.let {
+                        Text(it, style = TypeScale.caption, color = FieldTheme.alert)
+                    }
+                    GhostButton(
+                        title = eventCancelToggleLabel(current.isCancelled),
+                        enabled = !cancelling && (!current.isCancelled || ui.canAdmin),
+                        onClick = {
+                            scope.launch {
+                                cancelling = true
+                                cancelError = app.setEventCancelled(current.id, !current.isCancelled)
+                                cancelling = false
+                            }
+                        },
+                    )
                 }
                 TextButton(onClick = { detail = null }, modifier = Modifier.align(Alignment.End)) {
                     Text("סגירה", color = FieldTheme.accent)

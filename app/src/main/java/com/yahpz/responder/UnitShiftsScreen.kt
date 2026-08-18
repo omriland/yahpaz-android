@@ -77,7 +77,16 @@ fun UnitShiftsScreen(app: AppModel, ui: AppUiState) {
                 .padding(top = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("משמרות היחידה", style = TypeScale.title, color = FieldTheme.textPrimary)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("משמרות היחידה", style = TypeScale.title, color = FieldTheme.textPrimary)
+                TextButton(onClick = { app.setToolsDestination(ToolsDestination.NEW_SHIFT) }) {
+                    Text(NEW_SHIFT_TITLE, style = TypeScale.bodyStrong, color = FieldTheme.accent)
+                }
+            }
             SearchField(
                 value = query,
                 onValueChange = { query = it },

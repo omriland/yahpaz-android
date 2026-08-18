@@ -1,24 +1,52 @@
 package com.yahpz.responder
 
+import com.yahpz.domain.AssignableProfile
 import com.yahpz.domain.AvailabilityStatus
 import com.yahpz.domain.AvailabilityWrite
+import com.yahpz.domain.EVENT_DRAFT_DATE_ERROR
+import com.yahpz.domain.EVENT_DRAFT_FORM_ERROR
+import com.yahpz.domain.EVENT_DRAFT_SAVE_FAILED
+import com.yahpz.domain.EventDraft
 import com.yahpz.domain.EventStatus
 import com.yahpz.domain.FillMode
+import com.yahpz.domain.FuelRefundCreditInput
+import com.yahpz.domain.FuelRefundParticipationInput
+import com.yahpz.domain.FuelRefundProfileInput
+import com.yahpz.domain.FuelRefundRow
+import com.yahpz.domain.LookupOption
 import com.yahpz.domain.OpenDocRow
 import com.yahpz.domain.ParticipationStatus
+import com.yahpz.domain.ReportKindId
+import com.yahpz.domain.ReportRow
 import com.yahpz.domain.ResponderFillDraft
+import com.yahpz.domain.SHIFT_DRAFT_DATE_ERROR
+import com.yahpz.domain.SHIFT_DRAFT_FORM_ERROR
+import com.yahpz.domain.SHIFT_DRAFT_SAVE_FAILED
+import com.yahpz.domain.ShiftDraft
 import com.yahpz.domain.buildAvailabilityWrite
+import com.yahpz.domain.buildEventsByResponderRows
+import com.yahpz.domain.buildFuelRefundRows
+import com.yahpz.domain.buildKmExceptionRows
 import com.yahpz.domain.buildOpenDocRows
+import com.yahpz.domain.eventDraftStatus
+import com.yahpz.domain.eventsByResponderReportRows
+import com.yahpz.domain.fuelRefundReportRows
 import com.yahpz.domain.isAdmin
 import com.yahpz.domain.israelToday
+import com.yahpz.domain.kmExceptionReportRows
 import com.yahpz.domain.mapTreatedPlateRows
+import com.yahpz.domain.normalizeReturnDate
+import com.yahpz.domain.openDocReportRows
 import com.yahpz.domain.parsedOdometer
 import com.yahpz.domain.passwordStrengthError
 import com.yahpz.domain.ProfileVehicle
 import com.yahpz.domain.VehicleRowInput
 import com.yahpz.domain.plateDigits
 import com.yahpz.domain.plateNumberForSave
+import com.yahpz.domain.sortByRoadName
+import com.yahpz.domain.validateEventDraft
 import com.yahpz.domain.validateResponderFillDraft
+import com.yahpz.domain.validateShiftDraft
 import com.yahpz.domain.visibleProfileVehicles
 import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.auth.auth
@@ -37,6 +65,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 
 class APIException(override val message: String) : Exception(message)
 
@@ -73,6 +103,18 @@ object YahpazAPI {
         born_events:events!events_shift_id_fkey(
           id, event_date, police_event_id, status,
           event_type:event_types(name)
+        )
+    """.trimIndent()
+
+    private val reportEventSelect = """
+        id, event_date, is_cancelled, police_event_id, location,
+        event_type:event_types(name),
+        district:districts(name),
+        road:roads(name),
+        shift_lead:profiles!events_shift_lead_id_fkey(full_name, callsign),
+        responders:event_responders(
+          responder_id, total_km,
+          profile:profiles(full_name, callsign)
         )
     """.trimIndent()
 
@@ -257,6 +299,185 @@ object YahpazAPI {
             viewerId = userId,
             viewerIsAdmin = viewerIsAdmin,
         )
+    }
+
+    suspend fun fetchReport(kind: ReportKindId, from: String, to: String): List<ReportRow> = when (kind) {
+        ReportKindId.OPEN_DOCUMENTATION -> openDocReportRows(fetchOpenDocumentation(from, to))
+        ReportKindId.EVENTS_BY_RESPONDER -> eventsByResponderReportRows(
+            buildEventsByResponderRows(fetchReportEvents(from, to).map { it.asEventsByResponderInput }, from, to),
+        )
+        ReportKindId.KM_EXCEPTIONS -> kmExceptionReportRows(
+            buildKmExceptionRows(fetchReportEvents(from, to).map { it.asKmExceptionInput }, from, to),
+        )
+        ReportKindId.FUEL_REFUND -> fuelRefundReportRows(fetchFuelRefundRows(from, to))
+    }
+
+    private suspend fun fetchReportEvents(from: String, to: String): List<ReportEventRow> =
+        client.from("events").select(Columns.raw(reportEventSelect)) {
+            filter {
+                gte("event_date", from)
+                lte("event_date", to)
+            }
+            order("event_date", Order.DESCENDING)
+        }.decodeList<ReportEventRow>()
+
+    private suspend fun fetchFuelRefundRows(from: String, to: String): List<FuelRefundRow> {
+        val profiles = client.from("profiles").select(Columns.raw("id, full_name, callsign")) {
+            filter { eq("active", true) }
+        }.decodeList<AssignableProfileRow>()
+        // Refunds follow when the event was *reported*, so bound `created_at`, not `event_date`.
+        val bounds = jerusalemDayBounds(from, to)
+        val eventIds = client.from("events").select(Columns.raw("id")) {
+            filter {
+                eq("origin", "manual")
+                gte("created_at", bounds.first)
+                lte("created_at", bounds.second)
+            }
+        }.decodeList<IdRow>().map { it.id }
+        val participations = if (eventIds.isEmpty()) {
+            emptyList()
+        } else {
+            eventIds.chunked(100).flatMap { chunk ->
+                client.from("event_responders")
+                    .select(Columns.raw("responder_id, event_id, total_km")) {
+                        filter { isIn("event_id", chunk) }
+                    }.decodeList<FuelParticipationRow>()
+            }
+        }
+        val credits = client.from("shifts").select(
+            Columns.raw("total_km, vehicles!shifts_personal_vehicle_id_fkey(user_id)"),
+        ) {
+            filter {
+                eq("vehicle_type", "personal")
+                gte("shift_date", from)
+                lte("shift_date", to)
+            }
+        }.decodeList<FuelShiftRow>()
+        return buildFuelRefundRows(
+            profiles = profiles.map { FuelRefundProfileInput(it.id, it.fullName, it.callsign) },
+            participations = participations.map {
+                FuelRefundParticipationInput(it.responderId, it.eventId, it.totalKm)
+            },
+            credits = credits.mapNotNull { row ->
+                val owner = row.vehicles?.userId ?: return@mapNotNull null
+                val km = row.totalKm ?: return@mapNotNull null
+                FuelRefundCreditInput(owner, km)
+            },
+        )
+    }
+
+    /** Inclusive local-day bounds in Asia/Jerusalem, as UTC instants for `created_at` filters. */
+    private fun jerusalemDayBounds(from: String, to: String): Pair<String, String> {
+        val zone = ZoneId.of("Asia/Jerusalem")
+        val start = LocalDate.parse(from).atStartOfDay(zone).toInstant().toString()
+        val end = LocalDate.parse(to).plusDays(1).atStartOfDay(zone).minusNanos(1_000_000)
+            .toInstant().toString()
+        return start to end
+    }
+
+    suspend fun fetchEventLookups(): EventLookups {
+        suspend fun lookup(table: String, columns: String): List<LookupOption> =
+            client.from(table).select(Columns.raw(columns)) {
+                filter { eq("active", true) }
+                order("sort_order", Order.ASCENDING)
+                order("name", Order.ASCENDING)
+            }.decodeList<LookupRow>().map { it.asOption }
+        val roads = lookup("roads", "id, name")
+        return EventLookups(
+            districts = lookup("districts", "id, name, code"),
+            eventTypes = lookup("event_types", "id, name"),
+            roads = sortByRoadName(roads) { it.name },
+        )
+    }
+
+    suspend fun fetchAssignableProfiles(): List<AssignableProfile> =
+        client.from("profiles").select(Columns.raw("id, full_name, callsign")) {
+            filter { eq("active", true) }
+            order("full_name", Order.ASCENDING)
+        }.decodeList<AssignableProfileRow>().map { it.asProfile }
+
+    /** Insert the event then its pending crew. Mirrors the web `saveEventForm` create path. */
+    suspend fun createUnitEvent(draft: EventDraft, districts: List<LookupOption>): String? {
+        val errors = validateEventDraft(draft, districts)
+        if (!errors.isEmpty) return errors.formMessage ?: EVENT_DRAFT_FORM_ERROR
+        val userId = sessionUserId() ?: return "יש להתחבר מחדש."
+        val eventDate = normalizeReturnDate(draft.eventDate) ?: return EVENT_DRAFT_DATE_ERROR
+        return try {
+            val inserted = client.from("events").insert(
+                EventInsert(
+                    eventDate = eventDate,
+                    policeEventId = draft.policeEventId.nilIfEmpty(),
+                    districtId = draft.districtId.nilIfEmpty(),
+                    eventTypeId = draft.eventTypeId,
+                    roadId = draft.roadId,
+                    location = draft.location.nilIfEmpty(),
+                    notes = draft.notes.nilIfEmpty(),
+                    status = eventDraftStatus(draft.responderIds.size).raw,
+                    shiftLeadId = userId,
+                    updatedAt = Instant.now().toString(),
+                ),
+            ) {
+                select(Columns.raw("id"))
+            }.decodeSingle<IdRow>()
+            if (draft.responderIds.isNotEmpty()) {
+                client.from("event_responders").insert(
+                    draft.responderIds.distinct().map { responderId ->
+                        EventResponderInsert(eventId = inserted.id, responderId = responderId)
+                    },
+                )
+            }
+            null
+        } catch (_: Exception) {
+            EVENT_DRAFT_SAVE_FAILED
+        }
+    }
+
+    suspend fun createUnitShift(draft: ShiftDraft): String? {
+        val errors = validateShiftDraft(draft)
+        if (!errors.isEmpty) return errors.formMessage ?: SHIFT_DRAFT_FORM_ERROR
+        val userId = sessionUserId() ?: return "יש להתחבר מחדש."
+        val shiftDate = normalizeReturnDate(draft.shiftDate) ?: return SHIFT_DRAFT_DATE_ERROR
+        return try {
+            val inserted = client.from("shifts").insert(
+                ShiftInsert(
+                    shiftDate = shiftDate,
+                    shiftKind = draft.shiftKind,
+                    vehicleType = draft.vehicleType,
+                    notes = draft.notes.nilIfEmpty(),
+                    shiftLeadId = userId,
+                    lastSavedBy = userId,
+                    updatedAt = Instant.now().toString(),
+                ),
+            ) {
+                select(Columns.raw("id"))
+            }.decodeSingle<IdRow>()
+            client.from("shift_responders").insert(
+                draft.responderIds.distinct().map { responderId ->
+                    ShiftResponderInsert(shiftId = inserted.id, responderId = responderId)
+                },
+            )
+            // A fresh shift carries no rollup counts, so this is a no-op the server may skip.
+            runCatching {
+                client.postgrest.rpc("sync_shift_born_events", mapOf("p_shift_id" to inserted.id))
+            }
+            null
+        } catch (_: Exception) {
+            SHIFT_DRAFT_SAVE_FAILED
+        }
+    }
+
+    suspend fun setEventCancelled(eventId: String, isCancelled: Boolean): String? {
+        return try {
+            val updated = client.from("events").update(
+                EventCancelWrite(isCancelled = isCancelled, updatedAt = Instant.now().toString()),
+            ) {
+                filter { eq("id", eventId) }
+                select(Columns.raw("id"))
+            }.decodeList<IdRow>()
+            if (updated.isEmpty()) "אין הרשאה לעדכן את האירוע." else null
+        } catch (_: Exception) {
+            EVENT_DRAFT_SAVE_FAILED
+        }
     }
 
     suspend fun fetchMyVehicles(): List<ProfileVehicle> {

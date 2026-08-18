@@ -255,7 +255,9 @@ private fun ToolsTab(app: AppModel, ui: AppUiState) {
     val backToHub = { app.setToolsDestination(ToolsDestination.HUB) }
     when (ui.toolsDestination) {
         ToolsDestination.HUB -> ToolsHubScreen(app, ui)
-        ToolsDestination.OPEN_DOC_REPORT -> OpenDocReportScreen(app, ui, backToHub)
+        ToolsDestination.REPORT -> ReportScreen(app, ui, backToHub)
         ToolsDestination.ADMIN_USERS -> AdminUsersScreen(app, ui, backToHub)
+        ToolsDestination.NEW_EVENT -> EventFormScreen(app, ui, backToHub)
+        ToolsDestination.NEW_SHIFT -> ShiftFormScreen(app, ui, backToHub)
     }
 }
