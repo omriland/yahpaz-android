@@ -1,5 +1,6 @@
 package com.yahpz.responder
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -129,6 +130,8 @@ fun FillScreen(eventId: String, app: AppModel) {
     }
 
     LaunchedEffect(eventId) { load() }
+
+    BackHandler { app.closeFill() }
 
     Column(
         modifier = Modifier

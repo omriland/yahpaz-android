@@ -2,6 +2,7 @@ package com.yahpz.responder
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,7 +14,9 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ListAlt
+import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.Contacts
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -30,9 +33,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.yahpz.domain.toolsTabLabel
 import kotlinx.coroutines.launch
 
 @Composable
@@ -177,23 +182,48 @@ private fun LoginGate(app: AppModel, ui: AppUiState) {
     )
 }
 
+private data class TabItem(val tab: AppTab, val label: String, val icon: ImageVector)
+
+/** Bottom bar holds at most five items; unit lists live under the tools tab. */
+private fun tabItems(ui: AppUiState): List<TabItem> = buildList {
+    if (ui.canRespond) {
+        add(TabItem(AppTab.INBOX, "האירועים שלי", Icons.AutoMirrored.Outlined.ListAlt))
+        add(TabItem(AppTab.SHIFTS, "המשמרות שלי", Icons.Outlined.CalendarMonth))
+    }
+    add(TabItem(AppTab.CONTACTS, "אנשי קשר", Icons.Outlined.Contacts))
+    if (ui.canManageUnit) {
+        add(TabItem(AppTab.TOOLS, toolsTabLabel(ui.roles), Icons.Outlined.Build))
+    }
+    add(TabItem(AppTab.PROFILE, "פרופיל", Icons.Outlined.Person))
+}
+
 @Composable
 private fun MainTabs(app: AppModel, ui: AppUiState) {
+    val items = tabItems(ui)
+    val unitList = ui.canManageUnit && (ui.tab == AppTab.UNIT_EVENTS || ui.tab == AppTab.UNIT_SHIFTS)
+    // A role may not grant every tab (an admin without כונן has no inbox), so fall back to the first.
+    val contentTab = when {
+        unitList -> ui.tab
+        items.any { it.tab == ui.tab } -> ui.tab
+        else -> items.first().tab
+    }
+    val barTab = if (unitList) AppTab.TOOLS else contentTab
+
+    BackHandler(enabled = unitList) { app.setTab(AppTab.TOOLS) }
+    BackHandler(enabled = contentTab == AppTab.TOOLS && ui.toolsDestination != ToolsDestination.HUB) {
+        app.setToolsDestination(ToolsDestination.HUB)
+    }
+
     Scaffold(
         containerColor = FieldTheme.page,
         bottomBar = {
             NavigationBar(containerColor = FieldTheme.raised) {
-                val items = listOf(
-                    Triple(AppTab.INBOX, "האירועים שלי", Icons.AutoMirrored.Outlined.ListAlt),
-                    Triple(AppTab.SHIFTS, "המשמרות שלי", Icons.Outlined.CalendarMonth),
-                    Triple(AppTab.PROFILE, "פרופיל", Icons.Outlined.Person),
-                )
-                items.forEach { (tab, label, icon) ->
+                items.forEach { item ->
                     NavigationBarItem(
-                        selected = ui.tab == tab,
-                        onClick = { app.setTab(tab) },
-                        icon = { Icon(icon, contentDescription = label) },
-                        label = { Text(label, style = TypeScale.caption) },
+                        selected = barTab == item.tab,
+                        onClick = { app.setTab(item.tab) },
+                        icon = { Icon(item.icon, contentDescription = item.label) },
+                        label = { Text(item.label, style = TypeScale.caption) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = FieldTheme.accent,
                             selectedTextColor = FieldTheme.accent,
@@ -207,11 +237,25 @@ private fun MainTabs(app: AppModel, ui: AppUiState) {
         },
     ) { padding ->
         Box(Modifier.padding(padding).fillMaxSize()) {
-            when (ui.tab) {
+            when (contentTab) {
                 AppTab.INBOX -> InboxScreen(app, ui)
                 AppTab.SHIFTS -> MyShiftsScreen(app, ui)
+                AppTab.CONTACTS -> ContactsScreen(app, ui)
+                AppTab.UNIT_EVENTS -> UnitEventsScreen(app, ui)
+                AppTab.UNIT_SHIFTS -> UnitShiftsScreen(app, ui)
+                AppTab.TOOLS -> ToolsTab(app, ui)
                 AppTab.PROFILE -> ProfileScreen(app, ui)
             }
         }
+    }
+}
+
+@Composable
+private fun ToolsTab(app: AppModel, ui: AppUiState) {
+    val backToHub = { app.setToolsDestination(ToolsDestination.HUB) }
+    when (ui.toolsDestination) {
+        ToolsDestination.HUB -> ToolsHubScreen(app, ui)
+        ToolsDestination.OPEN_DOC_REPORT -> OpenDocReportScreen(app, ui, backToHub)
+        ToolsDestination.ADMIN_USERS -> AdminUsersScreen(app, ui, backToHub)
     }
 }

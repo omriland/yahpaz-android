@@ -4,9 +4,12 @@ import com.yahpz.domain.AvailabilityStatus
 import com.yahpz.domain.AvailabilityWrite
 import com.yahpz.domain.EventStatus
 import com.yahpz.domain.FillMode
+import com.yahpz.domain.OpenDocRow
 import com.yahpz.domain.ParticipationStatus
 import com.yahpz.domain.ResponderFillDraft
 import com.yahpz.domain.buildAvailabilityWrite
+import com.yahpz.domain.buildOpenDocRows
+import com.yahpz.domain.isAdmin
 import com.yahpz.domain.israelToday
 import com.yahpz.domain.mapTreatedPlateRows
 import com.yahpz.domain.parsedOdometer
@@ -27,6 +30,7 @@ import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
+import io.github.jan.supabase.postgrest.query.Order
 import io.github.jan.supabase.postgrest.rpc
 import io.ktor.client.statement.bodyAsText
 import kotlinx.serialization.json.Json
@@ -69,6 +73,16 @@ object YahpazAPI {
         born_events:events!events_shift_id_fkey(
           id, event_date, police_event_id, status,
           event_type:event_types(name)
+        )
+    """.trimIndent()
+
+    private val openDocSelect = """
+        id, event_date, status, is_cancelled, police_event_id, location, shift_lead_id,
+        road:roads(name),
+        shift_lead:profiles!events_shift_lead_id_fkey(full_name, callsign),
+        responders:event_responders(
+          responder_id, status,
+          profile:profiles(full_name, callsign)
         )
     """.trimIndent()
 
@@ -171,6 +185,78 @@ object YahpazAPI {
         }.decodeList<ShiftAssignmentIdRow>().map { it.shiftId }
         if (ids.isEmpty()) return emptyList()
         return fetchByIds(ids, "shifts", shiftListSelect)
+    }
+
+    suspend fun fetchUnitContacts(): List<UnitContact> =
+        client.postgrest.rpc("list_unit_contacts").decodeList<UnitContact>()
+
+    suspend fun fetchUnitEvents(limit: Int = 80): List<EventListItem> =
+        client.from("events").select(Columns.raw(eventListSelect)) {
+            order("event_date", Order.DESCENDING)
+            limit(limit.toLong())
+        }.decodeList<EventListItem>()
+
+    suspend fun fetchUnitShifts(limit: Int = 80): List<ShiftListItem> =
+        client.from("shifts").select(Columns.raw(shiftListSelect)) {
+            order("shift_date", Order.DESCENDING)
+            limit(limit.toLong())
+        }.decodeList<ShiftListItem>()
+
+    suspend fun fetchAdminUsers(): List<AdminUserListItem> {
+        val profiles = client.from("profiles").select(
+            Columns.raw(
+                "id, full_name, email, callsign, phone, active, availability, available_from, volunteer_status",
+            ),
+        ) {
+            order("full_name", Order.ASCENDING)
+        }.decodeList<AdminProfileRow>()
+        val roles = client.from("user_roles").select(Columns.raw("user_id, role"))
+            .decodeList<AdminRoleRow>()
+            .groupBy({ it.userId }, { it.role })
+        val vehicleCounts = client.from("vehicles").select(Columns.raw("user_id, archived"))
+            .decodeList<AdminVehicleRow>()
+            .filter { it.archived != true }
+            .groupingBy { it.userId }
+            .eachCount()
+        return profiles.map { row ->
+            AdminUserListItem(
+                id = row.id,
+                fullName = row.fullName,
+                email = row.email,
+                callsign = row.callsign,
+                phone = row.phone,
+                active = row.active,
+                availability = row.availability,
+                availableFrom = row.availableFrom,
+                volunteerStatus = row.volunteerStatus,
+                roles = roles[row.id].orEmpty(),
+                vehicleCount = vehicleCounts[row.id] ?: 0,
+            )
+        }
+    }
+
+    suspend fun fetchOpenDocumentation(from: String, to: String): List<OpenDocRow> {
+        val userId = sessionUserId() ?: return emptyList()
+        val viewerIsAdmin = isAdmin(client.from("user_roles").select(Columns.raw("role")) {
+            filter { eq("user_id", userId) }
+        }.decodeList<RoleRow>().map { it.role })
+        val rows = client.from("events").select(Columns.raw(openDocSelect)) {
+            filter {
+                isIn("status", listOf(EventStatus.IN_PROGRESS.raw, EventStatus.PARTIAL.raw))
+                eq("is_cancelled", false)
+                gte("event_date", from)
+                lte("event_date", to)
+                if (!viewerIsAdmin) eq("shift_lead_id", userId)
+            }
+            order("event_date", Order.DESCENDING)
+        }.decodeList<OpenDocEventRow>()
+        return buildOpenDocRows(
+            events = rows.map { it.asInput },
+            from = from,
+            to = to,
+            viewerId = userId,
+            viewerIsAdmin = viewerIsAdmin,
+        )
     }
 
     suspend fun fetchMyVehicles(): List<ProfileVehicle> {

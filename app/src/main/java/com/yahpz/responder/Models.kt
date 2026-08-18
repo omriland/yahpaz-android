@@ -15,9 +15,12 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import com.yahpz.domain.AvailabilityStatus
+import com.yahpz.domain.ContactSearchFields
 import com.yahpz.domain.EventStatus
 import com.yahpz.domain.MineSearchFields
 import com.yahpz.domain.MineShiftItem
+import com.yahpz.domain.OpenDocEventInput
+import com.yahpz.domain.OpenDocResponderInput
 import com.yahpz.domain.ParticipationStatus
 import com.yahpz.domain.ResponderFillDraft
 import com.yahpz.domain.SHIFT_KIND_LABELS
@@ -129,6 +132,10 @@ data class EventListItem(
 
     val searchFields: MineSearchFields
         get() = MineSearchFields(policeEventId, road?.name, location)
+
+    /** Unit-wide lists also search by event type and the אחמ״ש who owns the event. */
+    val unitSearchFields: List<String?>
+        get() = listOf(policeEventId, road?.name, location, eventType?.name, shiftLead?.display, formatDate(eventDate))
 }
 
 @Serializable
@@ -270,6 +277,110 @@ data class ProfileRecord(
 }
 
 @Serializable
+data class UnitContact(
+    val id: String,
+    @SerialName("full_name") val fullName: String = "",
+    val callsign: String = "",
+    val phone: String? = null,
+    val email: String = "",
+) {
+    val searchFields: ContactSearchFields
+        get() = ContactSearchFields(fullName, callsign, email, phone)
+}
+
+@Serializable
+data class AdminProfileRow(
+    val id: String,
+    @SerialName("full_name") val fullName: String = "",
+    val email: String = "",
+    val callsign: String = "",
+    val phone: String? = null,
+    val active: Boolean = true,
+    @Serializable(with = AvailabilityStatusSerializer::class)
+    val availability: AvailabilityStatus = AvailabilityStatus.AVAILABLE,
+    @SerialName("available_from") val availableFrom: String? = null,
+    @SerialName("volunteer_status") val volunteerStatus: String? = null,
+)
+
+@Serializable
+data class AdminRoleRow(
+    @SerialName("user_id") val userId: String,
+    val role: String,
+)
+
+@Serializable
+data class AdminVehicleRow(
+    @SerialName("user_id") val userId: String,
+    val archived: Boolean? = null,
+)
+
+data class AdminUserListItem(
+    val id: String,
+    val fullName: String,
+    val email: String,
+    val callsign: String,
+    val phone: String?,
+    val active: Boolean,
+    val availability: AvailabilityStatus,
+    val availableFrom: String?,
+    val volunteerStatus: String?,
+    val roles: List<String>,
+    val vehicleCount: Int,
+) {
+    val searchFields: ContactSearchFields
+        get() = ContactSearchFields(fullName, callsign, email, phone)
+}
+
+@Serializable
+data class OpenDocResponderRow(
+    @SerialName("responder_id") val responderId: String,
+    @Serializable(with = ParticipationStatusSerializer::class)
+    val status: ParticipationStatus,
+    @Serializable(with = OptionalPersonNameSerializer::class)
+    val profile: PersonName? = null,
+)
+
+@Serializable
+data class OpenDocEventRow(
+    val id: String,
+    @SerialName("event_date") val eventDate: String,
+    @Serializable(with = EventStatusSerializer::class)
+    val status: EventStatus,
+    @SerialName("is_cancelled") val isCancelled: Boolean = false,
+    @SerialName("police_event_id") val policeEventId: String? = null,
+    val location: String? = null,
+    @SerialName("shift_lead_id") val shiftLeadId: String? = null,
+    @Serializable(with = OptionalNamedSerializer::class)
+    val road: Named? = null,
+    @SerialName("shift_lead")
+    @Serializable(with = OptionalPersonNameSerializer::class)
+    val shiftLead: PersonName? = null,
+    val responders: List<OpenDocResponderRow> = emptyList(),
+) {
+    val asInput: OpenDocEventInput
+        get() = OpenDocEventInput(
+            id = id,
+            eventDate = eventDate,
+            status = status,
+            isCancelled = isCancelled,
+            policeEventId = policeEventId,
+            location = location,
+            roadName = road?.name,
+            shiftLeadId = shiftLeadId,
+            leadName = shiftLead?.fullName,
+            leadCallsign = shiftLead?.callsign,
+            responders = responders.map { row ->
+                OpenDocResponderInput(
+                    responderId = row.responderId,
+                    status = row.status,
+                    name = row.profile?.fullName,
+                    callsign = row.profile?.callsign,
+                )
+            },
+        )
+}
+
+@Serializable
 data class RoleRow(val role: String)
 
 @Serializable
@@ -333,6 +444,15 @@ data class ShiftListItem(
 
     val mineItem: MineShiftItem
         get() = MineShiftItem(id, shiftDate, odometerStart, odometerEnd)
+
+    val unitSearchFields: List<String?>
+        get() = listOf(
+            formatDate(shiftDate),
+            SHIFT_KIND_LABELS[shiftKind],
+            VEHICLE_TYPE_LABELS[vehicleType],
+            shiftLead?.display,
+            personalVehicle?.plateNumber,
+        )
 }
 
 @Serializable
