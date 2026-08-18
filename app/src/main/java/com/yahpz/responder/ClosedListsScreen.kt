@@ -32,8 +32,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.yahpz.domain.BROADCAST_CAPTION
+import com.yahpz.domain.BROADCAST_TITLE
 import com.yahpz.domain.CLOSED_LISTS
-import com.yahpz.domain.CLOSED_LISTS_CAPTION
 import com.yahpz.domain.CLOSED_LISTS_SEARCH_PLACEHOLDER
 import com.yahpz.domain.CLOSED_LISTS_TITLE
 import com.yahpz.domain.CLOSED_LIST_ADD
@@ -115,8 +116,7 @@ fun ClosedListsScreen(app: AppModel, onBack: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         if (selectedKey == null) {
-            ToolsBackRow(CLOSED_LISTS_TITLE, onBack)
-            Text(CLOSED_LISTS_CAPTION, style = TypeScale.caption, color = FieldTheme.textMuted)
+            ToolsBackRow("הגדרות", onBack)
             Text(SETTINGS_LIST_GROUP_LABEL, style = TypeScale.label, color = FieldTheme.textSecondary)
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -129,6 +129,17 @@ fun ClosedListsScreen(app: AppModel, onBack: () -> Unit) {
                         onClick = { selectedKey = list.key },
                     )
                 }
+                Text(
+                    "תפוצה",
+                    style = TypeScale.label,
+                    color = FieldTheme.textSecondary,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+                ClosedListPaneCard(
+                    title = BROADCAST_TITLE,
+                    caption = BROADCAST_CAPTION,
+                    onClick = { app.setToolsDestination(ToolsDestination.BROADCAST) },
+                )
                 Spacer(Modifier.height(24.dp))
             }
         } else {

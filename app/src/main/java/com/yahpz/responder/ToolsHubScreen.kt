@@ -21,21 +21,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.yahpz.domain.BROADCAST_CAPTION
-import com.yahpz.domain.BROADCAST_TITLE
-import com.yahpz.domain.CLOSED_LISTS_CAPTION
-import com.yahpz.domain.CLOSED_LISTS_TITLE
-import com.yahpz.domain.COCKPIT_CAPTION
-import com.yahpz.domain.COCKPIT_TITLE
-import com.yahpz.domain.FUEL_QUARTER_CAPTION
-import com.yahpz.domain.FUEL_QUARTER_TITLE
-import com.yahpz.domain.canSendUnitBroadcast
-import com.yahpz.domain.highestRoleLabel
-import com.yahpz.domain.toolsTabLabel
 import com.yahpz.domain.visibleReportSpecs
 
+/** Mobile admin hub — same four segments as web `ADMIN_SEGMENTS`. */
 @Composable
-fun ToolsHubScreen(app: AppModel, ui: AppUiState) {
+fun ToolsHubScreen(app: AppModel, @Suppress("UNUSED_PARAMETER") ui: AppUiState) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -45,87 +35,53 @@ fun ToolsHubScreen(app: AppModel, ui: AppUiState) {
             .padding(top = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(toolsTabLabel(ui.roles), style = TypeScale.title, color = FieldTheme.textPrimary)
-        Text(
-            listOfNotNull(ui.profile?.fullName, highestRoleLabel(ui.roles)).joinToString(" · "),
-            style = TypeScale.body,
-            color = FieldTheme.textSecondary,
-        )
-        if (ui.canManageUnit) {
-            ToolsSectionLabel("היחידה")
-            ToolCard(
-                title = COCKPIT_TITLE,
-                caption = COCKPIT_CAPTION,
-                onClick = { app.setToolsDestination(ToolsDestination.COCKPIT) },
-            )
-            ToolCard(
-                title = NEW_EVENT_TITLE,
-                caption = "הזנת אירוע ושיבוץ כוננים לתיעוד",
-                onClick = { app.setToolsDestination(ToolsDestination.NEW_EVENT) },
-            )
-            ToolCard(
-                title = NEW_SHIFT_TITLE,
-                caption = "פתיחת משמרת ושיבוץ צוות",
-                onClick = { app.setToolsDestination(ToolsDestination.NEW_SHIFT) },
-            )
-            ToolCard(
-                title = "אירועי היחידה",
-                caption = "כל האירועים האחרונים ביחידה",
-                onClick = { app.setTab(AppTab.UNIT_EVENTS) },
-            )
-            ToolCard(
-                title = "משמרות היחידה",
-                caption = "כל המשמרות האחרונות ביחידה",
-                onClick = { app.setTab(AppTab.UNIT_SHIFTS) },
-            )
+        Text("ניהול", style = TypeScale.title, color = FieldTheme.textPrimary)
+        ToolCard(title = "משתמשים") {
+            app.setToolsDestination(ToolsDestination.ADMIN_USERS)
         }
-        val reports = visibleReportSpecs(ui.roles)
-        if (reports.isNotEmpty()) {
-            ToolsSectionLabel("דוחות")
-            reports.forEach { spec ->
-                ToolCard(
-                    title = spec.title,
-                    caption = spec.includes,
-                    onClick = { app.openReport(spec.id) },
-                )
-            }
+        ToolCard(title = "דוחות וסטטיסטיקות") {
+            app.setToolsDestination(ToolsDestination.REPORT_CATALOG)
         }
-        if (ui.canAdmin) {
-            ToolsSectionLabel("ניהול")
-            ToolCard(
-                title = "משתמשים",
-                caption = "רשימת המשתמשים, תפקידים וזמינות",
-                onClick = { app.setToolsDestination(ToolsDestination.ADMIN_USERS) },
-            )
-            ToolCard(
-                title = CLOSED_LISTS_TITLE,
-                caption = CLOSED_LISTS_CAPTION,
-                onClick = { app.setToolsDestination(ToolsDestination.CLOSED_LISTS) },
-            )
-            ToolCard(
-                title = FUEL_QUARTER_TITLE,
-                caption = FUEL_QUARTER_CAPTION,
-                onClick = { app.setToolsDestination(ToolsDestination.FUEL_QUARTER) },
-            )
-            if (canSendUnitBroadcast(ui.roles)) {
-                ToolCard(
-                    title = BROADCAST_TITLE,
-                    caption = BROADCAST_CAPTION,
-                    onClick = { app.setToolsDestination(ToolsDestination.BROADCAST) },
-                )
-            }
+        ToolCard(title = "ניהול דלק") {
+            app.setToolsDestination(ToolsDestination.FUEL_QUARTER)
+        }
+        ToolCard(title = "הגדרות") {
+            app.setToolsDestination(ToolsDestination.CLOSED_LISTS)
         }
         Spacer(Modifier.height(24.dp))
     }
 }
 
 @Composable
-private fun ToolsSectionLabel(title: String) {
-    Text(title, style = TypeScale.label, color = FieldTheme.textSecondary)
+fun ReportsCatalogScreen(app: AppModel, ui: AppUiState, title: String, onBack: (() -> Unit)?) {
+    val reports = visibleReportSpecs(ui.roles)
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(FieldTheme.page)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp)
+            .padding(top = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        if (onBack != null) {
+            ToolsBackRow(title, onBack)
+        } else {
+            Text(title, style = TypeScale.title, color = FieldTheme.textPrimary)
+        }
+        reports.forEach { spec ->
+            ToolCard(
+                title = spec.title,
+                caption = spec.includes,
+                onClick = { app.openReport(spec.id) },
+            )
+        }
+        Spacer(Modifier.height(24.dp))
+    }
 }
 
 @Composable
-private fun ToolCard(title: String, caption: String, onClick: () -> Unit) {
+private fun ToolCard(title: String, caption: String? = null, onClick: () -> Unit) {
     FieldCard(
         modifier = Modifier
             .heightIn(min = 44.dp)
@@ -138,7 +94,9 @@ private fun ToolCard(title: String, caption: String, onClick: () -> Unit) {
         ) {
             Column(Modifier.weight(1f)) {
                 Text(title, style = TypeScale.section, color = FieldTheme.textPrimary)
-                Text(caption, style = TypeScale.caption, color = FieldTheme.textMuted)
+                if (!caption.isNullOrBlank()) {
+                    Text(caption, style = TypeScale.caption, color = FieldTheme.textMuted)
+                }
             }
             Icon(
                 imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowLeft,

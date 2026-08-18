@@ -3,6 +3,12 @@ package com.yahpz.responder
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.provider.Settings
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -23,6 +29,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -75,6 +82,29 @@ fun StampChip(stamp: StampDescriptor, modifier: Modifier = Modifier) {
 }
 
 @Composable
+fun rememberReducedMotion(): Boolean {
+    val context = LocalContext.current
+    val scale = Settings.Global.getFloat(
+        context.contentResolver,
+        Settings.Global.ANIMATOR_DURATION_SCALE,
+        1f,
+    )
+    return scale == 0f
+}
+
+@Composable
+fun PrimaryCreateFab(label: String, onClick: () -> Unit) {
+    ExtendedFloatingActionButton(
+        onClick = onClick,
+        containerColor = FieldTheme.accent,
+        contentColor = FieldTheme.textOnAccent,
+        modifier = Modifier.heightIn(min = 44.dp),
+    ) {
+        Text(label, style = TypeScale.bodyStrong)
+    }
+}
+
+@Composable
 fun PrimaryButton(
     title: String,
     onClick: () -> Unit,
@@ -114,19 +144,25 @@ fun GhostButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    danger: Boolean = false,
 ) {
+    val color = when {
+        !enabled -> FieldTheme.textMuted
+        danger -> FieldTheme.alert
+        else -> FieldTheme.accent
+    }
     TextButton(
         onClick = onClick,
         enabled = enabled,
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 44.dp)
-            .border(1.dp, FieldTheme.strong, fieldShape),
+            .border(1.dp, if (danger) FieldTheme.alert else FieldTheme.strong, fieldShape),
     ) {
         Text(
             title,
             style = TypeScale.bodyStrong,
-            color = if (enabled) FieldTheme.accent else FieldTheme.textMuted,
+            color = color,
         )
     }
 }
@@ -361,27 +397,41 @@ fun EmptyState(
 
 @Composable
 fun ToastBanner(text: String, tone: StampTone) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .shadow(12.dp, cardShape)
-            .clip(cardShape)
-            .background(FieldTheme.raised)
-            .border(1.dp, FieldTheme.hairline, cardShape),
+    val reduceMotion = rememberReducedMotion()
+    var visible by remember(text) { mutableStateOf(false) }
+    LaunchedEffect(text) { visible = true }
+    val enter = if (reduceMotion) {
+        fadeIn(tween(150))
+    } else {
+        fadeIn(tween(200)) + slideInVertically(tween(200)) { -it / 2 }
+    }
+    AnimatedVisibility(
+        visible = visible,
+        enter = enter,
+        exit = fadeOut(tween(150)),
     ) {
         Box(
-            Modifier
+            modifier = Modifier
                 .fillMaxWidth()
-                .height(3.dp)
-                .background(tone.ink)
-                .align(Alignment.TopCenter),
-        )
-        Text(
-            text = text,
-            style = TypeScale.body,
-            color = FieldTheme.textPrimary,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-        )
+                .shadow(12.dp, cardShape)
+                .clip(cardShape)
+                .background(FieldTheme.raised)
+                .border(1.dp, FieldTheme.hairline, cardShape),
+        ) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(3.dp)
+                    .background(tone.ink)
+                    .align(Alignment.TopCenter),
+            )
+            Text(
+                text = text,
+                style = TypeScale.body,
+                color = FieldTheme.textPrimary,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            )
+        }
     }
 }
 
