@@ -1,6 +1,5 @@
 package com.yahpz.responder
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -43,15 +42,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import android.graphics.BitmapFactory
 import com.yahpz.domain.CommitTreatedPlateResult
 import com.yahpz.domain.EventStatus
 import com.yahpz.domain.FillMode
@@ -471,27 +466,5 @@ private fun TreatedPlateRow(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun CarLogo(slug: String?) {
-    val context = LocalContext.current
-    val bitmap = remember(slug) {
-        val trimmed = slug?.trim().orEmpty()
-        if (trimmed.isEmpty()) null
-        else runCatching {
-            context.assets.open("car-logos/$trimmed.png").use { stream ->
-                BitmapFactory.decodeStream(stream)
-            }
-        }.getOrNull()
-    }
-    if (bitmap != null) {
-        Image(
-            bitmap = bitmap.asImageBitmap(),
-            contentDescription = null,
-            modifier = Modifier.size(28.dp),
-            contentScale = ContentScale.Fit,
-        )
     }
 }

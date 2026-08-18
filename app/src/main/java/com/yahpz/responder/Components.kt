@@ -1,7 +1,9 @@
 package com.yahpz.responder
 
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.net.Uri
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -38,6 +40,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextRange
@@ -391,5 +395,30 @@ fun FieldCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
             .padding(16.dp),
     ) {
         content()
+    }
+}
+
+@Composable
+fun CarLogo(slug: String?) {
+    val context = LocalContext.current
+    val bitmap = remember(slug) {
+        val trimmed = slug?.trim().orEmpty()
+        if (trimmed.isEmpty()) {
+            null
+        } else {
+            runCatching {
+                context.assets.open("car-logos/$trimmed.png").use { stream ->
+                    BitmapFactory.decodeStream(stream)
+                }
+            }.getOrNull()
+        }
+    }
+    if (bitmap != null) {
+        Image(
+            bitmap = bitmap.asImageBitmap(),
+            contentDescription = null,
+            modifier = Modifier.size(28.dp),
+            contentScale = ContentScale.Fit,
+        )
     }
 }
