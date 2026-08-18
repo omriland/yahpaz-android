@@ -14,6 +14,8 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
+import com.yahpz.domain.AdminUserSearchInput
+import com.yahpz.domain.AdminUserSortKey
 import com.yahpz.domain.AssignableProfile
 import com.yahpz.domain.AvailabilityStatus
 import com.yahpz.domain.BroadcastAudience
@@ -385,6 +387,9 @@ data class AdminProfileRow(
     val callsign: String = "",
     val phone: String? = null,
     val active: Boolean = true,
+    @SerialName("invite_pending") val invitePending: Boolean = false,
+    @SerialName("otp_login_enabled") val otpLoginEnabled: Boolean = false,
+    @SerialName("otp_users_page_enabled") val otpUsersPageEnabled: Boolean = false,
     @Serializable(with = AvailabilityStatusSerializer::class)
     val availability: AvailabilityStatus = AvailabilityStatus.AVAILABLE,
     @SerialName("available_from") val availableFrom: String? = null,
@@ -399,8 +404,32 @@ data class AdminRoleRow(
 
 @Serializable
 data class AdminVehicleRow(
+    val id: String = "",
     @SerialName("user_id") val userId: String,
+    @SerialName("plate_number") val plateNumber: String = "",
+    val model: String = "",
     val archived: Boolean? = null,
+)
+
+@Serializable
+data class AdminAddressRow(
+    @SerialName("user_id") val userId: String,
+    val kind: String = "",
+    val label: String? = null,
+    @SerialName("formatted_address") val formattedAddress: String = "",
+)
+
+data class AdminVehicleItem(
+    val id: String,
+    val plateNumber: String,
+    val model: String,
+    val archived: Boolean,
+)
+
+data class AdminAddressItem(
+    val kind: String,
+    val label: String?,
+    val formattedAddress: String,
 )
 
 data class AdminUserListItem(
@@ -410,14 +439,43 @@ data class AdminUserListItem(
     val callsign: String,
     val phone: String?,
     val active: Boolean,
+    val invitePending: Boolean = false,
+    val otpLoginEnabled: Boolean = false,
+    val otpUsersPageEnabled: Boolean = false,
     val availability: AvailabilityStatus,
     val availableFrom: String?,
     val volunteerStatus: String?,
     val roles: List<String>,
-    val vehicleCount: Int,
+    val vehicles: List<AdminVehicleItem> = emptyList(),
+    val addresses: List<AdminAddressItem> = emptyList(),
 ) {
+    val vehicleCount: Int
+        get() = vehicles.count { !it.archived }
+
     val searchFields: ContactSearchFields
         get() = ContactSearchFields(fullName, callsign, email, phone)
+
+    val searchInput: AdminUserSearchInput
+        get() = AdminUserSearchInput(
+            fullName = fullName,
+            callsign = callsign,
+            email = email,
+            volunteerStatus = volunteerStatus,
+            availability = availability,
+            availableFrom = availableFrom,
+        )
+
+    val sortKey: AdminUserSortKey
+        get() = AdminUserSortKey(fullName = fullName, active = active, invitePending = invitePending)
+}
+
+data class AdminUsersActionResult(
+    val error: String? = null,
+    val message: String? = null,
+    val userId: String? = null,
+    val actionLink: String? = null,
+) {
+    val ok: Boolean get() = error == null
 }
 
 @Serializable
@@ -498,6 +556,12 @@ data class BroadcastSendResponse(
 }
 
 @Serializable
+data class AdminInviteVehicle(
+    @SerialName("plate_number") val plateNumber: String,
+    val model: String,
+)
+
+@Serializable
 data class AdminInviteCall(
     val action: String = "invite",
     @SerialName("full_name") val fullName: String,
@@ -506,6 +570,7 @@ data class AdminInviteCall(
     val phone: String? = null,
     @SerialName("volunteer_status") val volunteerStatus: String,
     val roles: List<String>,
+    val vehicles: List<AdminInviteVehicle> = emptyList(),
 )
 
 @Serializable
@@ -515,11 +580,85 @@ data class AdminSetActiveCall(
 )
 
 @Serializable
+data class AdminInviteLinkCall(
+    val action: String,
+    @SerialName("user_id") val userId: String,
+    @SerialName("send_email") val sendEmail: Boolean,
+)
+
+@Serializable
 data class AdminUsersResponse(
     val ok: Boolean? = null,
     val error: String? = null,
     val message: String? = null,
     @SerialName("user_id") val userId: String? = null,
+    @SerialName("action_link") val actionLink: String? = null,
+)
+
+@Serializable
+data class AdminProfileSaveRow(
+    @SerialName("full_name") val fullName: String,
+    val callsign: String,
+    val phone: String?,
+    @SerialName("volunteer_status") val volunteerStatus: String,
+    @SerialName("updated_at") val updatedAt: String,
+)
+
+@Serializable
+data class UserRoleWrite(
+    @SerialName("user_id") val userId: String,
+    val role: String,
+)
+
+@Serializable
+data class AdminVehicleInsert(
+    @SerialName("user_id") val userId: String,
+    @SerialName("plate_number") val plateNumber: String,
+    val model: String,
+    val archived: Boolean = false,
+)
+
+@Serializable
+data class AdminVehicleArchivedWrite(
+    val archived: Boolean,
+)
+
+@Serializable
+data class AdminVehiclePlateWrite(
+    @SerialName("plate_number") val plateNumber: String,
+    val model: String,
+    val archived: Boolean = false,
+)
+
+@Serializable
+data class VolunteerStatusWrite(
+    @SerialName("volunteer_status") val volunteerStatus: String,
+    @SerialName("updated_at") val updatedAt: String,
+)
+
+@Serializable
+data class SetOtpLoginCall(
+    val action: String = "set_otp_flags",
+    @SerialName("user_id") val userId: String,
+    @SerialName("otp_login_enabled") val otpLoginEnabled: Boolean,
+)
+
+@Serializable
+data class SetOtpUsersPageCall(
+    val action: String = "set_otp_flags",
+    @SerialName("user_id") val userId: String,
+    @SerialName("otp_users_page_enabled") val otpUsersPageEnabled: Boolean,
+)
+
+@Serializable
+data class PhoneOtpResponse(
+    val error: String? = null,
+    val message: String? = null,
+)
+
+@Serializable
+data class VehiclePlateRef(
+    @SerialName("vehicle_plate") val vehiclePlate: String? = null,
 )
 
 @Serializable

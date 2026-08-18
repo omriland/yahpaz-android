@@ -25,6 +25,17 @@ fun plateNumberForSave(raw: String?): String? {
     return formatPlate(trimmed)
 }
 
+/** Returns duplicated plate digits, or null when every non-empty plate is unique. */
+fun findDuplicatePlate(plates: List<String>): String? {
+    val seen = mutableSetOf<String>()
+    for (plate in plates) {
+        val digits = plateDigits(plate)
+        if (digits.isEmpty()) continue
+        if (!seen.add(digits)) return digits
+    }
+    return null
+}
+
 fun formatDate(value: String): String {
     val ymd = value.take(10)
     val parts = ymd.split("-")

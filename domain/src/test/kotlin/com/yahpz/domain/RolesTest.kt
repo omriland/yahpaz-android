@@ -55,4 +55,55 @@ class RolesTest {
         assertEquals(TOOLS_TAB_LEAD_LABEL, toolsTabLabel(listOf("shift_lead")))
         assertEquals(TOOLS_TAB_ADMIN_LABEL, toolsTabLabel(listOf("admin")))
     }
+
+    @Test
+    fun `implied assignable roles include every role below the selected one`() {
+        assertEquals(
+            listOf("admin", "shift_lead", "responder"),
+            impliedAssignableRoles(AppRole.ADMIN),
+        )
+        assertEquals(listOf("shift_lead", "responder"), impliedAssignableRoles(AppRole.SHIFT_LEAD))
+        assertEquals(listOf("responder"), impliedAssignableRoles(AppRole.RESPONDER))
+    }
+
+    @Test
+    fun `lower assignable roles lock when a higher one is selected`() {
+        assertTrue(isAssignableRoleLocked(listOf("admin"), AppRole.SHIFT_LEAD))
+        assertTrue(isAssignableRoleLocked(listOf("admin"), AppRole.RESPONDER))
+        assertFalse(isAssignableRoleLocked(listOf("admin", "shift_lead", "responder"), AppRole.ADMIN))
+        assertFalse(isAssignableRoleLocked(listOf("responder"), AppRole.RESPONDER))
+    }
+
+    @Test
+    fun `toggle assignable role implies the roles beneath it`() {
+        assertEquals(
+            listOf("shift_lead", "responder"),
+            toggleAssignableRole(listOf("responder"), AppRole.SHIFT_LEAD, checked = true),
+        )
+        assertEquals(
+            listOf("admin", "shift_lead", "responder"),
+            toggleAssignableRole(listOf("responder"), AppRole.ADMIN, checked = true),
+        )
+        assertEquals(
+            listOf("shift_lead", "responder"),
+            toggleAssignableRole(
+                listOf("admin", "shift_lead", "responder"),
+                AppRole.ADMIN,
+                checked = false,
+            ),
+        )
+        assertEquals(
+            listOf("responder"),
+            toggleAssignableRole(listOf("shift_lead", "responder"), AppRole.SHIFT_LEAD, checked = false),
+        )
+    }
+
+    @Test
+    fun `withImpliedAssignableRoles fills from the highest assigned role`() {
+        assertEquals(
+            listOf("admin", "shift_lead", "responder"),
+            withImpliedAssignableRoles(listOf("admin")),
+        )
+        assertEquals(emptyList<String>(), withImpliedAssignableRoles(listOf("super_admin")))
+    }
 }

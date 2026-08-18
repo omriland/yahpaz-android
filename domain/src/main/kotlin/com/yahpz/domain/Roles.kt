@@ -55,3 +55,33 @@ const val TOOLS_TAB_ADMIN_LABEL = "ניהול"
 
 fun toolsTabLabel(roles: List<String>): String =
     if (isAdmin(roles)) TOOLS_TAB_ADMIN_LABEL else TOOLS_TAB_LEAD_LABEL
+
+private val ASSIGNABLE_RANK = listOf(AppRole.RESPONDER, AppRole.SHIFT_LEAD, AppRole.ADMIN)
+
+fun impliedAssignableRoles(role: AppRole): List<String> {
+    val index = ASSIGNABLE_RANK.indexOf(role)
+    if (index < 0) return emptyList()
+    return ASSIGNABLE_RANK.filterIndexed { i, _ -> i <= index }.reversed().map { it.raw }
+}
+
+fun withImpliedAssignableRoles(roles: List<String>): List<String> {
+    val highest = ASSIGNABLE_RANK.lastOrNull { it.raw in roles } ?: return emptyList()
+    return impliedAssignableRoles(highest)
+}
+
+fun isAssignableRoleLocked(roles: List<String>, role: AppRole): Boolean {
+    val roleIndex = ASSIGNABLE_RANK.indexOf(role)
+    if (roleIndex < 0) return false
+    return ASSIGNABLE_RANK.withIndex().any { (index, candidate) ->
+        index > roleIndex && candidate.raw in roles
+    }
+}
+
+fun toggleAssignableRole(current: List<String>, role: AppRole, checked: Boolean): List<String> {
+    if (checked) {
+        val next = (withImpliedAssignableRoles(current) + impliedAssignableRoles(role)).toSet()
+        val highest = ASSIGNABLE_RANK.lastOrNull { it.raw in next } ?: role
+        return impliedAssignableRoles(highest)
+    }
+    return withImpliedAssignableRoles(current).filterNot { it == role.raw }
+}

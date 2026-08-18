@@ -24,6 +24,12 @@ const val AVAILABILITY_DATE_ERROR = "יש לבחור תאריך עתידי"
 fun availabilityLabel(status: AvailabilityStatus): String =
     AVAILABILITY_LABELS[status] ?: AVAILABILITY_LABELS.getValue(AvailabilityStatus.AVAILABLE)
 
+fun availabilitySearchLabel(
+    status: AvailabilityStatus,
+    availableFrom: String?,
+    today: String,
+): String = availabilityLabel(effectiveAvailability(status, availableFrom, today))
+
 fun israelToday(now: ZonedDateTime = ZonedDateTime.now(ZoneId.of("Asia/Jerusalem"))): String =
     now.format(DateTimeFormatter.ISO_LOCAL_DATE)
 

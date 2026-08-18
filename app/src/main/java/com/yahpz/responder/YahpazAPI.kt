@@ -24,9 +24,21 @@ import com.yahpz.domain.FuelRefundCreditInput
 import com.yahpz.domain.FuelRefundParticipationInput
 import com.yahpz.domain.FuelRefundProfileInput
 import com.yahpz.domain.FuelRefundRow
+import com.yahpz.domain.COPY_INVITE_FAILED
+import com.yahpz.domain.DELETE_USER_FAILED
+import com.yahpz.domain.DUPLICATE_PLATE_ERROR
 import com.yahpz.domain.INVITE_IDENTITY_ERROR
 import com.yahpz.domain.INVITE_SAVE_FAILED
 import com.yahpz.domain.InviteDraft
+import com.yahpz.domain.OTP_SET_FAILED
+import com.yahpz.domain.RESEND_INVITE_FAILED
+import com.yahpz.domain.SAVE_ROLES_FAILED
+import com.yahpz.domain.SAVE_USER_FAILED
+import com.yahpz.domain.SAVE_VEHICLES_FAILED
+import com.yahpz.domain.SET_ACTIVE_FAILED
+import com.yahpz.domain.VEHICLE_ARCHIVE_FAILED
+import com.yahpz.domain.VEHICLE_DELETE_FAILED
+import com.yahpz.domain.VEHICLE_UNARCHIVE_FAILED
 import com.yahpz.domain.KM_DISCREPANCY_ALIGNED
 import com.yahpz.domain.KM_DISCREPANCY_APPLY_FAILED
 import com.yahpz.domain.LeadKmReplacement
@@ -75,8 +87,17 @@ import com.yahpz.domain.normalizeReturnDate
 import com.yahpz.domain.openDocReportRows
 import com.yahpz.domain.parsedOdometer
 import com.yahpz.domain.passwordStrengthError
+import com.yahpz.domain.compareAdminUsers
+import com.yahpz.domain.findDuplicatePlate
+import com.yahpz.domain.compareAdminUsers
+import com.yahpz.domain.findDuplicatePlate
+import com.yahpz.domain.syncUserRolesDiff
 import com.yahpz.domain.phoneDigits
 import com.yahpz.domain.ProfileVehicle
+import com.yahpz.domain.plateDigits
+import com.yahpz.domain.plateNumberForSave
+import com.yahpz.domain.syncUserRolesDiff
+import com.yahpz.domain.validateInviteDraft
 import com.yahpz.domain.quarterLocalDateRange
 import com.yahpz.domain.quarterMonthLabels
 import com.yahpz.domain.resolveLeadKmReplacement
@@ -353,7 +374,8 @@ object YahpazAPI {
     suspend fun fetchAdminUsers(): List<AdminUserListItem> {
         val profiles = client.from("profiles").select(
             Columns.raw(
-                "id, full_name, email, callsign, phone, active, availability, available_from, volunteer_status",
+                "id, full_name, email, callsign, phone, active, invite_pending, " +
+                    "otp_login_enabled, otp_users_page_enabled, availability, available_from, volunteer_status",
             ),
         ) {
             order("full_name", Order.ASCENDING)
@@ -361,11 +383,12 @@ object YahpazAPI {
         val roles = client.from("user_roles").select(Columns.raw("user_id, role"))
             .decodeList<AdminRoleRow>()
             .groupBy({ it.userId }, { it.role })
-        val vehicleCounts = client.from("vehicles").select(Columns.raw("user_id, archived"))
+        val vehiclesByUser = client.from("vehicles").select(Columns.raw("id, user_id, plate_number, model, archived"))
             .decodeList<AdminVehicleRow>()
-            .filter { it.archived != true }
-            .groupingBy { it.userId }
-            .eachCount()
+            .groupBy { it.userId }
+        val addressesByUser = client.from("user_addresses").select(
+            Columns.raw("user_id, kind, label, formatted_address"),
+        ).decodeList<AdminAddressRow>().groupBy { it.userId }
         return profiles.map { row ->
             AdminUserListItem(
                 id = row.id,
@@ -374,13 +397,30 @@ object YahpazAPI {
                 callsign = row.callsign,
                 phone = row.phone,
                 active = row.active,
+                invitePending = row.invitePending,
+                otpLoginEnabled = row.otpLoginEnabled,
+                otpUsersPageEnabled = row.otpUsersPageEnabled,
                 availability = row.availability,
                 availableFrom = row.availableFrom,
                 volunteerStatus = row.volunteerStatus,
                 roles = roles[row.id].orEmpty(),
-                vehicleCount = vehicleCounts[row.id] ?: 0,
+                vehicles = vehiclesByUser[row.id].orEmpty().map {
+                    AdminVehicleItem(
+                        id = it.id,
+                        plateNumber = it.plateNumber,
+                        model = it.model,
+                        archived = it.archived == true,
+                    )
+                },
+                addresses = addressesByUser[row.id].orEmpty().map {
+                    AdminAddressItem(
+                        kind = it.kind,
+                        label = it.label,
+                        formattedAddress = it.formattedAddress,
+                    )
+                },
             )
-        }
+        }.sortedWith { left, right -> compareAdminUsers(left.sortKey, right.sortKey) }
     }
 
     suspend fun fetchOpenDocumentation(from: String, to: String): List<OpenDocRow> {
@@ -527,9 +567,11 @@ object YahpazAPI {
         }
     }
 
-    suspend fun inviteAdminUser(draft: InviteDraft): String? {
+    suspend fun inviteAdminUser(draft: InviteDraft): AdminUsersActionResult {
         val errors = validateInviteDraft(draft)
-        if (!errors.isEmpty) return errors.formMessage ?: INVITE_IDENTITY_ERROR
+        if (!errors.isEmpty) {
+            return AdminUsersActionResult(error = errors.formMessage ?: INVITE_IDENTITY_ERROR)
+        }
         val call = AdminInviteCall(
             fullName = draft.fullName.trim(),
             email = draft.email.trim().lowercase(),
@@ -537,20 +579,266 @@ object YahpazAPI {
             phone = phoneDigits(draft.phone).ifEmpty { null },
             volunteerStatus = draft.volunteerStatus.raw,
             roles = draft.roles.distinct(),
+            vehicles = draft.vehicles
+                .filter { !it.archived && it.plateNumber.isNotBlank() && it.model.isNotBlank() }
+                .map {
+                    AdminInviteVehicle(
+                        plateNumber = plateNumberForSave(it.plateNumber) ?: it.plateNumber.trim(),
+                        model = it.model.trim(),
+                    )
+                },
         )
-        return invokeAdminUsers(call, INVITE_SAVE_FAILED)
+        val result = invokeAdminUsersAction(call, INVITE_SAVE_FAILED)
+        if (result.ok && result.userId != null) {
+            runCatching {
+                client.from("profiles").update(
+                    VolunteerStatusWrite(
+                        volunteerStatus = draft.volunteerStatus.raw,
+                        updatedAt = Instant.now().toString(),
+                    ),
+                ) {
+                    filter { eq("id", result.userId) }
+                }
+            }
+        }
+        return result
     }
 
-    suspend fun setAdminUserActive(userId: String, active: Boolean): String? = invokeAdminUsers(
-        AdminSetActiveCall(action = if (active) "reactivate" else "deactivate", userId = userId),
-        SET_ACTIVE_FAILED,
-    )
+    suspend fun setAdminUserActive(userId: String, active: Boolean): String? =
+        invokeAdminUsersAction(
+            AdminSetActiveCall(action = if (active) "reactivate" else "deactivate", userId = userId),
+            SET_ACTIVE_FAILED,
+        ).error
 
-    private suspend inline fun <reified T : Any> invokeAdminUsers(body: T, fallback: String): String? {
-        val response = invokeEdge<T, AdminUsersResponse>("admin-users", body, fallback)
+    suspend fun deleteAdminUser(userId: String): String? =
+        invokeAdminUsersAction(
+            AdminSetActiveCall(action = "delete", userId = userId),
+            DELETE_USER_FAILED,
+        ).error
+
+    suspend fun resendAdminInvite(userId: String): AdminUsersActionResult =
+        invokeAdminUsersAction(
+            AdminInviteLinkCall(action = "resend_invite", userId = userId, sendEmail = true),
+            RESEND_INVITE_FAILED,
+        )
+
+    suspend fun copyAdminInviteLink(userId: String): AdminUsersActionResult =
+        invokeAdminUsersAction(
+            AdminInviteLinkCall(action = "copy_invite_link", userId = userId, sendEmail = false),
+            COPY_INVITE_FAILED,
+        )
+
+    suspend fun setAdminUserOtp(userId: String, kind: String, enabled: Boolean): String? {
+        val response = if (kind == "users_page") {
+            invokeEdge<SetOtpUsersPageCall, PhoneOtpResponse>(
+                "phone-otp",
+                SetOtpUsersPageCall(userId = userId, otpUsersPageEnabled = enabled),
+                OTP_SET_FAILED,
+            )
+        } else {
+            invokeEdge<SetOtpLoginCall, PhoneOtpResponse>(
+                "phone-otp",
+                SetOtpLoginCall(userId = userId, otpLoginEnabled = enabled),
+                OTP_SET_FAILED,
+            )
+        }
         return response.fold(
             onSuccess = { it.error },
-            onFailure = { it.message ?: fallback },
+            onFailure = { it.message ?: OTP_SET_FAILED },
+        )
+    }
+
+    /** Profiles update + role/vehicle sync. Addresses stay untouched (no Places picker). */
+    suspend fun saveAdminUser(draft: InviteDraft): String? {
+        val userId = draft.id ?: return SAVE_USER_FAILED
+        return try {
+            client.from("profiles").update(
+                AdminProfileSaveRow(
+                    fullName = draft.fullName.trim(),
+                    callsign = draft.callsign.trim(),
+                    phone = phoneDigits(draft.phone).ifEmpty { null },
+                    volunteerStatus = draft.volunteerStatus.raw,
+                    updatedAt = Instant.now().toString(),
+                ),
+            ) {
+                filter { eq("id", userId) }
+            }
+            syncUserRoles(userId, draft.roles)?.let { return it }
+            syncUserVehicles(userId, draft.vehicles)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            SAVE_USER_FAILED
+        }
+    }
+
+    suspend fun deleteAdminVehicle(vehicleId: String): String? = try {
+        client.from("vehicles").delete { filter { eq("id", vehicleId) } }
+        null
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        VEHICLE_DELETE_FAILED
+    }
+
+    suspend fun archiveAdminVehicle(vehicleId: String): String? = try {
+        client.from("vehicles").update(AdminVehicleArchivedWrite(archived = true)) {
+            filter { eq("id", vehicleId) }
+        }
+        null
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        VEHICLE_ARCHIVE_FAILED
+    }
+
+    suspend fun unarchiveAdminVehicle(vehicleId: String): String? = try {
+        client.from("vehicles").update(AdminVehicleArchivedWrite(archived = false)) {
+            filter { eq("id", vehicleId) }
+        }
+        null
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        VEHICLE_UNARCHIVE_FAILED
+    }
+
+    suspend fun isVehicleAttachedToEvents(userId: String, vehicleId: String, plateNumber: String): Boolean {
+        val digits = plateDigits(plateNumber)
+        val participations = client.from("event_responders").select(Columns.raw("vehicle_plate")) {
+            filter { eq("responder_id", userId) }
+        }.decodeList<VehiclePlateRef>()
+        if (digits.isNotEmpty() && participations.any { plateDigits(it.vehiclePlate.orEmpty()) == digits }) {
+            return true
+        }
+        return try {
+            client.from("shifts").select(Columns.raw("id")) {
+                filter { eq("personal_vehicle_id", vehicleId) }
+                limit(1)
+            }.decodeList<IdRow>().isNotEmpty()
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private suspend fun syncUserRoles(userId: String, nextRoles: List<String>): String? {
+        val existing = try {
+            client.from("user_roles").select(Columns.raw("role")) {
+                filter { eq("user_id", userId) }
+            }.decodeList<RoleRow>().map { it.role }
+        } catch (_: Exception) {
+            return SAVE_ROLES_FAILED
+        }
+        val diff = syncUserRolesDiff(existing, nextRoles)
+        try {
+            if (diff.toRemove.isNotEmpty()) {
+                client.from("user_roles").delete {
+                    filter {
+                        eq("user_id", userId)
+                        isIn("role", diff.toRemove)
+                    }
+                }
+            }
+            if (diff.toAdd.isNotEmpty()) {
+                client.from("user_roles").insert(
+                    diff.toAdd.map { UserRoleWrite(userId = userId, role = it) },
+                )
+            }
+        } catch (_: Exception) {
+            return SAVE_ROLES_FAILED
+        }
+        return null
+    }
+
+    private suspend fun syncUserVehicles(
+        userId: String,
+        nextVehicles: List<com.yahpz.domain.AdminVehicleDraft>,
+    ): String? {
+        if (findDuplicatePlate(nextVehicles.map { it.plateNumber }) != null) {
+            return DUPLICATE_PLATE_ERROR
+        }
+        val existing = try {
+            client.from("vehicles").select(Columns.raw("id, user_id, plate_number, model, archived")) {
+                filter { eq("user_id", userId) }
+            }.decodeList<AdminVehicleRow>()
+        } catch (_: Exception) {
+            return SAVE_VEHICLES_FAILED
+        }
+        val nextWithIds = nextVehicles.filter { !it.id.isNullOrEmpty() }
+        val nextIds = nextWithIds.mapNotNull { it.id }.toSet()
+        try {
+            for (row in existing) {
+                if (row.id !in nextIds) {
+                    client.from("vehicles").delete { filter { eq("id", row.id) } }
+                }
+            }
+            for (vehicle in nextWithIds) {
+                val id = vehicle.id ?: continue
+                if (vehicle.archived) {
+                    client.from("vehicles").update(AdminVehicleArchivedWrite(archived = true)) {
+                        filter {
+                            eq("id", id)
+                            eq("user_id", userId)
+                        }
+                    }
+                    continue
+                }
+                val plate = plateNumberForSave(vehicle.plateNumber) ?: vehicle.plateNumber.trim()
+                val model = vehicle.model.trim()
+                if (plate.isEmpty() || model.isEmpty()) continue
+                client.from("vehicles").update(
+                    AdminVehiclePlateWrite(plateNumber = plate, model = model, archived = false),
+                ) {
+                    filter {
+                        eq("id", id)
+                        eq("user_id", userId)
+                    }
+                }
+            }
+            val toInsert = nextVehicles.filter {
+                it.id.isNullOrEmpty() && it.plateNumber.isNotBlank() && it.model.isNotBlank()
+            }
+            if (toInsert.isNotEmpty()) {
+                client.from("vehicles").insert(
+                    toInsert.map {
+                        AdminVehicleInsert(
+                            userId = userId,
+                            plateNumber = plateNumberForSave(it.plateNumber) ?: it.plateNumber.trim(),
+                            model = it.model.trim(),
+                        )
+                    },
+                )
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            return if (isUniqueViolation(error.message)) DUPLICATE_PLATE_ERROR else SAVE_VEHICLES_FAILED
+        }
+        return null
+    }
+
+    private fun isUniqueViolation(message: String?): Boolean {
+        val raw = message.orEmpty()
+        return raw.contains("23505") ||
+            raw.contains("duplicate", ignoreCase = true) ||
+            raw.contains("unique", ignoreCase = true)
+    }
+
+    private suspend inline fun <reified T : Any> invokeAdminUsersAction(
+        body: T,
+        fallback: String,
+    ): AdminUsersActionResult {
+        val response = invokeEdge<T, AdminUsersResponse>("admin-users", body, fallback)
+        return response.fold(
+            onSuccess = { payload ->
+                if (payload.error != null) AdminUsersActionResult(error = payload.error)
+                else AdminUsersActionResult(
+                    message = payload.message,
+                    userId = payload.userId,
+                    actionLink = payload.actionLink,
+                )
+            },
+            onFailure = { AdminUsersActionResult(error = it.message ?: fallback) },
         )
     }
 

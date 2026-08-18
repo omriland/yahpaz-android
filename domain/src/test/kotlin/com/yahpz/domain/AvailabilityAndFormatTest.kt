@@ -88,6 +88,21 @@ class AvailabilityAndFormatTest {
     }
 
     @Test
+    fun findDuplicatePlateReturnsTheRepeatedDigits() {
+        assertEquals("1234567", findDuplicatePlate(listOf("12-345-67", "1234567")))
+        assertNull(findDuplicatePlate(listOf("1111111", "2222222")))
+        assertNull(findDuplicatePlate(listOf("", "abc")))
+    }
+
+    @Test
+    fun availabilitySearchLabelFollowsEffectiveStatus() {
+        assertEquals("זמין", availabilitySearchLabel(AvailabilityStatus.AVAILABLE, null, "2026-08-17"))
+        assertEquals("לא זמין", availabilitySearchLabel(AvailabilityStatus.UNAVAILABLE, null, "2026-08-17"))
+        assertEquals("לא זמין", availabilitySearchLabel(AvailabilityStatus.UNAVAILABLE, "2026-08-20", "2026-08-17"))
+        assertEquals("זמין", availabilitySearchLabel(AvailabilityStatus.UNAVAILABLE, "2026-08-17", "2026-08-17"))
+    }
+
+    @Test
     fun passwordStrengthRequiresLengthUppercaseAndSymbol() {
         assertTrue(passwordStrengthError("short") != null)
         assertTrue(passwordStrengthError("longenough1") != null)
