@@ -4,6 +4,9 @@ data class TreatedPlate(
     val plateNumber: String,
     val model: String? = null,
     val color: String? = null,
+    val leftWhere: String? = null,
+    val manufacturer: String? = null,
+    val logoSlug: String? = null,
 )
 
 const val TREATED_PLATE_LENGTH_ERROR = "יש להזין 7 או 8 ספרות."
@@ -35,7 +38,7 @@ fun commitTreatedPlate(
     if (plates.any { plateDigits(it.plateNumber) == digits }) {
         return CommitTreatedPlateResult.Error(TREATED_PLATE_DUPLICATE_ERROR)
     }
-    val plate = TreatedPlate(plateNumber = formatPlate(digits), model = null, color = null)
+    val plate = TreatedPlate(plateNumber = formatPlate(digits))
     return CommitTreatedPlateResult.Ok(plate = plate, plates = plates + plate)
 }
 
@@ -50,10 +53,43 @@ fun removeTreatedPlate(plates: List<TreatedPlate>, plateDigitsKey: String): List
     return plates.filter { plateDigits(it.plateNumber) != key }
 }
 
+fun setTreatedPlateLeftWhere(
+    plates: List<TreatedPlate>,
+    plateDigitsKey: String,
+    leftWhere: String,
+): List<TreatedPlate> {
+    val key = plateDigits(plateDigitsKey)
+    return plates.map { row ->
+        if (plateDigits(row.plateNumber) != key) row
+        else row.copy(leftWhere = leftWhere.ifEmpty { null })
+    }
+}
+
+fun applyTreatedPlateLookup(
+    plates: List<TreatedPlate>,
+    plateDigitsKey: String,
+    hit: PlateLookupHit,
+): List<TreatedPlate> {
+    val key = plateDigits(plateDigitsKey)
+    val manufacturer = hit.manufacturer?.trim()?.takeIf { it.isNotEmpty() }
+    return plates.map { row ->
+        if (plateDigits(row.plateNumber) != key) row
+        else row.copy(
+            model = hit.model,
+            color = hit.color,
+            manufacturer = manufacturer,
+            logoSlug = resolveCarLogoSlug(manufacturer),
+        )
+    }
+}
+
 data class TreatedPlateRowInput(
     val plateNumber: String? = null,
     val model: String? = null,
     val color: String? = null,
+    val leftWhere: String? = null,
+    val manufacturer: String? = null,
+    val logoSlug: String? = null,
     val sortOrder: Int? = null,
 )
 
@@ -64,6 +100,17 @@ fun mapTreatedPlateRows(rows: List<TreatedPlateRowInput>?): List<TreatedPlate> {
         .mapNotNull { row ->
             val plateNumber = row.plateNumber?.trim().orEmpty()
             if (plateNumber.isEmpty()) null
-            else TreatedPlate(plateNumber = plateNumber, model = row.model, color = row.color)
+            else {
+                val manufacturer = row.manufacturer?.trim()?.takeIf { it.isNotEmpty() }
+                val storedSlug = row.logoSlug?.trim()?.takeIf { it.isNotEmpty() }
+                TreatedPlate(
+                    plateNumber = plateNumber,
+                    model = row.model,
+                    color = row.color,
+                    leftWhere = row.leftWhere?.trim()?.takeIf { it.isNotEmpty() },
+                    manufacturer = manufacturer,
+                    logoSlug = storedSlug ?: resolveCarLogoSlug(manufacturer),
+                )
+            }
         }
 }

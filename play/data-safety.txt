@@ -1,0 +1,43 @@
+Play Console → App content → Data safety.
+
+This app is login-walled for authorized unit members. Data goes to the Yahpaz backend (Supabase) as a service provider, not to advertisers.
+
+Overview
+- Collects data: Yes
+- Encrypts in transit: Yes (HTTPS)
+- Users can request deletion: Yes (contact omriland@gmail.com / מדיניות פרטיות)
+- Independent security review: No
+- Sold: No
+- Shared with third parties: No (backend is a service provider processing on our behalf)
+
+Data types collected — App functionality, not optional unless noted
+
+Location
+- Approximate location: Yes, collected, not shared
+- Precise location: Yes, collected, not shared
+- Purpose: App functionality (live location share during an event, only while that screen is open)
+- Ephemeral: No (pings are stored for the event)
+- Required: No — the rest of the app works without granting location. Location is requested only for live track.
+
+Personal info
+- Name: Yes (full name, callsign)
+- Email address: Yes (account)
+- Phone number: Yes
+- Address: Yes (home/work addresses the user saves)
+- User IDs: Yes (account id)
+- Other: vehicle plate and model
+
+App activity
+- App interactions / in-app search: No need to declare marketing analytics. There is no third-party marketing SDK.
+- Other user-generated content: event reports, availability, shift records — App functionality
+
+App info and performance
+- Crash logs / diagnostics: No third-party crash SDK in this build. Do not declare unless you later add one.
+
+Device or other IDs
+- Device or other IDs: No advertising ID. Do not declare unless you add Firebase Analytics / Ads.
+
+Photos / files / contacts / financial / health: No
+
+Location declarations to match the APK
+Do NOT claim background location. The APK only uses ACCESS_FINE_LOCATION and ACCESS_COARSE_LOCATION while the live-track screen is open.

@@ -25,33 +25,35 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.yahpz.domain.AvailabilityStatus
 import com.yahpz.domain.availabilityLabel
 import com.yahpz.domain.availabilityReturnCaption
 import com.yahpz.domain.effectiveAvailability
 import com.yahpz.domain.israelToday
+import com.yahpz.domain.normalizeReturnDate
+import com.yahpz.domain.returnDateToInput
 import kotlinx.coroutines.launch
 
 @Composable
 fun AvailabilityScreen(app: AppModel, ui: AppUiState) {
     val scope = rememberCoroutineScope()
     var status by remember { mutableStateOf(ui.profile?.availability ?: AvailabilityStatus.AVAILABLE) }
-    var returnDate by remember { mutableStateOf(ui.profile?.availableFrom.orEmpty()) }
+    var returnDate by remember { mutableStateOf(returnDateToInput(ui.profile?.availableFrom.orEmpty())) }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
 
     LaunchedEffect(ui.profile?.id, ui.profile?.availability, ui.profile?.availableFrom) {
         ui.profile?.let {
             status = it.availability
-            returnDate = it.availableFrom.orEmpty()
+            returnDate = returnDateToInput(it.availableFrom.orEmpty())
         }
     }
 
+    val isoReturn = if (returnDate.isEmpty()) null else normalizeReturnDate(returnDate)
     val effective = effectiveAvailability(
         status,
-        returnDate.ifEmpty { null },
+        isoReturn,
         israelToday(),
     )
 
@@ -77,7 +79,7 @@ fun AvailabilityScreen(app: AppModel, ui: AppUiState) {
                 )
                 Text("זמינות: ${availabilityLabel(effective)}", style = TypeScale.bodyStrong, color = FieldTheme.textPrimary)
                 if (effective == AvailabilityStatus.UNAVAILABLE) {
-                    availabilityReturnCaption(returnDate.ifEmpty { null })?.let {
+                    availabilityReturnCaption(isoReturn)?.let {
                         Text(it, style = TypeScale.caption, color = FieldTheme.textMuted)
                     }
                 }
@@ -96,12 +98,10 @@ fun AvailabilityScreen(app: AppModel, ui: AppUiState) {
             ) { Text("לא זמין") }
         }
         if (status == AvailabilityStatus.UNAVAILABLE) {
-            FormField(
+            ReturnDateField(
                 label = "תאריך חזרה (לא חובה)",
                 value = returnDate,
                 onValueChange = { returnDate = it },
-                keyboardType = KeyboardType.Ascii,
-                mono = true,
             )
             Text("בחרו תאריך מהמחר או השאירו ריק.", style = TypeScale.caption, color = FieldTheme.textMuted)
         }

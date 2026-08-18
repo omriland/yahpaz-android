@@ -17,6 +17,7 @@ enum class AppTab { INBOX, SHIFTS, AVAILABILITY, PROFILE }
 
 data class AppUiState(
     val booting: Boolean = true,
+    val forceUpdate: ForceUpdateRequired? = null,
     val userId: String? = null,
     val profile: ProfileRecord? = null,
     val roles: List<String> = emptyList(),
@@ -32,6 +33,8 @@ data class AppUiState(
     val trackToken: String? = null,
     val mustChangePassword: Boolean = false,
     val fillEventId: String? = null,
+    val signingIn: Boolean = false,
+    val signInError: String? = null,
 ) {
     val isSignedIn: Boolean get() = userId != null && profile != null
 }
@@ -44,13 +47,18 @@ class AppModel : ViewModel() {
     fun bootstrap() {
         viewModelScope.launch {
             _state.update { it.copy(booting = true) }
+            val forceUpdate = checkForceUpdate(BuildConfig.VERSION_CODE)
+            if (forceUpdate != null) {
+                _state.update { it.copy(forceUpdate = forceUpdate, booting = false) }
+                return@launch
+            }
             val id = YahpazAPI.sessionUserId()
             if (id != null) {
                 runCatching { applySession(id) }
             } else {
                 _state.update { it.copy(userId = null, profile = null) }
             }
-            _state.update { it.copy(booting = false) }
+            _state.update { it.copy(forceUpdate = null, booting = false) }
         }
     }
 
@@ -76,12 +84,27 @@ class AppModel : ViewModel() {
         _state.update { it.copy(trackToken = null) }
     }
 
-    suspend fun signIn(email: String, password: String): String? {
+    fun submitSignIn(email: String, password: String) {
+        if (_state.value.signingIn) return
+        viewModelScope.launch {
+            _state.update { it.copy(signingIn = true, signInError = null) }
+            val error = signIn(email, password)
+            _state.update { it.copy(signingIn = false, signInError = error) }
+        }
+    }
+
+    fun clearSignInError() {
+        _state.update { it.copy(signInError = null) }
+    }
+
+    private suspend fun signIn(email: String, password: String): String? {
         YahpazAPI.signIn(email, password)?.let { return it }
         val id = YahpazAPI.sessionUserId() ?: return "הכניסה נכשלה. בדקו את החיבור ונסו שוב."
         return try {
             applySession(id)
             null
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Exception) {
             error.message ?: "הכניסה נכשלה. בדקו את החיבור ונסו שוב."
         }
@@ -193,6 +216,8 @@ class AppModel : ViewModel() {
             }
             reloadEvents()
             reloadShifts()
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Exception) {
             _state.update { it.copy(userId = null, profile = null) }
             throw error

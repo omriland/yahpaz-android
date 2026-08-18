@@ -69,6 +69,8 @@ data class ResponderSummary(
     @SerialName("responder_id") val responderId: String,
     @Serializable(with = ParticipationStatusSerializer::class)
     val status: ParticipationStatus,
+    @Serializable(with = OptionalPersonNameSerializer::class)
+    val profile: PersonName? = null,
 )
 
 @Serializable
@@ -149,6 +151,9 @@ data class EventTreatedPlateRow(
     @SerialName("plate_number") val plateNumber: String? = null,
     val model: String? = null,
     val color: String? = null,
+    @SerialName("left_where") val leftWhere: String? = null,
+    val manufacturer: String? = null,
+    @SerialName("logo_slug") val logoSlug: String? = null,
     @SerialName("sort_order")
     @Serializable(with = OptionalIntSerializer::class)
     val sortOrder: Int? = null,
@@ -158,6 +163,9 @@ data class EventTreatedPlateRow(
             plateNumber = plateNumber,
             model = model,
             color = color,
+            leftWhere = leftWhere,
+            manufacturer = manufacturer,
+            logoSlug = logoSlug,
             sortOrder = sortOrder,
         )
 }
@@ -168,6 +176,9 @@ data class TreatedPlateWrite(
     @SerialName("plate_number") val plateNumber: String,
     val model: String? = null,
     val color: String? = null,
+    @SerialName("left_where") val leftWhere: String? = null,
+    val manufacturer: String? = null,
+    @SerialName("logo_slug") val logoSlug: String? = null,
     @SerialName("sort_order") val sortOrder: Int,
 )
 

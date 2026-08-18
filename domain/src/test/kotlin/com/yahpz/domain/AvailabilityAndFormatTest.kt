@@ -27,7 +27,49 @@ class AvailabilityAndFormatTest {
     fun unavailableWithTodayOrPastIsRejected() {
         val write = buildAvailabilityWrite(AvailabilityStatus.UNAVAILABLE, "2026-08-17", "2026-08-17")
         val error = write as AvailabilityWrite.Error
-        assertEquals("בחרו תאריך מהמחר או השאירו ריק.", error.message)
+        assertEquals("יש לבחור תאריך עתידי", error.message)
+    }
+
+    @Test
+    fun returnDateTypingFillsDayThenMonthThenYear() {
+        assertEquals("30", formatReturnDateInput("30"))
+        assertEquals("30/12", formatReturnDateInput("3012"))
+        assertEquals("30/12/2026", formatReturnDateInput("30122026"))
+        assertEquals("30/12/2026", formatReturnDateInput("30/12/2026"))
+    }
+
+    @Test
+    fun storedIsoReturnDateShowsAsDayMonthYear() {
+        assertEquals("18/08/2026", returnDateToInput("2026-08-18"))
+        assertEquals("", returnDateToInput(""))
+    }
+
+    @Test
+    fun typedReturnDateParsesToIso() {
+        assertEquals("2026-12-30", parseReturnDateInput("30122026"))
+        assertEquals("2026-12-30", parseReturnDateInput("30/12/2026"))
+        assertNull(parseReturnDateInput("32/13/2026"))
+        assertNull(parseReturnDateInput("3012"))
+    }
+
+    @Test
+    fun unavailableWriteAcceptsTypedDayMonthYear() {
+        val write = buildAvailabilityWrite(AvailabilityStatus.UNAVAILABLE, "30/12/2026", "2026-08-17")
+        val ok = write as AvailabilityWrite.Ok
+        assertEquals("2026-12-30", ok.availableFrom)
+    }
+
+    @Test
+    fun returnDateKeystrokeTypesAndDeletesDigitsInOrder() {
+        var value = ""
+        "30122026".forEach { digit ->
+            value = applyReturnDateKeystroke(value, value + digit)
+        }
+        assertEquals("30/12/2026", value)
+        value = applyReturnDateKeystroke(value, "30/12/202")
+        assertEquals("30/12/202", value)
+        value = applyReturnDateKeystroke("30/12", "3012")
+        assertEquals("30/1", value)
     }
 
     @Test

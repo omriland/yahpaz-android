@@ -21,7 +21,7 @@ class FillValidationTest {
     }
 
     @Test
-    fun completeErrorsWhenTotalKmMissingWithoutShowingTheNumber() {
+    fun completeAcceptsOdometersWhenLeadTotalKmMissing() {
         val errors = validateResponderFillDraft(
             ResponderFillDraft(
                 vehiclePlate = "1234567",
@@ -34,8 +34,7 @@ class FillValidationTest {
             plates,
             null,
         )
-        assertEquals("האחמ״ש טרם הזין קילומטרים לאירוע. לא ניתן לסיים את הדיווח.", errors.odometerEnd)
-        assertFalse(errors.toString().contains("12"))
+        assertTrue(errors.isEmpty)
     }
 
     @Test

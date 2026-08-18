@@ -1,5 +1,6 @@
 package com.yahpz.responder
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -29,6 +30,7 @@ import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -40,11 +42,16 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import android.graphics.BitmapFactory
 import com.yahpz.domain.CommitTreatedPlateResult
 import com.yahpz.domain.EventStatus
 import com.yahpz.domain.FillMode
@@ -52,6 +59,7 @@ import com.yahpz.domain.ParticipationStatus
 import com.yahpz.domain.ResponderFillDraft
 import com.yahpz.domain.ResponderFillErrors
 import com.yahpz.domain.TreatedPlate
+import com.yahpz.domain.applyTreatedPlateLookup
 import com.yahpz.domain.commitTreatedPlate
 import com.yahpz.domain.digitsOnly
 import com.yahpz.domain.formatDate
@@ -60,6 +68,7 @@ import com.yahpz.domain.lookupPlate
 import com.yahpz.domain.participationStamp
 import com.yahpz.domain.plateDigits
 import com.yahpz.domain.removeTreatedPlate
+import com.yahpz.domain.setTreatedPlateLeftWhere
 import com.yahpz.domain.treatedPlateCaption
 import com.yahpz.domain.validateResponderFillDraft
 import kotlinx.coroutines.Dispatchers
@@ -104,10 +113,7 @@ fun FillScreen(eventId: String, app: AppModel) {
                     if (generation > plateLookupGeneration) return@launch
                     val key = plateDigits(plateNumber)
                     draft = draft.copy(
-                        treatedPlates = draft.treatedPlates.map { row ->
-                            if (plateDigits(row.plateNumber) != key) row
-                            else row.copy(model = hit.model, color = hit.color)
-                        },
+                        treatedPlates = applyTreatedPlateLookup(draft.treatedPlates, key, hit),
                     )
                 }
             }
@@ -257,6 +263,15 @@ fun FillScreen(eventId: String, app: AppModel) {
                                     treatedPlates = removeTreatedPlate(draft.treatedPlates, plateDigitsKey = key),
                                 )
                             },
+                            onLeftWhereChange = { key, value ->
+                                draft = draft.copy(
+                                    treatedPlates = setTreatedPlateLeftWhere(
+                                        draft.treatedPlates,
+                                        plateDigitsKey = key,
+                                        leftWhere = value,
+                                    ),
+                                )
+                            },
                         )
                         FormArea("הערות לטיפול", draft.treatmentNotes, { draft = draft.copy(treatmentNotes = it) }, minHeight = 80, enabled = !readOnly)
                         formError?.let { Text(it, style = TypeScale.body, color = FieldTheme.alert) }
@@ -334,13 +349,19 @@ private fun TreatedPlatesSection(
     onPendingChange: (String) -> Unit,
     onCommit: () -> Unit,
     onRemove: (String) -> Unit,
+    onLeftWhereChange: (String, String) -> Unit,
 ) {
     if (readOnly) {
         if (plates.isEmpty()) return
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("מספרי כלי רכב", style = TypeScale.label, color = FieldTheme.textSecondary)
             plates.forEach { row ->
-                TreatedPlateRow(row = row, removable = false, onRemove = {})
+                TreatedPlateRow(
+                    row = row,
+                    removable = false,
+                    onRemove = {},
+                    onLeftWhereChange = { _, _ -> },
+                )
             }
         }
         return
@@ -348,7 +369,12 @@ private fun TreatedPlatesSection(
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         plates.forEach { row ->
-            TreatedPlateRow(row = row, removable = true, onRemove = onRemove)
+            TreatedPlateRow(
+                row = row,
+                removable = true,
+                onRemove = onRemove,
+                onLeftWhereChange = onLeftWhereChange,
+            )
         }
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -365,13 +391,14 @@ private fun TreatedPlatesSection(
                     error = error,
                     imeAction = ImeAction.Done,
                     onSubmit = onCommit,
+                    placeholder = "xx-xxx-xx",
                     modifier = Modifier.weight(1f),
                 )
             }
             TextButton(
                 onClick = onCommit,
                 modifier = Modifier
-                    .heightIn(min = 44.dp)
+                    .height(44.dp)
                     .padding(bottom = if (error == null) 0.dp else 18.dp)
                     .border(1.dp, FieldTheme.strong, RoundedCornerShape(4.dp)),
             ) {
@@ -386,22 +413,43 @@ private fun TreatedPlateRow(
     row: TreatedPlate,
     removable: Boolean,
     onRemove: (String) -> Unit,
+    onLeftWhereChange: (String, String) -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        CarLogo(slug = row.logoSlug)
         LicensePlate(plate = row.plateNumber)
         treatedPlateCaption(model = row.model, color = row.color)?.let { caption ->
             Text(
                 text = caption,
-                style = TypeScale.caption,
+                style = TypeScale.body,
                 color = FieldTheme.textSecondary,
                 modifier = Modifier.weight(1f),
             )
         } ?: Spacer(Modifier.weight(1f))
         if (removable) {
+            TextField(
+                value = row.leftWhere.orEmpty(),
+                onValueChange = { onLeftWhereChange(row.plateNumber, it) },
+                singleLine = true,
+                textStyle = TypeScale.body,
+                placeholder = {
+                    Text("איפה הרכב הושאר", style = TypeScale.body, color = FieldTheme.textMuted)
+                },
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = FieldTheme.raised,
+                    unfocusedContainerColor = FieldTheme.raised,
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                ),
+                modifier = Modifier
+                    .width(140.dp)
+                    .heightIn(min = 36.dp)
+                    .border(1.dp, FieldTheme.strong, RoundedCornerShape(4.dp)),
+            )
             IconButton(
                 onClick = { onRemove(row.plateNumber) },
                 modifier = Modifier.size(44.dp),
@@ -413,6 +461,37 @@ private fun TreatedPlateRow(
                     modifier = Modifier.size(18.dp),
                 )
             }
+        } else {
+            row.leftWhere?.trim()?.takeIf { it.isNotEmpty() }?.let { left ->
+                Text(
+                    text = left,
+                    style = TypeScale.body,
+                    color = FieldTheme.textSecondary,
+                    modifier = Modifier.width(140.dp),
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun CarLogo(slug: String?) {
+    val context = LocalContext.current
+    val bitmap = remember(slug) {
+        val trimmed = slug?.trim().orEmpty()
+        if (trimmed.isEmpty()) null
+        else runCatching {
+            context.assets.open("car-logos/$trimmed.png").use { stream ->
+                BitmapFactory.decodeStream(stream)
+            }
+        }.getOrNull()
+    }
+    if (bitmap != null) {
+        Image(
+            bitmap = bitmap.asImageBitmap(),
+            contentDescription = null,
+            modifier = Modifier.size(28.dp),
+            contentScale = ContentScale.Fit,
+        )
     }
 }

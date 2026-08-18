@@ -19,7 +19,7 @@ val AVAILABILITY_LABELS = mapOf(
     AvailabilityStatus.UNAVAILABLE to "לא זמין",
 )
 
-const val AVAILABILITY_DATE_ERROR = "בחרו תאריך מהמחר או השאירו ריק."
+const val AVAILABILITY_DATE_ERROR = "יש לבחור תאריך עתידי"
 
 fun availabilityLabel(status: AvailabilityStatus): String =
     AVAILABILITY_LABELS[status] ?: AVAILABILITY_LABELS.getValue(AvailabilityStatus.AVAILABLE)
@@ -57,11 +57,61 @@ fun buildAvailabilityWrite(
     }
     val date = availableFrom?.trim().orEmpty()
     if (date.isEmpty()) return AvailabilityWrite.Ok(AvailabilityStatus.UNAVAILABLE, null)
-    if (!isValidReturnDate(date, today)) return AvailabilityWrite.Error(AVAILABILITY_DATE_ERROR)
-    return AvailabilityWrite.Ok(AvailabilityStatus.UNAVAILABLE, date)
+    val iso = normalizeReturnDate(date) ?: return AvailabilityWrite.Error(AVAILABILITY_DATE_ERROR)
+    if (iso <= today) return AvailabilityWrite.Error(AVAILABILITY_DATE_ERROR)
+    return AvailabilityWrite.Ok(AvailabilityStatus.UNAVAILABLE, iso)
 }
 
-fun isValidReturnDate(availableFrom: String, today: String): Boolean =
-    availableFrom.matches(Regex("""^\d{4}-\d{2}-\d{2}$""")) && availableFrom > today
+fun formatReturnDateInput(raw: String): String {
+    val digits = digitsOnly(raw).take(8)
+    val day = digits.take(2)
+    val month = digits.drop(2).take(2)
+    val year = digits.drop(4).take(4)
+    return listOf(day, month, year).filter { it.isNotEmpty() }.joinToString("/")
+}
+
+fun applyReturnDateKeystroke(previous: String, incoming: String): String {
+    val previousDigits = digitsOnly(previous)
+    var nextDigits = digitsOnly(incoming).take(8)
+    if (nextDigits == previousDigits && incoming.length < previous.length && previousDigits.isNotEmpty()) {
+        nextDigits = previousDigits.dropLast(1)
+    }
+    return formatReturnDateInput(nextDigits)
+}
+
+fun returnDateToInput(stored: String): String {
+    val trimmed = stored.trim()
+    if (trimmed.isEmpty()) return ""
+    val iso = Regex("""^(\d{4})-(\d{2})-(\d{2})$""").matchEntire(trimmed)
+    if (iso != null) {
+        return "${iso.groupValues[3]}/${iso.groupValues[2]}/${iso.groupValues[1]}"
+    }
+    return formatReturnDateInput(trimmed)
+}
+
+fun parseReturnDateInput(raw: String): String? {
+    val digits = digitsOnly(raw)
+    if (digits.length != 8) return null
+    val day = digits.substring(0, 2).toIntOrNull() ?: return null
+    val month = digits.substring(2, 4).toIntOrNull() ?: return null
+    val year = digits.substring(4, 8).toIntOrNull() ?: return null
+    val date = runCatching { java.time.LocalDate.of(year, month, day) }.getOrNull() ?: return null
+    return date.toString()
+}
+
+fun normalizeReturnDate(raw: String): String? {
+    val trimmed = raw.trim()
+    if (trimmed.matches(Regex("""^\d{4}-\d{2}-\d{2}$"""))) {
+        val parts = trimmed.split("-").mapNotNull { it.toIntOrNull() }
+        if (parts.size != 3) return null
+        return runCatching { java.time.LocalDate.of(parts[0], parts[1], parts[2]).toString() }.getOrNull()
+    }
+    return parseReturnDateInput(trimmed)
+}
+
+fun isValidReturnDate(availableFrom: String, today: String): Boolean {
+    val iso = normalizeReturnDate(availableFrom) ?: return false
+    return iso > today
+}
 
 fun tomorrowJerusalem(today: String = israelToday()): String = addCalendarDays(today, 1)

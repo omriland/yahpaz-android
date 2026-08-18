@@ -10,6 +10,7 @@ const val PLATE_LOOKUP_RESOURCE_ID = "053cea08-09bc-40ec-8f7a-156f0677aff3"
 data class PlateLookupHit(
     val model: String?,
     val color: String?,
+    val manufacturer: String? = null,
 )
 
 /** Strips non-digits then parses as Int (leading zeros drop via Int). */
@@ -24,7 +25,7 @@ fun plateLookupUrl(plate: String): String {
     return "https://data.gov.il/api/3/action/datastore_search?" +
         "resource_id=$PLATE_LOOKUP_RESOURCE_ID" +
         "&filters=$encodedFilters" +
-        "&fields=tzeva_rechev,kinuy_mishari" +
+        "&fields=tzeva_rechev,kinuy_mishari,tozeret_nm" +
         "&limit=1"
 }
 
@@ -38,9 +39,11 @@ fun parsePlateLookupBody(body: String): PlateLookupHit? {
         val row = records.firstOrNull() as? Map<*, *> ?: return null
         val modelRaw = (row["kinuy_mishari"] as? String)?.trim().orEmpty()
         val colorRaw = (row["tzeva_rechev"] as? String)?.trim().orEmpty()
+        val manufacturerRaw = (row["tozeret_nm"] as? String)?.trim().orEmpty()
         PlateLookupHit(
             model = modelRaw.ifEmpty { null },
             color = colorRaw.ifEmpty { null },
+            manufacturer = manufacturerRaw.ifEmpty { null },
         )
     } catch (_: Exception) {
         null

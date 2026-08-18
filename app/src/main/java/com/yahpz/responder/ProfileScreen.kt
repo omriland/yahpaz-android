@@ -72,6 +72,7 @@ fun ProfileScreen(app: AppModel, ui: AppUiState) {
                 )
             }
         }
+        PrivacyPolicyLink()
         GhostButton(title = "יציאה", onClick = { app.signOut() })
     }
 }

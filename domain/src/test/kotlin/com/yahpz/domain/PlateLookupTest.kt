@@ -15,12 +15,23 @@ class PlateLookupTest {
     }
 
     @Test
+    fun parseReadsModelColorAndManufacturer() {
+        val body =
+            """{"success":true,"result":{"records":[{"tzeva_rechev":"שחור","kinuy_mishari":"REXTON","tozeret_nm":"סאנגיונג ד.קור"}]}}"""
+        val hit = parsePlateLookupBody(body)!!
+        assertEquals("REXTON", hit.model)
+        assertEquals("שחור", hit.color)
+        assertEquals("סאנגיונג ד.קור", hit.manufacturer)
+    }
+
+    @Test
     fun parseReadsModelAndColorFromHit() {
         val body =
             """{"success":true,"result":{"records":[{"tzeva_rechev":"שחור","kinuy_mishari":"REXTON"}]}}"""
         val hit = parsePlateLookupBody(body)!!
         assertEquals("REXTON", hit.model)
         assertEquals("שחור", hit.color)
+        assertNull(hit.manufacturer)
     }
 
     @Test

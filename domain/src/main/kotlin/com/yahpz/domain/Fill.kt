@@ -75,9 +75,7 @@ fun validateResponderFillDraft(
         if (start is ParsedNumber.Missing || start is ParsedNumber.Invalid) {
             odometerStart = "יש למלא מד אוץ התחלה."
         }
-        if (totalKm == null) {
-            odometerEnd = "האחמ״ש טרם הזין קילומטרים לאירוע. לא ניתן לסיים את הדיווח."
-        } else if (end is ParsedNumber.Missing || end is ParsedNumber.Invalid) {
+        if (end is ParsedNumber.Missing || end is ParsedNumber.Invalid) {
             odometerEnd = "יש למלא מד אוץ סיום."
         }
         if (draft.route.trim().isEmpty()) route = "יש למלא נתיב נסיעה."

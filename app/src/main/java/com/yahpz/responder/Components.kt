@@ -1,5 +1,7 @@
 package com.yahpz.responder
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -25,19 +27,32 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.yahpz.domain.StampDescriptor
 import com.yahpz.domain.StampTone
+import com.yahpz.domain.applyReturnDateKeystroke
 
 private val fieldShape = RoundedCornerShape(4.dp)
 private val cardShape = RoundedCornerShape(8.dp)
@@ -113,6 +128,24 @@ fun GhostButton(
 }
 
 @Composable
+fun PrivacyPolicyLink(command: Boolean = false) {
+    val context = LocalContext.current
+    TextButton(
+        onClick = {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse("${AppConfig.appOrigin}/privacy")),
+            )
+        },
+    ) {
+        Text(
+            "מדיניות פרטיות",
+            style = TypeScale.caption,
+            color = if (command) CommandTheme.textSecondary else FieldTheme.textMuted,
+        )
+    }
+}
+
+@Composable
 fun FormField(
     label: String,
     value: String,
@@ -125,35 +158,102 @@ fun FormField(
     password: Boolean = false,
     onSubmit: (() -> Unit)? = null,
     enabled: Boolean = true,
+    placeholder: String? = null,
+    ltr: Boolean = false,
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(label, style = TypeScale.label, color = FieldTheme.textSecondary)
-        TextField(
-            value = value,
-            onValueChange = onValueChange,
-            enabled = enabled,
-            singleLine = true,
-            textStyle = if (mono) TypeScale.numeric else TypeScale.body,
-            visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
-            keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = imeAction),
-            keyboardActions = KeyboardActions(onAny = { onSubmit?.invoke() }),
-            colors = TextFieldDefaults.colors(
-                focusedContainerColor = FieldTheme.raised,
-                unfocusedContainerColor = FieldTheme.raised,
-                disabledContainerColor = FieldTheme.raised,
-                focusedIndicatorColor = Color.Transparent,
-                unfocusedIndicatorColor = Color.Transparent,
-                disabledIndicatorColor = Color.Transparent,
-                focusedTextColor = FieldTheme.textPrimary,
-                unfocusedTextColor = FieldTheme.textPrimary,
-            ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 44.dp)
-                .border(1.dp, if (error == null) FieldTheme.strong else FieldTheme.alert, fieldShape),
-        )
+        CompositionLocalProvider(
+            LocalLayoutDirection provides if (ltr) LayoutDirection.Ltr else LocalLayoutDirection.current,
+        ) {
+            TextField(
+                value = value,
+                onValueChange = onValueChange,
+                enabled = enabled,
+                singleLine = true,
+                textStyle = (if (mono) TypeScale.numeric else TypeScale.body).let { style ->
+                    if (ltr) style.copy(textDirection = TextDirection.Ltr, textAlign = TextAlign.Left) else style
+                },
+                placeholder = placeholder?.let { hint ->
+                    { Text(hint, style = if (mono) TypeScale.numeric else TypeScale.body, color = FieldTheme.textMuted) }
+                },
+                visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
+                keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = imeAction),
+                keyboardActions = KeyboardActions(onAny = { onSubmit?.invoke() }),
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = FieldTheme.raised,
+                    unfocusedContainerColor = FieldTheme.raised,
+                    disabledContainerColor = FieldTheme.raised,
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                    disabledIndicatorColor = Color.Transparent,
+                    focusedTextColor = FieldTheme.textPrimary,
+                    unfocusedTextColor = FieldTheme.textPrimary,
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 44.dp)
+                    .border(1.dp, if (error == null) FieldTheme.strong else FieldTheme.alert, fieldShape),
+            )
+        }
         if (error != null) {
             Text(error, style = TypeScale.caption, color = FieldTheme.alert)
+        }
+    }
+}
+
+@Composable
+fun ReturnDateField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var field by remember {
+        mutableStateOf(TextFieldValue(value, TextRange(value.length)))
+    }
+    LaunchedEffect(value) {
+        if (value != field.text) {
+            field = TextFieldValue(value, TextRange(value.length))
+        }
+    }
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(label, style = TypeScale.label, color = FieldTheme.textSecondary)
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+            TextField(
+                value = field,
+                onValueChange = { incoming ->
+                    val formatted = applyReturnDateKeystroke(field.text, incoming.text)
+                    field = TextFieldValue(formatted, TextRange(formatted.length))
+                    onValueChange(formatted)
+                },
+                singleLine = true,
+                textStyle = TypeScale.numeric.copy(
+                    textDirection = TextDirection.Ltr,
+                    textAlign = TextAlign.Left,
+                ),
+                placeholder = {
+                    Text("30/12/2026", style = TypeScale.numeric, color = FieldTheme.textMuted)
+                },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Number,
+                    imeAction = ImeAction.Done,
+                ),
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = FieldTheme.raised,
+                    unfocusedContainerColor = FieldTheme.raised,
+                    disabledContainerColor = FieldTheme.raised,
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                    disabledIndicatorColor = Color.Transparent,
+                    focusedTextColor = FieldTheme.textPrimary,
+                    unfocusedTextColor = FieldTheme.textPrimary,
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 44.dp)
+                    .border(1.dp, FieldTheme.strong, fieldShape),
+            )
         }
     }
 }

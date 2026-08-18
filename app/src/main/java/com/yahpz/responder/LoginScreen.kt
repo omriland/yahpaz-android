@@ -131,6 +131,8 @@ fun LoginScreen(
                     }
                 }
             }
+            Spacer(Modifier.height(24.dp))
+            PrivacyPolicyLink(command = true)
         }
         if (busy && mode != LoginMode.RESET_SENT) {
             CircularProgressIndicator(

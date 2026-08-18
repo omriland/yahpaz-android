@@ -1,0 +1,43 @@
+Play Console store listing — paste into default language Hebrew (עברית).
+Package: com.yahpz.responder
+Privacy policy: https://yahpz.com/privacy
+Support email: omriland@gmail.com
+Website: https://yahpz.com
+
+App name (30)
+אבן דרך
+
+Short description (80)
+מערכת תפעול לאנשי היחידה הארצית לפינוי צירים. כניסה למורשים בלבד.
+
+Full description
+אבן דרך היא מערכת התפעול של היחידה הארצית לפינוי צירים (יחפ״צ).
+
+האפליקציה מיועדת לאנשי יחידה מורשים בלבד. אין הרשמה פתוחה לציבור.
+
+באפליקציה:
+• תיבת דיווחים ואירועים
+• עדכון זמינות
+• משמרות
+• מילוי דיווח אירוע
+• שיתוף מיקום בזמן אירוע, לפי בקשת האחמ״ש
+
+מיקום נאסף רק בזמן שיתוף מיקום פעיל, כשהמסך פתוח, ונשלח לפיקוד האירוע. אין מעקב ברקע.
+
+מדיניות פרטיות: https://yahpz.com/privacy
+
+Category
+Productivity
+
+Tags (optional)
+operations, unit, responders
+
+Contact
+Email: omriland@gmail.com
+Website: https://yahpz.com
+Phone: leave blank unless Play requires it
+
+Graphics
+High-res icon: play/assets/icon-512.png
+Feature graphic: play/assets/feature-graphic-1024x500.png
+Phone screenshots: at least 2 from a real device (1080x1920 or similar). Capture Inbox, Availability, and Login.

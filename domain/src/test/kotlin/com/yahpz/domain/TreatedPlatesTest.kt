@@ -14,7 +14,7 @@ class TreatedPlatesTest {
         assertEquals("12-345-67", ok.plate.plateNumber)
         assertNull(ok.plate.model)
         assertNull(ok.plate.color)
-        assertEquals(listOf(TreatedPlate(plateNumber = "12-345-67", model = null, color = null)), ok.plates)
+        assertEquals(listOf(TreatedPlate(plateNumber = "12-345-67", model = null, color = null, leftWhere = null)), ok.plates)
     }
 
     @Test
@@ -33,7 +33,7 @@ class TreatedPlatesTest {
 
     @Test
     fun commitRejectsDuplicateByDigits() {
-        val existing = listOf(TreatedPlate(plateNumber = "12-345-67", model = null, color = null))
+        val existing = listOf(TreatedPlate(plateNumber = "12-345-67", model = null, color = null, leftWhere = null))
         val result = commitTreatedPlate(pending = "1234567", plates = existing)
         val error = result as? CommitTreatedPlateResult.Error ?: return fail("expected error")
         assertEquals(TREATED_PLATE_DUPLICATE_ERROR, error.message)
@@ -72,23 +72,58 @@ class TreatedPlatesTest {
     @Test
     fun removeDropsByDigitMatch() {
         val plates = listOf(
-            TreatedPlate(plateNumber = "12-345-67", model = null, color = null),
-            TreatedPlate(plateNumber = "713-86-301", model = "REXTON", color = "שחור"),
+            TreatedPlate(plateNumber = "12-345-67", model = null, color = null, leftWhere = null),
+            TreatedPlate(plateNumber = "713-86-301", model = "REXTON", color = "שחור", leftWhere = null),
         )
         assertEquals(listOf(plates[1]), removeTreatedPlate(plates, plateDigitsKey = "1234567"))
     }
 
     @Test
+    fun applyLookupSetsManufacturerAndLogoSlug() {
+        val plates = listOf(TreatedPlate(plateNumber = "713-86-301"))
+        val next = applyTreatedPlateLookup(
+            plates,
+            plateDigitsKey = "71386301",
+            hit = PlateLookupHit(model = "REXTON", color = "שחור", manufacturer = "סאנגיונג ד.קור"),
+        )
+        assertEquals(
+            TreatedPlate(
+                plateNumber = "713-86-301",
+                model = "REXTON",
+                color = "שחור",
+                manufacturer = "סאנגיונג ד.קור",
+                logoSlug = "ssangyong",
+            ),
+            next.single(),
+        )
+    }
+
+    @Test
     fun mapRowsOrdersBySortOrder() {
         val rows = listOf(
-            TreatedPlateRowInput(plateNumber = "713-86-301", model = "REXTON", color = "שחור", sortOrder = 1),
-            TreatedPlateRowInput(plateNumber = "12-345-67", model = null, color = null, sortOrder = 0),
+            TreatedPlateRowInput(
+                plateNumber = "713-86-301",
+                model = "REXTON",
+                color = "שחור",
+                leftWhere = null,
+                manufacturer = "סאנגיונג ד.קור",
+                logoSlug = "ssangyong",
+                sortOrder = 1,
+            ),
+            TreatedPlateRowInput(plateNumber = "12-345-67", model = null, color = null, leftWhere = null, sortOrder = 0),
             TreatedPlateRowInput(plateNumber = "  ", model = null, color = null, sortOrder = 2),
         )
         assertEquals(
             listOf(
-                TreatedPlate(plateNumber = "12-345-67", model = null, color = null),
-                TreatedPlate(plateNumber = "713-86-301", model = "REXTON", color = "שחור"),
+                TreatedPlate(plateNumber = "12-345-67", model = null, color = null, leftWhere = null),
+                TreatedPlate(
+                    plateNumber = "713-86-301",
+                    model = "REXTON",
+                    color = "שחור",
+                    leftWhere = null,
+                    manufacturer = "סאנגיונג ד.קור",
+                    logoSlug = "ssangyong",
+                ),
             ),
             mapTreatedPlateRows(rows),
         )

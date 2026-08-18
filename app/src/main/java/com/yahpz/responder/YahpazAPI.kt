@@ -43,7 +43,7 @@ object YahpazAPI {
           shift_date, shift_kind, vehicle_type,
           personal_vehicle:vehicles!shifts_personal_vehicle_id_fkey(plate_number)
         ),
-        responders:event_responders(id, responder_id, status)
+        responders:event_responders(id, responder_id, status, profile:profiles(full_name, callsign))
     """.trimIndent()
 
     private val fillSelect = """
@@ -54,7 +54,7 @@ object YahpazAPI {
         responders:event_responders(
           id, responder_id, vehicle_plate, odometer_start, odometer_end, total_km,
           route, treatment_detail, treatment_notes, status, updated_at, ended_at,
-          treated_plates:event_treated_plates(plate_number, model, color, sort_order)
+          treated_plates:event_treated_plates(plate_number, model, color, left_where, manufacturer, logo_slug, sort_order)
         )
     """.trimIndent()
 
@@ -290,6 +290,9 @@ object YahpazAPI {
                             plateNumber = row.plateNumber,
                             model = row.model,
                             color = row.color,
+                            leftWhere = row.leftWhere?.trim()?.takeIf { it.isNotEmpty() },
+                            manufacturer = row.manufacturer?.trim()?.takeIf { it.isNotEmpty() },
+                            logoSlug = row.logoSlug?.trim()?.takeIf { it.isNotEmpty() },
                             sortOrder = index,
                         )
                     },

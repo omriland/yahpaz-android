@@ -1,9 +1,15 @@
 package com.yahpz.responder
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ListAlt
 import androidx.compose.material.icons.outlined.CalendarMonth
@@ -24,6 +30,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
@@ -32,13 +40,20 @@ fun RootScreen(app: AppModel, ui: AppUiState) {
     Box(Modifier.fillMaxSize()) {
         when {
             ui.booting -> Booting()
+            ui.forceUpdate != null -> ForceUpdateScreen(ui.forceUpdate)
             ui.trackToken != null && !ui.isSignedIn -> LiveTrackScreen(ui.trackToken, app::closeTrack)
-            !ui.isSignedIn -> LoginGate(app)
+            !ui.isSignedIn -> LoginGate(app, ui)
             ui.mustChangePassword -> ProfileScreen(app, ui)
             ui.fillEventId != null -> FillScreen(ui.fillEventId, app)
             else -> MainTabs(app, ui)
         }
-        if (ui.isSignedIn && ui.trackToken != null && ui.fillEventId == null && !ui.mustChangePassword) {
+        if (
+            ui.forceUpdate == null &&
+            ui.isSignedIn &&
+            ui.trackToken != null &&
+            ui.fillEventId == null &&
+            !ui.mustChangePassword
+        ) {
             Box(Modifier.fillMaxSize().background(FieldTheme.page)) {
                 LiveTrackScreen(ui.trackToken, app::closeTrack)
             }
@@ -47,6 +62,7 @@ fun RootScreen(app: AppModel, ui: AppUiState) {
             Box(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
+                    .statusBarsPadding()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
             ) {
                 ToastBanner(toast, ui.toastTone)
@@ -68,38 +84,75 @@ private fun Booting() {
 }
 
 @Composable
-private fun LoginGate(app: AppModel) {
+private fun ForceUpdateScreen(update: ForceUpdateRequired) {
+    val context = LocalContext.current
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(CommandTheme.page)
+            .padding(24.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = "אבן דרך",
+                style = TypeScale.brand,
+                color = CommandTheme.textPrimary,
+            )
+            Spacer(Modifier.height(16.dp))
+            Text(
+                text = update.messageHe,
+                style = TypeScale.body,
+                color = CommandTheme.textSecondary,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(24.dp))
+            PrimaryButton(
+                title = "הורדה והתקנה",
+                onClick = {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(update.apkUrl))
+                    context.startActivity(intent)
+                },
+                command = true,
+            )
+        }
+    }
+}
+
+@Composable
+private fun LoginGate(app: AppModel, ui: AppUiState) {
     val scope = rememberCoroutineScope()
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var mode by remember { mutableStateOf(LoginMode.SIGNIN) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var busy by remember { mutableStateOf(false) }
+    var resetError by remember { mutableStateOf<String?>(null) }
+    var resetBusy by remember { mutableStateOf(false) }
 
     LoginScreen(
-        busy = busy,
-        error = error,
+        busy = if (mode == LoginMode.SIGNIN) ui.signingIn else resetBusy,
+        error = if (mode == LoginMode.SIGNIN) ui.signInError else resetError,
         email = email,
         password = password,
         mode = mode,
         onEmail = { email = it },
         onPassword = { password = it },
         onSubmit = {
-            scope.launch {
-                busy = true
-                error = null
-                val trimmed = email.trim()
-                if (mode == LoginMode.SIGNIN) {
-                    error = app.signIn(trimmed, password)
-                } else {
+            val trimmed = email.trim()
+            if (mode == LoginMode.SIGNIN) {
+                app.submitSignIn(trimmed, password)
+            } else {
+                scope.launch {
+                    resetBusy = true
+                    resetError = null
                     val message = YahpazAPI.requestPasswordReset(trimmed)
-                    if (message != null) error = message else mode = LoginMode.RESET_SENT
+                    if (message != null) resetError = message else mode = LoginMode.RESET_SENT
+                    resetBusy = false
                 }
-                busy = false
             }
         },
         onToggleMode = {
-            error = null
+            resetError = null
+            app.clearSignInError()
             mode = when (mode) {
                 LoginMode.SIGNIN -> LoginMode.RESET
                 else -> LoginMode.SIGNIN

@@ -10,3 +10,5 @@ captures/
 key.properties
 *.jks
 *.keystore
+dist/
+*.pem
