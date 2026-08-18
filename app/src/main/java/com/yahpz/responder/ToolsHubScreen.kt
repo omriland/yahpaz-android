@@ -21,6 +21,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.yahpz.domain.BROADCAST_CAPTION
+import com.yahpz.domain.BROADCAST_TITLE
+import com.yahpz.domain.canSendUnitBroadcast
 import com.yahpz.domain.highestRoleLabel
 import com.yahpz.domain.toolsTabLabel
 import com.yahpz.domain.visibleReportSpecs
@@ -83,6 +86,13 @@ fun ToolsHubScreen(app: AppModel, ui: AppUiState) {
                 caption = "רשימת המשתמשים, תפקידים וזמינות",
                 onClick = { app.setToolsDestination(ToolsDestination.ADMIN_USERS) },
             )
+            if (canSendUnitBroadcast(ui.roles)) {
+                ToolCard(
+                    title = BROADCAST_TITLE,
+                    caption = BROADCAST_CAPTION,
+                    onClick = { app.setToolsDestination(ToolsDestination.BROADCAST) },
+                )
+            }
         }
         Spacer(Modifier.height(24.dp))
     }

@@ -16,10 +16,17 @@ import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import com.yahpz.domain.AssignableProfile
 import com.yahpz.domain.AvailabilityStatus
+import com.yahpz.domain.BroadcastAudience
+import com.yahpz.domain.BroadcastChannel
+import com.yahpz.domain.BroadcastLogEntry
+import com.yahpz.domain.BroadcastSendResult
 import com.yahpz.domain.ContactSearchFields
+import com.yahpz.domain.DuplicateParticipation
 import com.yahpz.domain.EventStatus
 import com.yahpz.domain.EventsByResponderEventInput
 import com.yahpz.domain.EventsByResponderResponderInput
+import com.yahpz.domain.KmDiscrepancyEventInput
+import com.yahpz.domain.KmDiscrepancyResponderInput
 import com.yahpz.domain.KmExceptionEventInput
 import com.yahpz.domain.KmExceptionResponderInput
 import com.yahpz.domain.LookupOption
@@ -338,6 +345,224 @@ data class AdminUserListItem(
 }
 
 @Serializable
+data class BroadcastProfileRow(
+    val id: String,
+    val email: String? = null,
+    val phone: String? = null,
+    val active: Boolean = true,
+    @SerialName("invite_pending") val invitePending: Boolean = false,
+)
+
+@Serializable
+data class UnitBroadcastRow(
+    val id: String,
+    @SerialName("created_at") val createdAt: String,
+    @Serializable(with = BroadcastChannelSerializer::class)
+    val channel: BroadcastChannel,
+    @Serializable(with = BroadcastAudienceSerializer::class)
+    val audience: BroadcastAudience,
+    val subject: String? = null,
+    val body: String = "",
+    @SerialName("recipient_count")
+    @Serializable(with = OptionalIntSerializer::class)
+    val recipientCount: Int? = null,
+    @SerialName("push_count")
+    @Serializable(with = OptionalIntSerializer::class)
+    val pushCount: Int? = null,
+    @SerialName("push_failed_count")
+    @Serializable(with = OptionalIntSerializer::class)
+    val pushFailedCount: Int? = null,
+    @Serializable(with = OptionalPersonNameSerializer::class)
+    val sender: PersonName? = null,
+) {
+    val asEntry: BroadcastLogEntry
+        get() = BroadcastLogEntry(
+            id = id,
+            createdAt = createdAt,
+            channel = channel,
+            audience = audience,
+            subject = subject.orEmpty(),
+            body = body,
+            recipientCount = recipientCount ?: 0,
+            pushCount = pushCount ?: 0,
+            pushFailedCount = pushFailedCount ?: 0,
+            senderName = sender?.fullName,
+            senderCallsign = sender?.callsign,
+        )
+}
+
+@Serializable
+data class BroadcastSendCall(
+    val action: String = "send",
+    val channel: String,
+    val audience: String,
+    val subject: String,
+    val body: String,
+)
+
+@Serializable
+data class BroadcastSendResponse(
+    val error: String? = null,
+    @SerialName("recipient_count") val recipientCount: Int? = null,
+    @SerialName("skipped_no_phone") val skippedNoPhone: Int? = null,
+    @SerialName("skipped_no_email") val skippedNoEmail: Int? = null,
+    @SerialName("failed_count") val failedCount: Int? = null,
+    @SerialName("push_count") val pushCount: Int? = null,
+    @SerialName("push_failed_count") val pushFailedCount: Int? = null,
+) {
+    val asResult: BroadcastSendResult
+        get() = BroadcastSendResult(
+            recipientCount = recipientCount ?: 0,
+            skippedNoPhone = skippedNoPhone ?: 0,
+            skippedNoEmail = skippedNoEmail ?: 0,
+            failedCount = failedCount ?: 0,
+            pushCount = pushCount ?: 0,
+            pushFailedCount = pushFailedCount ?: 0,
+        )
+}
+
+@Serializable
+data class AdminInviteCall(
+    val action: String = "invite",
+    @SerialName("full_name") val fullName: String,
+    val email: String,
+    val callsign: String,
+    val phone: String? = null,
+    @SerialName("volunteer_status") val volunteerStatus: String,
+    val roles: List<String>,
+)
+
+@Serializable
+data class AdminSetActiveCall(
+    val action: String,
+    @SerialName("user_id") val userId: String,
+)
+
+@Serializable
+data class AdminUsersResponse(
+    val ok: Boolean? = null,
+    val error: String? = null,
+    val message: String? = null,
+    @SerialName("user_id") val userId: String? = null,
+)
+
+@Serializable
+data class KmDiscrepancyResponderRow(
+    val id: String,
+    @Serializable(with = ParticipationStatusSerializer::class)
+    val status: ParticipationStatus,
+    @SerialName("total_km")
+    @Serializable(with = OptionalDoubleSerializer::class)
+    val totalKm: Double? = null,
+    @SerialName("odometer_start")
+    @Serializable(with = OptionalDoubleSerializer::class)
+    val odometerStart: Double? = null,
+    @SerialName("odometer_end")
+    @Serializable(with = OptionalDoubleSerializer::class)
+    val odometerEnd: Double? = null,
+    @Serializable(with = OptionalPersonNameSerializer::class)
+    val profile: PersonName? = null,
+)
+
+@Serializable
+data class KmDiscrepancyEventRow(
+    val id: String,
+    @SerialName("event_date") val eventDate: String,
+    @SerialName("is_cancelled") val isCancelled: Boolean = false,
+    @SerialName("police_event_id") val policeEventId: String? = null,
+    val location: String? = null,
+    @Serializable(with = OptionalNamedSerializer::class)
+    val road: Named? = null,
+    @SerialName("shift_lead")
+    @Serializable(with = OptionalPersonNameSerializer::class)
+    val shiftLead: PersonName? = null,
+    val responders: List<KmDiscrepancyResponderRow> = emptyList(),
+) {
+    val asInput: KmDiscrepancyEventInput
+        get() = KmDiscrepancyEventInput(
+            id = id,
+            eventDate = eventDate,
+            isCancelled = isCancelled,
+            policeEventId = policeEventId,
+            location = location,
+            roadName = road?.name,
+            leadName = shiftLead?.fullName,
+            leadCallsign = shiftLead?.callsign,
+            responders = responders.map { row ->
+                KmDiscrepancyResponderInput(
+                    assignmentId = row.id,
+                    status = row.status,
+                    totalKm = row.totalKm,
+                    odometerStart = row.odometerStart,
+                    odometerEnd = row.odometerEnd,
+                    name = row.profile?.fullName,
+                    callsign = row.profile?.callsign,
+                )
+            },
+        )
+}
+
+@Serializable
+data class LeadKmRow(
+    val id: String,
+    @SerialName("total_km")
+    @Serializable(with = OptionalDoubleSerializer::class)
+    val totalKm: Double? = null,
+    @SerialName("odometer_start")
+    @Serializable(with = OptionalDoubleSerializer::class)
+    val odometerStart: Double? = null,
+    @SerialName("odometer_end")
+    @Serializable(with = OptionalDoubleSerializer::class)
+    val odometerEnd: Double? = null,
+)
+
+@Serializable
+data class LeadKmWrite(
+    @SerialName("total_km") val totalKm: Double,
+    @SerialName("updated_at") val updatedAt: String,
+)
+
+@Serializable
+data class DuplicateResponderRow(
+    @SerialName("responder_id") val responderId: String,
+    @SerialName("started_at") val startedAt: String? = null,
+    @Serializable(with = OptionalPersonNameSerializer::class)
+    val profile: PersonName? = null,
+)
+
+@Serializable
+data class DuplicateEventRow(
+    val id: String,
+    @SerialName("event_date") val eventDate: String,
+    @SerialName("is_cancelled") val isCancelled: Boolean = false,
+    @SerialName("police_event_id") val policeEventId: String? = null,
+    val location: String? = null,
+    @SerialName("event_type")
+    @Serializable(with = OptionalNamedSerializer::class)
+    val eventType: Named? = null,
+    @Serializable(with = OptionalNamedSerializer::class)
+    val road: Named? = null,
+    val responders: List<DuplicateResponderRow> = emptyList(),
+) {
+    val asParticipations: List<DuplicateParticipation>
+        get() = responders.map { row ->
+            DuplicateParticipation(
+                eventId = id,
+                responderId = row.responderId,
+                eventDate = eventDate,
+                location = location,
+                startedAt = row.startedAt,
+                isCancelled = isCancelled,
+                policeEventId = policeEventId,
+                eventTypeName = eventType?.name,
+                roadName = road?.name,
+                name = row.profile?.fullName,
+                callsign = row.profile?.callsign,
+            )
+        }
+}
+
+@Serializable
 data class OpenDocResponderRow(
     @SerialName("responder_id") val responderId: String,
     @Serializable(with = ParticipationStatusSerializer::class)
@@ -651,6 +876,8 @@ object EventStatusSerializer : EnumRawSerializer<EventStatus>(EventStatus.entrie
 object ParticipationStatusSerializer : EnumRawSerializer<ParticipationStatus>(ParticipationStatus.entries, ParticipationStatus::raw, ParticipationStatus.PENDING)
 object ShiftStatusSerializer : EnumRawSerializer<ShiftStatus>(ShiftStatus.entries, ShiftStatus::raw, ShiftStatus.DRAFT)
 object AvailabilityStatusSerializer : EnumRawSerializer<AvailabilityStatus>(AvailabilityStatus.entries, AvailabilityStatus::raw, AvailabilityStatus.AVAILABLE)
+object BroadcastChannelSerializer : EnumRawSerializer<BroadcastChannel>(BroadcastChannel.entries, BroadcastChannel::raw, BroadcastChannel.BOTH)
+object BroadcastAudienceSerializer : EnumRawSerializer<BroadcastAudience>(BroadcastAudience.entries, BroadcastAudience::raw, BroadcastAudience.ALL)
 
 open class EnumRawSerializer<T : Enum<T>>(
     private val values: List<T>,

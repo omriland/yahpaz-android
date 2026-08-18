@@ -3,6 +3,11 @@ package com.yahpz.responder
 import com.yahpz.domain.AssignableProfile
 import com.yahpz.domain.AvailabilityStatus
 import com.yahpz.domain.AvailabilityWrite
+import com.yahpz.domain.BROADCAST_SEND_FAILED
+import com.yahpz.domain.BroadcastCandidate
+import com.yahpz.domain.BroadcastDraft
+import com.yahpz.domain.BroadcastLogEntry
+import com.yahpz.domain.BroadcastSendResult
 import com.yahpz.domain.EVENT_DRAFT_DATE_ERROR
 import com.yahpz.domain.EVENT_DRAFT_FORM_ERROR
 import com.yahpz.domain.EVENT_DRAFT_SAVE_FAILED
@@ -13,38 +18,54 @@ import com.yahpz.domain.FuelRefundCreditInput
 import com.yahpz.domain.FuelRefundParticipationInput
 import com.yahpz.domain.FuelRefundProfileInput
 import com.yahpz.domain.FuelRefundRow
+import com.yahpz.domain.INVITE_IDENTITY_ERROR
+import com.yahpz.domain.INVITE_SAVE_FAILED
+import com.yahpz.domain.InviteDraft
+import com.yahpz.domain.KM_DISCREPANCY_ALIGNED
+import com.yahpz.domain.KM_DISCREPANCY_APPLY_FAILED
+import com.yahpz.domain.LeadKmReplacement
 import com.yahpz.domain.LookupOption
 import com.yahpz.domain.OpenDocRow
 import com.yahpz.domain.ParticipationStatus
 import com.yahpz.domain.ReportKindId
 import com.yahpz.domain.ReportRow
 import com.yahpz.domain.ResponderFillDraft
+import com.yahpz.domain.SET_ACTIVE_FAILED
 import com.yahpz.domain.SHIFT_DRAFT_DATE_ERROR
 import com.yahpz.domain.SHIFT_DRAFT_FORM_ERROR
 import com.yahpz.domain.SHIFT_DRAFT_SAVE_FAILED
 import com.yahpz.domain.ShiftDraft
 import com.yahpz.domain.buildAvailabilityWrite
+import com.yahpz.domain.buildDuplicateClusters
 import com.yahpz.domain.buildEventsByResponderRows
 import com.yahpz.domain.buildFuelRefundRows
+import com.yahpz.domain.buildKmDiscrepancyRows
 import com.yahpz.domain.buildKmExceptionRows
 import com.yahpz.domain.buildOpenDocRows
+import com.yahpz.domain.duplicateEventsReportRows
 import com.yahpz.domain.eventDraftStatus
 import com.yahpz.domain.eventsByResponderReportRows
 import com.yahpz.domain.fuelRefundReportRows
 import com.yahpz.domain.isAdmin
 import com.yahpz.domain.israelToday
+import com.yahpz.domain.kmDiscrepancyReportRows
 import com.yahpz.domain.kmExceptionReportRows
 import com.yahpz.domain.mapTreatedPlateRows
+import com.yahpz.domain.needsBroadcastSubject
 import com.yahpz.domain.normalizeReturnDate
 import com.yahpz.domain.openDocReportRows
 import com.yahpz.domain.parsedOdometer
 import com.yahpz.domain.passwordStrengthError
+import com.yahpz.domain.phoneDigits
 import com.yahpz.domain.ProfileVehicle
+import com.yahpz.domain.resolveLeadKmReplacement
 import com.yahpz.domain.VehicleRowInput
 import com.yahpz.domain.plateDigits
 import com.yahpz.domain.plateNumberForSave
 import com.yahpz.domain.sortByRoadName
+import com.yahpz.domain.validateBroadcastDraft
 import com.yahpz.domain.validateEventDraft
+import com.yahpz.domain.validateInviteDraft
 import com.yahpz.domain.validateResponderFillDraft
 import com.yahpz.domain.validateShiftDraft
 import com.yahpz.domain.visibleProfileVehicles
@@ -61,6 +82,7 @@ import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.postgrest.query.Order
 import io.github.jan.supabase.postgrest.rpc
 import io.ktor.client.statement.bodyAsText
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -69,6 +91,19 @@ import java.time.LocalDate
 import java.time.ZoneId
 
 class APIException(override val message: String) : Exception(message)
+
+private val edgeErrorPattern = Regex("\"error\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")
+
+/** Recover the Hebrew `error` string an edge function returned, if the raw body carries one. */
+internal fun edgeErrorMessage(raw: String?, fallback: String): String {
+    val match = edgeErrorPattern.find(raw.orEmpty()) ?: return fallback
+    val message = match.groupValues[1]
+        .replace("\\\"", "\"")
+        .replace("\\n", " ")
+        .replace("\\\\", "\\")
+        .trim()
+    return message.ifEmpty { fallback }
+}
 
 object YahpazAPI {
     private val eventListSelect = """
@@ -114,6 +149,26 @@ object YahpazAPI {
         shift_lead:profiles!events_shift_lead_id_fkey(full_name, callsign),
         responders:event_responders(
           responder_id, total_km,
+          profile:profiles(full_name, callsign)
+        )
+    """.trimIndent()
+
+    private val kmDiscrepancySelect = """
+        id, event_date, is_cancelled, police_event_id, location,
+        road:roads(name),
+        shift_lead:profiles!events_shift_lead_id_fkey(full_name, callsign),
+        responders:event_responders(
+          id, status, total_km, odometer_start, odometer_end,
+          profile:profiles(full_name, callsign)
+        )
+    """.trimIndent()
+
+    private val duplicateEventSelect = """
+        id, event_date, is_cancelled, police_event_id, location,
+        event_type:event_types(name),
+        road:roads(name),
+        responders:event_responders(
+          responder_id, started_at,
           profile:profiles(full_name, callsign)
         )
     """.trimIndent()
@@ -309,7 +364,159 @@ object YahpazAPI {
         ReportKindId.KM_EXCEPTIONS -> kmExceptionReportRows(
             buildKmExceptionRows(fetchReportEvents(from, to).map { it.asKmExceptionInput }, from, to),
         )
+        ReportKindId.KM_DISCREPANCY -> kmDiscrepancyReportRows(
+            buildKmDiscrepancyRows(fetchKmDiscrepancyEvents(from, to).map { it.asInput }, from, to),
+        )
+        ReportKindId.DUPLICATE_EVENTS -> duplicateEventsReportRows(
+            buildDuplicateClusters(fetchDuplicateEvents().flatMap { it.asParticipations }),
+        )
         ReportKindId.FUEL_REFUND -> fuelRefundReportRows(fetchFuelRefundRows(from, to))
+    }
+
+    private suspend fun fetchKmDiscrepancyEvents(from: String, to: String): List<KmDiscrepancyEventRow> =
+        client.from("events").select(Columns.raw(kmDiscrepancySelect)) {
+            filter {
+                gte("event_date", from)
+                lte("event_date", to)
+            }
+            order("event_date", Order.DESCENDING)
+        }.decodeList<KmDiscrepancyEventRow>()
+
+    /** Duplicates are looked for across the whole history, like the web report. */
+    private suspend fun fetchDuplicateEvents(): List<DuplicateEventRow> =
+        client.from("events").select(Columns.raw(duplicateEventSelect)) {
+            order("event_date", Order.DESCENDING)
+        }.decodeList<DuplicateEventRow>()
+
+    /** Overwrite the lead's `total_km` with the responder's odometer difference. */
+    suspend fun applyLeadKmFromOdometer(assignmentId: String): String? {
+        return try {
+            val row = client.from("event_responders").select(
+                Columns.raw("id, total_km, odometer_start, odometer_end"),
+            ) {
+                filter { eq("id", assignmentId) }
+            }.decodeSingle<LeadKmRow>()
+            when (val resolved = resolveLeadKmReplacement(row.totalKm, row.odometerStart, row.odometerEnd)) {
+                is LeadKmReplacement.Invalid -> KM_DISCREPANCY_APPLY_FAILED
+                is LeadKmReplacement.AlreadyAligned -> KM_DISCREPANCY_ALIGNED
+                is LeadKmReplacement.Replace -> {
+                    val updated = client.from("event_responders").update(
+                        LeadKmWrite(totalKm = resolved.totalKm, updatedAt = Instant.now().toString()),
+                    ) {
+                        filter { eq("id", assignmentId) }
+                        select(Columns.raw("id"))
+                    }.decodeList<IdRow>()
+                    if (updated.isEmpty()) KM_DISCREPANCY_APPLY_FAILED else null
+                }
+            }
+        } catch (_: Exception) {
+            KM_DISCREPANCY_APPLY_FAILED
+        }
+    }
+
+    /**
+     * Everyone the unit could reach, plus who has a registered device. The device-token
+     * RPC is admin-only and optional: without it the preview simply shows no push count.
+     */
+    suspend fun fetchBroadcastCandidates(): List<BroadcastCandidate> {
+        val profiles = client.from("profiles").select(
+            Columns.raw("id, email, phone, active, invite_pending"),
+        ).decodeList<BroadcastProfileRow>()
+        if (profiles.isEmpty()) return emptyList()
+        val roles = client.from("user_roles").select(Columns.raw("user_id, role"))
+            .decodeList<AdminRoleRow>()
+            .groupBy({ it.userId }, { it.role })
+        val withApp = runCatching {
+            client.postgrest.rpc("user_ids_with_device_tokens").decodeList<String>().toSet()
+        }.getOrDefault(emptySet())
+        return profiles.map { row ->
+            BroadcastCandidate(
+                id = row.id,
+                email = row.email,
+                phone = row.phone,
+                roles = roles[row.id].orEmpty(),
+                active = row.active,
+                invitePending = row.invitePending,
+                hasApp = withApp.contains(row.id),
+            )
+        }
+    }
+
+    suspend fun fetchBroadcastLog(limit: Int = 50): List<BroadcastLogEntry> =
+        client.from("unit_broadcasts").select(
+            Columns.raw(
+                "id, created_at, channel, audience, subject, body, recipient_count, " +
+                    "push_count, push_failed_count, " +
+                    "sender:profiles!sent_by(full_name, callsign)",
+            ),
+        ) {
+            order("created_at", Order.DESCENDING)
+            limit(limit.toLong())
+        }.decodeList<UnitBroadcastRow>().map { it.asEntry }
+
+    suspend fun sendUnitBroadcast(draft: BroadcastDraft): Result<BroadcastSendResult> {
+        val errors = validateBroadcastDraft(draft)
+        if (!errors.isEmpty) {
+            return Result.failure(APIException(errors.firstMessage ?: BROADCAST_SEND_FAILED))
+        }
+        val call = BroadcastSendCall(
+            channel = draft.channel.raw,
+            audience = draft.audience.raw,
+            subject = if (needsBroadcastSubject(draft.channel)) draft.subject.trim() else "",
+            body = draft.body.trim(),
+        )
+        val response = invokeEdge<BroadcastSendCall, BroadcastSendResponse>(
+            function = "unit-broadcast",
+            body = call,
+            fallback = BROADCAST_SEND_FAILED,
+        )
+        return response.mapCatching { payload ->
+            payload.error?.let { throw APIException(it) }
+            payload.asResult
+        }
+    }
+
+    suspend fun inviteAdminUser(draft: InviteDraft): String? {
+        val errors = validateInviteDraft(draft)
+        if (!errors.isEmpty) return errors.formMessage ?: INVITE_IDENTITY_ERROR
+        val call = AdminInviteCall(
+            fullName = draft.fullName.trim(),
+            email = draft.email.trim().lowercase(),
+            callsign = draft.callsign.trim(),
+            phone = phoneDigits(draft.phone).ifEmpty { null },
+            volunteerStatus = draft.volunteerStatus.raw,
+            roles = draft.roles.distinct(),
+        )
+        return invokeAdminUsers(call, INVITE_SAVE_FAILED)
+    }
+
+    suspend fun setAdminUserActive(userId: String, active: Boolean): String? = invokeAdminUsers(
+        AdminSetActiveCall(action = if (active) "reactivate" else "deactivate", userId = userId),
+        SET_ACTIVE_FAILED,
+    )
+
+    private suspend inline fun <reified T : Any> invokeAdminUsers(body: T, fallback: String): String? {
+        val response = invokeEdge<T, AdminUsersResponse>("admin-users", body, fallback)
+        return response.fold(
+            onSuccess = { it.error },
+            onFailure = { it.message ?: fallback },
+        )
+    }
+
+    /**
+     * Edge functions answer with `{ "error": "…" }` in Hebrew on failure. supabase-kt
+     * raises those as exceptions, so pull the message back out of the body when it is there.
+     */
+    private suspend inline fun <reified B : Any, reified R : Any> invokeEdge(
+        function: String,
+        body: B,
+        fallback: String,
+    ): Result<R> = try {
+        Result.success(json.decodeFromString<R>(client.functions.invoke(function, body).bodyAsText()))
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        Result.failure(APIException(edgeErrorMessage(error.message, fallback)))
     }
 
     private suspend fun fetchReportEvents(from: String, to: String): List<ReportEventRow> =

@@ -7,6 +7,8 @@ enum class ReportKindId(val raw: String) {
     OPEN_DOCUMENTATION("open_documentation"),
     EVENTS_BY_RESPONDER("events_by_responder"),
     KM_EXCEPTIONS("km_exceptions"),
+    KM_DISCREPANCY("km_discrepancy"),
+    DUPLICATE_EVENTS("duplicate_events"),
     FUEL_REFUND("fuel_refund");
 
     companion object {
@@ -27,6 +29,10 @@ data class ReportRow(
     val eventId: String? = null,
     val stampLabel: String? = null,
     val stampTone: StampTone = StampTone.PENDING,
+    /** Set together when the row offers a write, e.g. replacing lead km with the odometer. */
+    val actionId: String? = null,
+    val actionTitle: String? = null,
+    val actionConfirm: String? = null,
     val searchText: String = "",
 )
 
@@ -40,6 +46,8 @@ data class ReportSpec(
     /** Fuel refund counts a calendar month; the event reports use a rolling window. */
     val rangeFromMonthStart: Boolean = false,
     val defaultRangeDays: Int = OPEN_DOC_DEFAULT_RANGE_DAYS,
+    /** אירועים כפולים scans the whole history, so it hides the date fields. */
+    val hasDateRange: Boolean = true,
 )
 
 const val REPORT_RANGE_ERROR = "יש להזין תאריך התחלה וסיום תקינים"
@@ -71,6 +79,23 @@ val REPORT_SPECS: List<ReportSpec> = listOf(
         audience = ReportAudience.MANAGES_UNIT,
         searchPlaceholder = "חיפוש לפי כונן, מספר אירוע או מיקום",
         emptyTitle = "אין חריגי ק״מ בתקופה זו",
+    ),
+    ReportSpec(
+        id = ReportKindId.KM_DISCREPANCY,
+        title = "אירועים עם פערי דיווח ק״מ",
+        includes = "אירועים בהם יש פער בין דיווח האחמ״ש לבין הק״מ שהזין המתנדב",
+        audience = ReportAudience.ADMIN,
+        searchPlaceholder = "חיפוש לפי מתנדב, מספר אירוע או מיקום",
+        emptyTitle = "אין פערי דיווח בתקופה זו",
+    ),
+    ReportSpec(
+        id = ReportKindId.DUPLICATE_EVENTS,
+        title = "אירועים כפולים",
+        includes = "אירועים עם אותו הכונן, באותו מקום בחלון זמן של חצי שעה",
+        audience = ReportAudience.MANAGES_UNIT,
+        searchPlaceholder = "חיפוש לפי כונן, מספר אירוע או מיקום",
+        emptyTitle = "לא נמצאו אירועים כפולים",
+        hasDateRange = false,
     ),
     ReportSpec(
         id = ReportKindId.FUEL_REFUND,

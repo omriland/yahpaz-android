@@ -50,6 +50,18 @@ fun formatDateTime(iso: String): String {
     return formatter.format(instant)
 }
 
+/** `HH:mm` off a wall `timestamp` or ISO string, without shifting the zone. */
+fun formatTime(value: String?): String? {
+    val raw = value?.trim().orEmpty()
+    if (raw.isEmpty()) return null
+    val timePart = when {
+        raw.contains('T') -> raw.substringAfter('T')
+        raw.contains(' ') -> raw.substringAfter(' ')
+        else -> raw
+    }
+    return timePart.take(5).takeIf { it.length == 5 }
+}
+
 fun firstName(fullName: String): String = fullName.split(" ").firstOrNull() ?: fullName
 
 /** Grouped decimal like the web `Intl.NumberFormat('he-IL')`: whole numbers lose the fraction. */
@@ -61,6 +73,8 @@ fun formatNumber(value: Double): String {
         String.format(Locale.US, "%,.1f", rounded)
     }
 }
+
+fun formatNumber(value: Int): String = String.format(Locale.US, "%,d", value)
 
 /**
  * Road names sort as pure numbers first ascending, then names containing letters

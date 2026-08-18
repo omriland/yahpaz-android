@@ -14,7 +14,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -59,10 +61,14 @@ fun ReportScreen(app: AppModel, ui: AppUiState, onBack: () -> Unit) {
     var query by remember(ui.reportKind) { mutableStateOf("") }
     var rangeError by remember(ui.reportKind) { mutableStateOf<String?>(null) }
     var refreshing by remember { mutableStateOf(false) }
+    var actionRow by remember(ui.reportKind) { mutableStateOf<ReportRow?>(null) }
+    var actionError by remember { mutableStateOf<String?>(null) }
+    var applying by remember { mutableStateOf(false) }
 
     suspend fun load() {
-        val fromIso = normalizeReturnDate(from)
-        val toIso = normalizeReturnDate(to)
+        // Reports without a range still send the defaults; their loader ignores them.
+        val fromIso = normalizeReturnDate(from) ?: defaults.first.takeUnless { spec.hasDateRange }
+        val toIso = normalizeReturnDate(to) ?: defaults.second.takeUnless { spec.hasDateRange }
         if (fromIso == null || toIso == null || !isValidReportRange(fromIso, toIso)) {
             rangeError = REPORT_RANGE_ERROR
             return
@@ -101,21 +107,23 @@ fun ReportScreen(app: AppModel, ui: AppUiState, onBack: () -> Unit) {
         ) {
             ToolsBackRow(spec.title, onBack)
             Text(spec.includes, style = TypeScale.caption, color = FieldTheme.textMuted)
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                ReturnDateField(
-                    label = "מתאריך",
-                    value = from,
-                    onValueChange = { from = it },
-                    modifier = Modifier.weight(1f),
-                )
-                ReturnDateField(
-                    label = "עד תאריך",
-                    value = to,
-                    onValueChange = { to = it },
-                    modifier = Modifier.weight(1f),
-                )
+            if (spec.hasDateRange) {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    ReturnDateField(
+                        label = "מתאריך",
+                        value = from,
+                        onValueChange = { from = it },
+                        modifier = Modifier.weight(1f),
+                    )
+                    ReturnDateField(
+                        label = "עד תאריך",
+                        value = to,
+                        onValueChange = { to = it },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                rangeError?.let { Text(it, style = TypeScale.caption, color = FieldTheme.alert) }
             }
-            rangeError?.let { Text(it, style = TypeScale.caption, color = FieldTheme.alert) }
             PrimaryButton(
                 title = REPORT_LOAD_ACTION,
                 busy = ui.reportLoading,
@@ -150,14 +158,59 @@ fun ReportScreen(app: AppModel, ui: AppUiState, onBack: () -> Unit) {
                     rows.forEach { row ->
                         ReportRowCard(
                             row = row,
-                            onOpen = row.eventId
-                                ?.takeIf { ui.ownsEventParticipation(it) }
-                                ?.let { eventId -> { app.openFill(eventId) } },
+                            // A row that offers a write opens its confirm sheet instead of the fill.
+                            onOpen = if (row.actionId != null) {
+                                { actionError = null; actionRow = row }
+                            } else {
+                                row.eventId
+                                    ?.takeIf { ui.ownsEventParticipation(it) }
+                                    ?.let { eventId -> { app.openFill(eventId) } }
+                            },
                         )
                     }
                 }
             }
             Spacer(Modifier.height(24.dp))
+        }
+    }
+
+    actionRow?.let { row ->
+        val actionId = row.actionId ?: return@let
+        ModalBottomSheet(onDismissRequest = { actionRow = null }) {
+            Column(
+                Modifier
+                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(row.title, style = TypeScale.section, color = FieldTheme.textPrimary)
+                if (row.subtitle.isNotEmpty()) {
+                    Text(row.subtitle, style = TypeScale.caption, color = FieldTheme.textMuted)
+                }
+                row.trailing?.let {
+                    Text(it, style = TypeScale.numeric, color = FieldTheme.textPrimary)
+                }
+                row.actionConfirm?.let {
+                    Text(it, style = TypeScale.body, color = FieldTheme.textSecondary)
+                }
+                actionError?.let { Text(it, style = TypeScale.caption, color = FieldTheme.alert) }
+                PrimaryButton(
+                    title = row.actionTitle.orEmpty(),
+                    busy = applying,
+                    onClick = {
+                        scope.launch {
+                            applying = true
+                            val error = app.applyReportRowAction(actionId)
+                            applying = false
+                            actionError = error
+                            if (error == null) actionRow = null
+                        }
+                    },
+                )
+                TextButton(onClick = { actionRow = null }, modifier = Modifier.align(Alignment.End)) {
+                    Text("סגירה", color = FieldTheme.accent)
+                }
+            }
         }
     }
 }

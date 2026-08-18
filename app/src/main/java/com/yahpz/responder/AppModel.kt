@@ -4,18 +4,27 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.yahpz.domain.AssignableProfile
 import com.yahpz.domain.AvailabilityStatus
+import com.yahpz.domain.BROADCAST_LOAD_FAILED
+import com.yahpz.domain.BroadcastCandidate
+import com.yahpz.domain.BroadcastDraft
+import com.yahpz.domain.BroadcastLogEntry
 import com.yahpz.domain.EVENT_DRAFT_SAVED
 import com.yahpz.domain.EventDraft
+import com.yahpz.domain.INVITE_SAVED
+import com.yahpz.domain.InviteDraft
+import com.yahpz.domain.KM_DISCREPANCY_APPLIED
 import com.yahpz.domain.REPORT_FAILED_TITLE
 import com.yahpz.domain.ReportKindId
 import com.yahpz.domain.ReportRow
 import com.yahpz.domain.SHIFT_DRAFT_SAVED
 import com.yahpz.domain.ShiftDraft
+import com.yahpz.domain.broadcastResultCopy
 import com.yahpz.domain.canToggleEventCancelled
 import com.yahpz.domain.defaultReportRange
 import com.yahpz.domain.eventCancelToast
 import com.yahpz.domain.isAdmin
 import com.yahpz.domain.reportSpec
+import com.yahpz.domain.setActiveToast
 import com.yahpz.domain.isResponder
 import com.yahpz.domain.israelToday
 import com.yahpz.domain.managesUnit
@@ -33,7 +42,7 @@ import kotlinx.coroutines.launch
 
 enum class AppTab { INBOX, SHIFTS, CONTACTS, UNIT_EVENTS, UNIT_SHIFTS, TOOLS, PROFILE }
 
-enum class ToolsDestination { HUB, REPORT, ADMIN_USERS, NEW_EVENT, NEW_SHIFT }
+enum class ToolsDestination { HUB, REPORT, ADMIN_USERS, NEW_EVENT, NEW_SHIFT, BROADCAST }
 
 data class AppUiState(
     val booting: Boolean = true,
@@ -62,6 +71,10 @@ data class AppUiState(
     val adminUsers: List<AdminUserListItem> = emptyList(),
     val adminUsersFailed: Boolean = false,
     val adminUsersLoading: Boolean = false,
+    val broadcastCandidates: List<BroadcastCandidate> = emptyList(),
+    val broadcastLog: List<BroadcastLogEntry> = emptyList(),
+    val broadcastFailed: Boolean = false,
+    val broadcastLoading: Boolean = false,
     val reportKind: ReportKindId = ReportKindId.OPEN_DOCUMENTATION,
     val reportRows: List<ReportRow> = emptyList(),
     val reportFailed: Boolean = false,
@@ -330,6 +343,55 @@ class AppModel : ViewModel() {
         fetch = { YahpazAPI.fetchAdminUsers() },
     )
 
+    /** The recipient pool and the sent log are always shown together, so they load as one unit. */
+    suspend fun reloadBroadcast() {
+        if (_state.value.userId == null) return
+        val hadCandidates = _state.value.broadcastCandidates.isNotEmpty()
+        _state.update {
+            it.copy(broadcastLoading = !hadCandidates, broadcastFailed = false)
+        }
+        try {
+            val candidates = YahpazAPI.fetchBroadcastCandidates()
+            val log = YahpazAPI.fetchBroadcastLog()
+            _state.update {
+                it.copy(broadcastCandidates = candidates, broadcastLog = log, broadcastFailed = false)
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            if (hadCandidates) {
+                showToast(BROADCAST_LOAD_FAILED, StampTone.PENDING)
+            } else {
+                _state.update { it.copy(broadcastFailed = true) }
+            }
+        } finally {
+            _state.update { it.copy(broadcastLoading = false) }
+        }
+    }
+
+    /** Returns an error to show inline, or null after toasting the send summary. */
+    suspend fun sendBroadcast(draft: BroadcastDraft): String? {
+        val result = YahpazAPI.sendUnitBroadcast(draft)
+        result.exceptionOrNull()?.let { return it.message ?: BROADCAST_LOAD_FAILED }
+        showToast(broadcastResultCopy(result.getOrThrow()), StampTone.DONE)
+        viewModelScope.launch { reloadBroadcast() }
+        return null
+    }
+
+    suspend fun inviteUser(draft: InviteDraft): String? {
+        YahpazAPI.inviteAdminUser(draft)?.let { return it }
+        reloadAdminUsers()
+        showToast(INVITE_SAVED, StampTone.DONE)
+        return null
+    }
+
+    suspend fun setUserActive(userId: String, active: Boolean): String? {
+        YahpazAPI.setAdminUserActive(userId, active)?.let { return it }
+        reloadAdminUsers()
+        showToast(setActiveToast(active), StampTone.DONE)
+        return null
+    }
+
     /** Reports share one slot of state, so opening a different kind clears the previous rows. */
     fun openReport(kind: ReportKindId) {
         _state.update { current ->
@@ -361,6 +423,19 @@ class AppModel : ViewModel() {
             failureMessage = REPORT_FAILED_TITLE,
             fetch = { YahpazAPI.fetchReport(kind, from, to) },
         )
+    }
+
+    /**
+     * The only report write today: replace the lead's km with the responder's odometer.
+     * [ReportRow.actionId] carries the assignment id the loader put there.
+     */
+    suspend fun applyReportRowAction(actionId: String): String? {
+        YahpazAPI.applyLeadKmFromOdometer(actionId)?.let { return it }
+        val from = _state.value.reportFrom
+        val to = _state.value.reportTo
+        if (from != null && to != null) reloadReport(from, to)
+        showToast(KM_DISCREPANCY_APPLIED, StampTone.DONE)
+        return null
     }
 
     fun defaultReportRange(kind: ReportKindId): Pair<String, String> =

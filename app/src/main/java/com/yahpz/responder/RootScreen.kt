@@ -259,5 +259,6 @@ private fun ToolsTab(app: AppModel, ui: AppUiState) {
         ToolsDestination.ADMIN_USERS -> AdminUsersScreen(app, ui, backToHub)
         ToolsDestination.NEW_EVENT -> EventFormScreen(app, ui, backToHub)
         ToolsDestination.NEW_SHIFT -> ShiftFormScreen(app, ui, backToHub)
+        ToolsDestination.BROADCAST -> BroadcastScreen(app, ui, backToHub)
     }
 }

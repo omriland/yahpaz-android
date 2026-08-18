@@ -13,6 +13,8 @@ class ReportsTest {
         assertTrue(ids.contains(ReportKindId.OPEN_DOCUMENTATION))
         assertTrue(ids.contains(ReportKindId.EVENTS_BY_RESPONDER))
         assertTrue(ids.contains(ReportKindId.KM_EXCEPTIONS))
+        assertTrue(ids.contains(ReportKindId.DUPLICATE_EVENTS))
+        assertFalse(ids.contains(ReportKindId.KM_DISCREPANCY))
         assertFalse(ids.contains(ReportKindId.FUEL_REFUND))
     }
 
@@ -73,6 +75,14 @@ class ReportsTest {
         assertEquals("בוטל", policeEventLabel(null, isCancelled = true))
         assertEquals("55", policeEventLabel("55", isCancelled = false))
         assertEquals("—", policeEventLabel("  ", isCancelled = false))
+    }
+
+    @Test
+    fun `only the all-time report hides its date range`() {
+        assertEquals(
+            listOf(ReportKindId.DUPLICATE_EVENTS),
+            REPORT_SPECS.filterNot { it.hasDateRange }.map { it.id },
+        )
     }
 
     @Test
