@@ -83,13 +83,9 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("אירועי היחידה", style = TypeScale.title, color = FieldTheme.textPrimary)
-                TextButton(onClick = { app.setToolsDestination(ToolsDestination.NEW_EVENT) }) {
-                    Text(NEW_EVENT_TITLE, style = TypeScale.bodyStrong, color = FieldTheme.accent)
-                }
+                Text("אירועים", style = TypeScale.title, color = FieldTheme.textPrimary)
             }
             SearchField(
                 value = query,
@@ -102,7 +98,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                     actionTitle = "רענון",
                     onAction = { scope.launch { app.reloadUnitEvents() } },
                 )
-                ui.unitEventsLoading && ui.unitEvents.isEmpty() -> LoadingBlock("טוען אירועי יחידה…")
+                ui.unitEventsLoading && ui.unitEvents.isEmpty() -> LoadingBlock("טוען אירועים…")
                 events.isEmpty() -> EmptyState(
                     title = if (trimmed.isEmpty()) "אין אירועים להצגה" else "לא נמצאו אירועים תואמים",
                     actionTitle = if (trimmed.isEmpty()) null else "ניקוי חיפוש",
@@ -118,7 +114,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                         color = FieldTheme.textMuted,
                     )
                     events.forEach { event -> UnitEventRow(event) { detail = event } }
-                    Spacer(Modifier.height(24.dp))
+                    Spacer(Modifier.height(88.dp))
                 }
             }
         }

@@ -80,13 +80,9 @@ fun UnitShiftsScreen(app: AppModel, ui: AppUiState) {
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("משמרות היחידה", style = TypeScale.title, color = FieldTheme.textPrimary)
-                TextButton(onClick = { app.setToolsDestination(ToolsDestination.NEW_SHIFT) }) {
-                    Text(NEW_SHIFT_TITLE, style = TypeScale.bodyStrong, color = FieldTheme.accent)
-                }
+                Text("משמרות", style = TypeScale.title, color = FieldTheme.textPrimary)
             }
             SearchField(
                 value = query,
@@ -99,7 +95,7 @@ fun UnitShiftsScreen(app: AppModel, ui: AppUiState) {
                     actionTitle = "רענון",
                     onAction = { scope.launch { app.reloadUnitShifts() } },
                 )
-                ui.unitShiftsLoading && ui.unitShifts.isEmpty() -> LoadingBlock("טוען משמרות יחידה…")
+                ui.unitShiftsLoading && ui.unitShifts.isEmpty() -> LoadingBlock("טוען משמרות…")
                 shifts.isEmpty() -> EmptyState(
                     title = if (trimmed.isEmpty()) "אין משמרות להצגה" else "לא נמצאו משמרות תואמות",
                     actionTitle = if (trimmed.isEmpty()) null else "ניקוי חיפוש",
@@ -115,7 +111,7 @@ fun UnitShiftsScreen(app: AppModel, ui: AppUiState) {
                         color = FieldTheme.textMuted,
                     )
                     shifts.forEach { shift -> UnitShiftRow(shift) { detail = shift } }
-                    Spacer(Modifier.height(24.dp))
+                    Spacer(Modifier.height(88.dp))
                 }
             }
         }

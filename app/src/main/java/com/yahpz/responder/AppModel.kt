@@ -10,18 +10,19 @@ import com.yahpz.domain.BroadcastDraft
 import com.yahpz.domain.BroadcastLogEntry
 import com.yahpz.domain.EVENT_DRAFT_SAVED
 import com.yahpz.domain.EventDraft
-import com.yahpz.domain.INVITE_SAVED
 import com.yahpz.domain.InviteDraft
+import com.yahpz.domain.USER_DELETED
+import com.yahpz.domain.USER_SAVED
+import com.yahpz.domain.otpFlagToast
 import com.yahpz.domain.KM_DISCREPANCY_APPLIED
 import com.yahpz.domain.REPORT_FAILED_TITLE
 import com.yahpz.domain.ReportKindId
 import com.yahpz.domain.ReportRow
 import com.yahpz.domain.SHIFT_DRAFT_SAVED
 import com.yahpz.domain.ShiftDraft
-import com.yahpz.domain.UNIT_EVENTS_LOAD_FAILED
-import com.yahpz.domain.UNIT_SHIFTS_LOAD_FAILED
 import com.yahpz.domain.broadcastResultCopy
 import com.yahpz.domain.canToggleEventCancelled
+import com.yahpz.domain.defaultMobileView
 import com.yahpz.domain.defaultReportRange
 import com.yahpz.domain.eventCancelToast
 import com.yahpz.domain.isAdmin
@@ -42,10 +43,22 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-enum class AppTab { INBOX, SHIFTS, CONTACTS, UNIT_EVENTS, UNIT_SHIFTS, TOOLS, PROFILE }
+enum class AppTab { INBOX, SHIFTS, CONTACTS, UNIT_EVENTS, UNIT_SHIFTS, TOOLS, REPORTS, PROFILE }
 
 enum class ToolsDestination {
-    HUB, REPORT, ADMIN_USERS, NEW_EVENT, EDIT_EVENT, NEW_SHIFT, EDIT_SHIFT, BROADCAST, FUEL_QUARTER, CLOSED_LISTS, COCKPIT
+    HUB, REPORT_CATALOG, REPORT, ADMIN_USERS, NEW_EVENT, EDIT_EVENT, NEW_SHIFT, EDIT_SHIFT, BROADCAST, FUEL_QUARTER, CLOSED_LISTS, COCKPIT
+}
+
+fun appTabForMobileView(view: String): AppTab = when (view) {
+    "mine" -> AppTab.INBOX
+    "my_shifts" -> AppTab.SHIFTS
+    "contacts" -> AppTab.CONTACTS
+    "events" -> AppTab.UNIT_EVENTS
+    "shifts" -> AppTab.UNIT_SHIFTS
+    "users" -> AppTab.TOOLS
+    "reports" -> AppTab.REPORTS
+    "profile" -> AppTab.PROFILE
+    else -> AppTab.INBOX
 }
 
 data class AppUiState(
@@ -145,7 +158,7 @@ class AppModel : ViewModel() {
         _state.update {
             it.copy(
                 tab = tab,
-                toolsDestination = if (tab == AppTab.TOOLS) it.toolsDestination else ToolsDestination.HUB,
+                toolsDestination = ToolsDestination.HUB,
             )
         }
     }
@@ -153,7 +166,6 @@ class AppModel : ViewModel() {
     fun setToolsDestination(destination: ToolsDestination) {
         _state.update {
             it.copy(
-                tab = AppTab.TOOLS,
                 toolsDestination = destination,
                 editingEventId = if (destination == ToolsDestination.EDIT_EVENT) it.editingEventId else null,
                 editingShiftId = if (destination == ToolsDestination.EDIT_SHIFT) it.editingShiftId else null,
@@ -164,7 +176,7 @@ class AppModel : ViewModel() {
     fun openEditEvent(eventId: String) {
         _state.update {
             it.copy(
-                tab = AppTab.TOOLS,
+                tab = AppTab.UNIT_EVENTS,
                 toolsDestination = ToolsDestination.EDIT_EVENT,
                 editingEventId = eventId,
             )
@@ -174,7 +186,7 @@ class AppModel : ViewModel() {
     fun openEditShift(shiftId: String) {
         _state.update {
             it.copy(
-                tab = AppTab.TOOLS,
+                tab = AppTab.UNIT_SHIFTS,
                 toolsDestination = ToolsDestination.EDIT_SHIFT,
                 editingShiftId = shiftId,
             )
@@ -351,7 +363,7 @@ class AppModel : ViewModel() {
                 unitEventsFailed = failed,
             )
         },
-        failureMessage = UNIT_EVENTS_LOAD_FAILED,
+        failureMessage = "טעינת האירועים נכשלה. בדקו את החיבור ונסו שוב.",
         fetch = { YahpazAPI.fetchUnitEvents() },
     )
 
@@ -364,7 +376,7 @@ class AppModel : ViewModel() {
                 unitShiftsFailed = failed,
             )
         },
-        failureMessage = UNIT_SHIFTS_LOAD_FAILED,
+        failureMessage = "טעינת המשמרות נכשלה. בדקו את החיבור ונסו שוב.",
         fetch = { YahpazAPI.fetchUnitShifts() },
     )
 
@@ -416,12 +428,53 @@ class AppModel : ViewModel() {
         return null
     }
 
-    suspend fun inviteUser(draft: InviteDraft): String? {
-        YahpazAPI.inviteAdminUser(draft)?.let { return it }
+    suspend fun inviteUser(draft: InviteDraft): AdminUsersActionResult {
+        val result = YahpazAPI.inviteAdminUser(draft)
+        if (result.ok) reloadAdminUsers()
+        return result
+    }
+
+    suspend fun saveAdminUser(draft: InviteDraft): String? {
+        YahpazAPI.saveAdminUser(draft)?.let { return it }
         reloadAdminUsers()
-        showToast(INVITE_SAVED, StampTone.DONE)
+        showToast(USER_SAVED, StampTone.DONE)
         return null
     }
+
+    suspend fun deleteAdminUser(userId: String): String? {
+        YahpazAPI.deleteAdminUser(userId)?.let { return it }
+        reloadAdminUsers()
+        showToast(USER_DELETED, StampTone.DONE)
+        return null
+    }
+
+    suspend fun resendAdminInvite(userId: String): AdminUsersActionResult =
+        YahpazAPI.resendAdminInvite(userId)
+
+    suspend fun copyAdminInviteLink(userId: String): AdminUsersActionResult =
+        YahpazAPI.copyAdminInviteLink(userId)
+
+    suspend fun setAdminUserOtp(userId: String, kind: String, enabled: Boolean): String? {
+        YahpazAPI.setAdminUserOtp(userId, kind, enabled)?.let { return it }
+        reloadAdminUsers()
+        showToast(otpFlagToast(kind, enabled), StampTone.DONE)
+        return null
+    }
+
+    suspend fun deleteAdminVehicle(vehicleId: String): String? =
+        YahpazAPI.deleteAdminVehicle(vehicleId)
+
+    suspend fun archiveAdminVehicle(vehicleId: String): String? =
+        YahpazAPI.archiveAdminVehicle(vehicleId)
+
+    suspend fun unarchiveAdminVehicle(vehicleId: String): String? =
+        YahpazAPI.unarchiveAdminVehicle(vehicleId)
+
+    suspend fun isVehicleAttachedToEvents(
+        userId: String,
+        vehicleId: String,
+        plateNumber: String,
+    ): Boolean = YahpazAPI.isVehicleAttachedToEvents(userId, vehicleId, plateNumber)
 
     suspend fun setUserActive(userId: String, active: Boolean): String? {
         YahpazAPI.setAdminUserActive(userId, active)?.let { return it }
@@ -435,7 +488,6 @@ class AppModel : ViewModel() {
         _state.update { current ->
             val switching = current.reportKind != kind
             current.copy(
-                tab = AppTab.TOOLS,
                 toolsDestination = ToolsDestination.REPORT,
                 reportKind = kind,
                 reportRows = if (switching) emptyList() else current.reportRows,
@@ -625,6 +677,8 @@ class AppModel : ViewModel() {
                     userId = userId,
                     profile = profile,
                     roles = roles,
+                    tab = appTabForMobileView(defaultMobileView(roles)),
+                    toolsDestination = ToolsDestination.HUB,
                     mustChangePassword = profile.mustChangePassword,
                     vehiclesLoading = true,
                     vehiclesFailed = false,
