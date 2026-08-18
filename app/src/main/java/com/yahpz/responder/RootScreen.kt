@@ -271,5 +271,6 @@ private fun ToolsTab(app: AppModel, ui: AppUiState) {
         )
         ToolsDestination.BROADCAST -> BroadcastScreen(app, ui, backToHub)
         ToolsDestination.FUEL_QUARTER -> FuelQuarterScreen(app, ui, backToHub)
+        ToolsDestination.CLOSED_LISTS -> ClosedListsScreen(app, backToHub)
     }
 }

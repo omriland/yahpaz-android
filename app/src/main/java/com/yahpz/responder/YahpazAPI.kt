@@ -8,6 +8,11 @@ import com.yahpz.domain.BroadcastCandidate
 import com.yahpz.domain.BroadcastDraft
 import com.yahpz.domain.BroadcastLogEntry
 import com.yahpz.domain.BroadcastSendResult
+import com.yahpz.domain.CLOSED_LIST_IN_USE
+import com.yahpz.domain.CLOSED_LIST_IN_USE_CHECK_FAILED
+import com.yahpz.domain.ClosedListItem
+import com.yahpz.domain.ClosedListKey
+import com.yahpz.domain.ClosedListMutationResult
 import com.yahpz.domain.EVENT_DRAFT_DATE_ERROR
 import com.yahpz.domain.EVENT_DRAFT_FORM_ERROR
 import com.yahpz.domain.EVENT_DRAFT_SAVE_FAILED
@@ -34,6 +39,7 @@ import com.yahpz.domain.SET_ACTIVE_FAILED
 import com.yahpz.domain.SHIFT_DRAFT_DATE_ERROR
 import com.yahpz.domain.SHIFT_DRAFT_FORM_ERROR
 import com.yahpz.domain.SHIFT_DRAFT_SAVE_FAILED
+import com.yahpz.domain.SYSTEM_DISTRICT_LOCKED_ERROR
 import com.yahpz.domain.ShiftDraft
 import com.yahpz.domain.buildAvailabilityWrite
 import com.yahpz.domain.buildDuplicateClusters
@@ -44,6 +50,8 @@ import com.yahpz.domain.buildKmDiscrepancyRows
 import com.yahpz.domain.buildKmExceptionRows
 import com.yahpz.domain.buildOpenDocRows
 import com.yahpz.domain.canToggleEventCancelled
+import com.yahpz.domain.closedListMeta
+import com.yahpz.domain.closedListNameError
 import com.yahpz.domain.deriveEventStatusAfterParticipation
 import com.yahpz.domain.duplicateEventsReportRows
 import com.yahpz.domain.eventDraftStatus
@@ -53,9 +61,12 @@ import com.yahpz.domain.FuelQuarterProfileInput
 import com.yahpz.domain.FuelQuarterSavedDistribution
 import com.yahpz.domain.fuelRefundReportRows
 import com.yahpz.domain.isAdmin
+import com.yahpz.domain.isSystemClosedListItem
 import com.yahpz.domain.israelToday
 import com.yahpz.domain.kmDiscrepancyReportRows
 import com.yahpz.domain.kmExceptionReportRows
+import com.yahpz.domain.mapClosedListDeleteError
+import com.yahpz.domain.mapClosedListWriteError
 import com.yahpz.domain.mapTreatedPlateRows
 import com.yahpz.domain.needsBroadcastSubject
 import com.yahpz.domain.normalizeReturnDate
@@ -603,6 +614,103 @@ object YahpazAPI {
             eventTypes = lookup("event_types", "id, name"),
             roads = sortByRoadName(roads) { it.name },
         )
+    }
+
+    /** Admin closed lists — all rows (active + inactive), matching web `fetchClosedListItems`. */
+    suspend fun fetchClosedListItems(key: ClosedListKey): List<ClosedListItem> {
+        val columns = if (key == ClosedListKey.DISTRICTS) {
+            "id, name, active, sort_order, code"
+        } else {
+            "id, name, active, sort_order"
+        }
+        val items = client.from(key.raw).select(Columns.raw(columns)) {
+            order("sort_order", Order.ASCENDING)
+            order("name", Order.ASCENDING)
+        }.decodeList<ClosedListItemRow>().map { it.asItem }
+        return if (key == ClosedListKey.ROADS) sortByRoadName(items) { it.name } else items
+    }
+
+    suspend fun createClosedListItem(key: ClosedListKey, name: String): ClosedListMutationResult {
+        closedListNameError(name)?.let { return ClosedListMutationResult.Err(it) }
+        val trimmed = name.trim()
+        return try {
+            val existing = fetchClosedListItems(key)
+            val sortOrder = (existing.maxOfOrNull { it.sortOrder } ?: 0) + 1
+            val item = client.from(key.raw).insert(
+                ClosedListInsert(name = trimmed, sortOrder = sortOrder, active = true),
+            ) {
+                select(Columns.raw("id, name, active, sort_order"))
+            }.decodeSingle<ClosedListItemRow>().asItem
+            ClosedListMutationResult.Ok(item)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            ClosedListMutationResult.Err(mapClosedListWriteError(error.message, create = true))
+        }
+    }
+
+    suspend fun updateClosedListItem(
+        key: ClosedListKey,
+        id: String,
+        name: String,
+    ): ClosedListMutationResult {
+        closedListNameError(name)?.let { return ClosedListMutationResult.Err(it) }
+        val trimmed = name.trim()
+        if (key == ClosedListKey.DISTRICTS) {
+            val item = runCatching { fetchClosedListItems(key).firstOrNull { it.id == id } }.getOrNull()
+            if (isSystemClosedListItem(item)) {
+                return ClosedListMutationResult.Err(SYSTEM_DISTRICT_LOCKED_ERROR)
+            }
+        }
+        return try {
+            client.from(key.raw).update(ClosedListNameUpdate(name = trimmed)) {
+                filter { eq("id", id) }
+            }
+            ClosedListMutationResult.Ok()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            ClosedListMutationResult.Err(mapClosedListWriteError(error.message, create = false))
+        }
+    }
+
+    private suspend fun isClosedListItemInUse(key: ClosedListKey, id: String): Boolean {
+        val usage = closedListMeta(key).usage
+        val rows = client.from(usage.table).select(Columns.raw("id")) {
+            filter { eq(usage.column, id) }
+            limit(1)
+        }.decodeList<IdRow>()
+        return rows.isNotEmpty()
+    }
+
+    suspend fun deleteClosedListItem(key: ClosedListKey, id: String): ClosedListMutationResult {
+        if (key == ClosedListKey.DISTRICTS) {
+            val item = try {
+                fetchClosedListItems(key).firstOrNull { it.id == id }
+            } catch (_: Exception) {
+                return ClosedListMutationResult.Err(CLOSED_LIST_IN_USE_CHECK_FAILED)
+            }
+            if (isSystemClosedListItem(item)) {
+                return ClosedListMutationResult.Err(SYSTEM_DISTRICT_LOCKED_ERROR)
+            }
+        }
+        try {
+            if (isClosedListItemInUse(key, id)) {
+                return ClosedListMutationResult.Err(CLOSED_LIST_IN_USE, inUse = true)
+            }
+        } catch (_: Exception) {
+            return ClosedListMutationResult.Err(CLOSED_LIST_IN_USE_CHECK_FAILED)
+        }
+        return try {
+            client.from(key.raw).delete {
+                filter { eq("id", id) }
+            }
+            ClosedListMutationResult.Ok()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            mapClosedListDeleteError(error.message)
+        }
     }
 
     suspend fun fetchAssignableProfiles(): List<AssignableProfile> =

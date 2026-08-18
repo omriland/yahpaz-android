@@ -23,6 +23,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.yahpz.domain.BROADCAST_CAPTION
 import com.yahpz.domain.BROADCAST_TITLE
+import com.yahpz.domain.CLOSED_LISTS_CAPTION
+import com.yahpz.domain.CLOSED_LISTS_TITLE
 import com.yahpz.domain.FUEL_QUARTER_CAPTION
 import com.yahpz.domain.FUEL_QUARTER_TITLE
 import com.yahpz.domain.canSendUnitBroadcast
@@ -87,6 +89,11 @@ fun ToolsHubScreen(app: AppModel, ui: AppUiState) {
                 title = "משתמשים",
                 caption = "רשימת המשתמשים, תפקידים וזמינות",
                 onClick = { app.setToolsDestination(ToolsDestination.ADMIN_USERS) },
+            )
+            ToolCard(
+                title = CLOSED_LISTS_TITLE,
+                caption = CLOSED_LISTS_CAPTION,
+                onClick = { app.setToolsDestination(ToolsDestination.CLOSED_LISTS) },
             )
             ToolCard(
                 title = FUEL_QUARTER_TITLE,

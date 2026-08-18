@@ -20,6 +20,7 @@ import com.yahpz.domain.BroadcastAudience
 import com.yahpz.domain.BroadcastChannel
 import com.yahpz.domain.BroadcastLogEntry
 import com.yahpz.domain.BroadcastSendResult
+import com.yahpz.domain.ClosedListItem
 import com.yahpz.domain.ContactSearchFields
 import com.yahpz.domain.DuplicateParticipation
 import com.yahpz.domain.EventDraft
@@ -623,6 +624,36 @@ data class LookupRow(
 ) {
     val asOption: LookupOption get() = LookupOption(id = id, name = name, code = code)
 }
+
+@Serializable
+data class ClosedListItemRow(
+    val id: String,
+    val name: String = "",
+    val active: Boolean = true,
+    @SerialName("sort_order") val sortOrder: Int = 0,
+    val code: String? = null,
+) {
+    val asItem: ClosedListItem
+        get() = ClosedListItem(
+            id = id,
+            name = name,
+            active = active,
+            sortOrder = sortOrder,
+            code = code,
+        )
+}
+
+@Serializable
+data class ClosedListInsert(
+    val name: String,
+    @SerialName("sort_order") val sortOrder: Int,
+    val active: Boolean = true,
+)
+
+@Serializable
+data class ClosedListNameUpdate(
+    val name: String,
+)
 
 data class EventLookups(
     val districts: List<LookupOption> = emptyList(),
