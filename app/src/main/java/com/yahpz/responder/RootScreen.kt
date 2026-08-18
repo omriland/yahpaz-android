@@ -258,7 +258,18 @@ private fun ToolsTab(app: AppModel, ui: AppUiState) {
         ToolsDestination.REPORT -> ReportScreen(app, ui, backToHub)
         ToolsDestination.ADMIN_USERS -> AdminUsersScreen(app, ui, backToHub)
         ToolsDestination.NEW_EVENT -> EventFormScreen(app, ui, backToHub)
+        ToolsDestination.EDIT_EVENT -> EventFormScreen(
+            app, ui,
+            onBack = { app.setTab(AppTab.UNIT_EVENTS) },
+            eventId = ui.editingEventId,
+        )
         ToolsDestination.NEW_SHIFT -> ShiftFormScreen(app, ui, backToHub)
+        ToolsDestination.EDIT_SHIFT -> ShiftFormScreen(
+            app, ui,
+            onBack = { app.setTab(AppTab.UNIT_SHIFTS) },
+            shiftId = ui.editingShiftId,
+        )
         ToolsDestination.BROADCAST -> BroadcastScreen(app, ui, backToHub)
+        ToolsDestination.FUEL_QUARTER -> FuelQuarterScreen(app, ui, backToHub)
     }
 }

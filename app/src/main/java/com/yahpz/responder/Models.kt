@@ -22,6 +22,7 @@ import com.yahpz.domain.BroadcastLogEntry
 import com.yahpz.domain.BroadcastSendResult
 import com.yahpz.domain.ContactSearchFields
 import com.yahpz.domain.DuplicateParticipation
+import com.yahpz.domain.EventDraft
 import com.yahpz.domain.EventStatus
 import com.yahpz.domain.EventsByResponderEventInput
 import com.yahpz.domain.EventsByResponderResponderInput
@@ -37,9 +38,12 @@ import com.yahpz.domain.OpenDocResponderInput
 import com.yahpz.domain.ParticipationStatus
 import com.yahpz.domain.ResponderFillDraft
 import com.yahpz.domain.SHIFT_KIND_LABELS
+import com.yahpz.domain.ShiftDraft
 import com.yahpz.domain.ShiftStatus
 import com.yahpz.domain.TreatedPlateRowInput
 import com.yahpz.domain.VEHICLE_TYPE_LABELS
+import com.yahpz.domain.returnDateToInput
+import com.yahpz.domain.FuelQuarterRow as DomainFuelQuarterRow
 import com.yahpz.domain.formatDate
 import com.yahpz.domain.formatPlate
 
@@ -760,6 +764,148 @@ data class EventResponderInsert(
 data class EventCancelWrite(
     @SerialName("is_cancelled") val isCancelled: Boolean,
     @SerialName("updated_at") val updatedAt: String,
+)
+
+@Serializable
+data class EventFormDetail(
+    val id: String,
+    @SerialName("event_date") val eventDate: String,
+    @SerialName("police_event_id") val policeEventId: String? = null,
+    @SerialName("district_id") val districtId: String? = null,
+    @SerialName("event_type_id") val eventTypeId: String? = null,
+    @SerialName("road_id") val roadId: String? = null,
+    val location: String? = null,
+    val notes: String? = null,
+    @SerialName("is_cancelled") val isCancelled: Boolean = false,
+    @Serializable(with = EventStatusSerializer::class)
+    val status: EventStatus = EventStatus.DRAFT,
+    val responders: List<EventFormResponderRow> = emptyList(),
+) {
+    fun toDraft(): EventDraft = EventDraft(
+        eventDate = returnDateToInput(eventDate),
+        policeEventId = policeEventId.orEmpty(),
+        eventTypeId = eventTypeId.orEmpty(),
+        roadId = roadId.orEmpty(),
+        districtId = districtId.orEmpty(),
+        location = location.orEmpty(),
+        notes = notes.orEmpty(),
+        responderIds = responders.map { it.responderId },
+        isCancelled = isCancelled,
+    )
+}
+
+@Serializable
+data class EventFormResponderRow(
+    val id: String,
+    @SerialName("responder_id") val responderId: String,
+    @Serializable(with = ParticipationStatusSerializer::class)
+    val status: ParticipationStatus = ParticipationStatus.PENDING,
+)
+
+@Serializable
+data class EventUpdateWrite(
+    @SerialName("event_date") val eventDate: String,
+    @SerialName("police_event_id") val policeEventId: String? = null,
+    @SerialName("district_id") val districtId: String? = null,
+    @SerialName("event_type_id") val eventTypeId: String? = null,
+    @SerialName("road_id") val roadId: String? = null,
+    val location: String? = null,
+    val notes: String? = null,
+    @SerialName("is_cancelled") val isCancelled: Boolean = false,
+    val status: String,
+    @SerialName("updated_at") val updatedAt: String,
+)
+
+@Serializable
+data class ShiftFormDetail(
+    val id: String,
+    @SerialName("shift_date") val shiftDate: String,
+    @SerialName("shift_kind") val shiftKind: String,
+    @SerialName("vehicle_type") val vehicleType: String,
+    val notes: String? = null,
+    @SerialName("personal_vehicle_id") val personalVehicleId: String? = null,
+    val responders: List<ShiftCrewRow> = emptyList(),
+) {
+    fun toDraft(): ShiftDraft = ShiftDraft(
+        shiftDate = returnDateToInput(shiftDate),
+        shiftKind = shiftKind,
+        vehicleType = vehicleType,
+        notes = notes.orEmpty(),
+        responderIds = responders.map { it.responderId },
+    )
+}
+
+@Serializable
+data class ShiftUpdateWrite(
+    @SerialName("shift_date") val shiftDate: String,
+    @SerialName("shift_kind") val shiftKind: String,
+    @SerialName("vehicle_type") val vehicleType: String,
+    @SerialName("personal_vehicle_id") val personalVehicleId: String? = null,
+    val notes: String? = null,
+    @SerialName("last_saved_by") val lastSavedBy: String,
+    @SerialName("updated_at") val updatedAt: String,
+)
+
+@Serializable
+data class FuelQuarterInsert(
+    val year: Int,
+    val quarter: Int,
+    val status: String = "draft",
+)
+
+@Serializable
+data class FuelQuarterRowDb(
+    val id: String,
+    val year: Int,
+    val quarter: Int,
+    val status: String,
+)
+
+@Serializable
+data class FuelQuarterDistributionRow(
+    @SerialName("responder_id") val responderId: String,
+    val cards: Int? = null,
+    @SerialName("card_numbers") val cardNumbers: String? = null,
+    @SerialName("remaining_km")
+    @Serializable(with = OptionalDoubleSerializer::class)
+    val remainingKm: Double? = null,
+)
+
+@Serializable
+data class FuelQuarterParticipationRow(
+    @SerialName("responder_id") val responderId: String,
+    @SerialName("total_km")
+    @Serializable(with = OptionalDoubleSerializer::class)
+    val totalKm: Double? = null,
+    @Serializable(with = OptionalFuelQuarterEventSerializer::class)
+    val events: FuelQuarterEventEmbed? = null,
+)
+
+@Serializable
+data class FuelQuarterEventEmbed(
+    @SerialName("created_at") val createdAt: String,
+    val status: String? = null,
+)
+
+object OptionalFuelQuarterEventSerializer : OneOrNullSerializer<FuelQuarterEventEmbed>(
+    FuelQuarterEventEmbed.serializer(),
+)
+
+@Serializable
+data class FuelQuarterProfileRow(
+    val id: String,
+    @SerialName("full_name") val fullName: String,
+    val callsign: String,
+    val active: Boolean = true,
+)
+
+data class FuelQuarterWorkbook(
+    val quarterId: String,
+    val year: Int,
+    val quarter: Int,
+    val status: String,
+    val monthLabels: List<String>,
+    val rows: List<DomainFuelQuarterRow>,
 )
 
 @Serializable

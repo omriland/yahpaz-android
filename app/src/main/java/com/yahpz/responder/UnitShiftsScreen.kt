@@ -167,6 +167,17 @@ fun UnitShiftsScreen(app: AppModel, ui: AppUiState) {
                         }
                     }
                 }
+                if (ui.canManageUnit) {
+                    Spacer(Modifier.height(8.dp))
+                    PrimaryButton(
+                        title = "עריכה",
+                        onClick = {
+                            val id = shift.id
+                            detail = null
+                            app.openEditShift(id)
+                        },
+                    )
+                }
                 TextButton(onClick = { detail = null }, modifier = Modifier.align(Alignment.End)) {
                     Text("סגירה", color = FieldTheme.accent)
                 }

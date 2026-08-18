@@ -38,13 +38,19 @@ import com.yahpz.domain.ShiftDraft
 import com.yahpz.domain.buildAvailabilityWrite
 import com.yahpz.domain.buildDuplicateClusters
 import com.yahpz.domain.buildEventsByResponderRows
+import com.yahpz.domain.buildFuelQuarterRows
 import com.yahpz.domain.buildFuelRefundRows
 import com.yahpz.domain.buildKmDiscrepancyRows
 import com.yahpz.domain.buildKmExceptionRows
 import com.yahpz.domain.buildOpenDocRows
+import com.yahpz.domain.canToggleEventCancelled
+import com.yahpz.domain.deriveEventStatusAfterParticipation
 import com.yahpz.domain.duplicateEventsReportRows
 import com.yahpz.domain.eventDraftStatus
 import com.yahpz.domain.eventsByResponderReportRows
+import com.yahpz.domain.FuelQuarterParticipationInput
+import com.yahpz.domain.FuelQuarterProfileInput
+import com.yahpz.domain.FuelQuarterSavedDistribution
 import com.yahpz.domain.fuelRefundReportRows
 import com.yahpz.domain.isAdmin
 import com.yahpz.domain.israelToday
@@ -58,6 +64,8 @@ import com.yahpz.domain.parsedOdometer
 import com.yahpz.domain.passwordStrengthError
 import com.yahpz.domain.phoneDigits
 import com.yahpz.domain.ProfileVehicle
+import com.yahpz.domain.quarterLocalDateRange
+import com.yahpz.domain.quarterMonthLabels
 import com.yahpz.domain.resolveLeadKmReplacement
 import com.yahpz.domain.VehicleRowInput
 import com.yahpz.domain.plateDigits
@@ -684,6 +692,259 @@ object YahpazAPI {
             if (updated.isEmpty()) "אין הרשאה לעדכן את האירוע." else null
         } catch (_: Exception) {
             EVENT_DRAFT_SAVE_FAILED
+        }
+    }
+
+    suspend fun fetchEventFormDetail(eventId: String): EventFormDetail =
+        client.from("events").select(
+            Columns.raw(
+                """
+                id, event_date, police_event_id, district_id, event_type_id, road_id,
+                location, notes, is_cancelled, status,
+                responders:event_responders(id, responder_id, status)
+                """.trimIndent(),
+            ),
+        ) {
+            filter { eq("id", eventId) }
+        }.decodeSingle()
+
+    suspend fun updateUnitEvent(
+        eventId: String,
+        draft: EventDraft,
+        districts: List<LookupOption>,
+        viewerIsAdmin: Boolean,
+        previousIsCancelled: Boolean,
+    ): String? {
+        val errors = validateEventDraft(draft, districts)
+        if (!errors.isEmpty) return errors.formMessage ?: EVENT_DRAFT_FORM_ERROR
+        if (previousIsCancelled && !draft.isCancelled) {
+            canToggleEventCancelled(false, viewerIsAdmin)?.let { return it }
+        }
+        val eventDate = normalizeReturnDate(draft.eventDate) ?: return EVENT_DRAFT_DATE_ERROR
+        return try {
+            val existing = client.from("event_responders")
+                .select(Columns.raw("id, responder_id, status")) {
+                    filter { eq("event_id", eventId) }
+                }.decodeList<EventFormResponderRow>()
+            val keepIds = draft.responderIds.distinct().toSet()
+            val toRemove = existing.filter { it.responderId !in keepIds }
+            if (toRemove.isNotEmpty()) {
+                client.from("event_responders").delete {
+                    filter { isIn("id", toRemove.map { it.id }) }
+                }
+            }
+            val existingResponderIds = existing.map { it.responderId }.toSet()
+            val toAdd = keepIds.filter { it !in existingResponderIds }
+            if (toAdd.isNotEmpty()) {
+                client.from("event_responders").insert(
+                    toAdd.map { responderId ->
+                        EventResponderInsert(eventId = eventId, responderId = responderId)
+                    },
+                )
+            }
+            val remainingStatuses = existing
+                .filter { it.responderId in keepIds }
+                .map { it.status } + List(toAdd.size) { ParticipationStatus.PENDING }
+            val nextStatus = deriveEventStatusAfterParticipation(remainingStatuses)
+            val updated = client.from("events").update(
+                EventUpdateWrite(
+                    eventDate = eventDate,
+                    policeEventId = draft.policeEventId.nilIfEmpty(),
+                    districtId = draft.districtId.nilIfEmpty(),
+                    eventTypeId = draft.eventTypeId,
+                    roadId = draft.roadId,
+                    location = draft.location.nilIfEmpty(),
+                    notes = draft.notes.nilIfEmpty(),
+                    isCancelled = draft.isCancelled,
+                    status = nextStatus.raw,
+                    updatedAt = Instant.now().toString(),
+                ),
+            ) {
+                filter { eq("id", eventId) }
+                select(Columns.raw("id"))
+            }.decodeList<IdRow>()
+            if (updated.isEmpty()) "אין הרשאה לעדכן את האירוע." else null
+        } catch (_: Exception) {
+            EVENT_DRAFT_SAVE_FAILED
+        }
+    }
+
+    suspend fun fetchShiftFormDetail(shiftId: String): ShiftFormDetail =
+        client.from("shifts").select(
+            Columns.raw(
+                """
+                id, shift_date, shift_kind, vehicle_type, notes, personal_vehicle_id,
+                responders:shift_responders(id, responder_id)
+                """.trimIndent(),
+            ),
+        ) {
+            filter { eq("id", shiftId) }
+        }.decodeSingle()
+
+    suspend fun updateUnitShift(shiftId: String, draft: ShiftDraft): String? {
+        val errors = validateShiftDraft(draft)
+        if (!errors.isEmpty) return errors.formMessage ?: SHIFT_DRAFT_FORM_ERROR
+        val userId = sessionUserId() ?: return "יש להתחבר מחדש."
+        val shiftDate = normalizeReturnDate(draft.shiftDate) ?: return SHIFT_DRAFT_DATE_ERROR
+        return try {
+            val detail = fetchShiftFormDetail(shiftId)
+            val personalVehicleId = if (draft.vehicleType == "personal") {
+                detail.personalVehicleId
+            } else {
+                null
+            }
+            val existing = detail.responders
+            val keepIds = draft.responderIds.distinct().toSet()
+            val toRemove = existing.filter { it.responderId !in keepIds }
+            if (toRemove.isNotEmpty()) {
+                client.from("shift_responders").delete {
+                    filter { isIn("id", toRemove.map { it.id }) }
+                }
+            }
+            val existingResponderIds = existing.map { it.responderId }.toSet()
+            val toAdd = keepIds.filter { it !in existingResponderIds }
+            if (toAdd.isNotEmpty()) {
+                client.from("shift_responders").insert(
+                    toAdd.map { responderId ->
+                        ShiftResponderInsert(shiftId = shiftId, responderId = responderId)
+                    },
+                )
+            }
+            val updated = client.from("shifts").update(
+                ShiftUpdateWrite(
+                    shiftDate = shiftDate,
+                    shiftKind = draft.shiftKind,
+                    vehicleType = draft.vehicleType,
+                    personalVehicleId = personalVehicleId,
+                    notes = draft.notes.nilIfEmpty(),
+                    lastSavedBy = userId,
+                    updatedAt = Instant.now().toString(),
+                ),
+            ) {
+                filter { eq("id", shiftId) }
+                select(Columns.raw("id"))
+            }.decodeList<IdRow>()
+            if (updated.isEmpty()) return "אין הרשאה לעדכן את המשמרת."
+            runCatching {
+                client.postgrest.rpc("sync_shift_born_events", mapOf("p_shift_id" to shiftId))
+            }
+            null
+        } catch (_: Exception) {
+            SHIFT_DRAFT_SAVE_FAILED
+        }
+    }
+
+    suspend fun loadFuelQuarterWorkbook(year: Int, quarter: Int): FuelQuarterWorkbook {
+        require(quarter in 1..4)
+        val q = ensureFuelQuarter(year, quarter)
+        val openingByUser = fetchFuelOpeningByUser(year, quarter)
+        val participations = fetchFuelParticipationsInQuarter(year, quarter)
+        val savedByUser = fetchFuelSavedDistributions(q.id)
+        val idSet = linkedSetOf<String>()
+        participations.forEach { idSet.add(it.responderId) }
+        idSet.addAll(openingByUser.keys)
+        idSet.addAll(savedByUser.keys)
+        val profiles = if (idSet.isEmpty()) {
+            emptyList()
+        } else {
+            idSet.toList().chunked(100).flatMap { chunk ->
+                client.from("profiles").select(Columns.raw("id, full_name, callsign, active")) {
+                    filter { isIn("id", chunk) }
+                }.decodeList<FuelQuarterProfileRow>()
+            }
+        }
+        val rows = buildFuelQuarterRows(
+            year = year,
+            quarter = quarter,
+            profiles = profiles.map {
+                FuelQuarterProfileInput(it.id, it.fullName, it.callsign, it.active)
+            },
+            participations = participations,
+            openingByUser = openingByUser,
+            savedByUser = savedByUser,
+        )
+        return FuelQuarterWorkbook(
+            quarterId = q.id,
+            year = year,
+            quarter = quarter,
+            status = q.status,
+            monthLabels = quarterMonthLabels(quarter),
+            rows = rows,
+        )
+    }
+
+    private suspend fun ensureFuelQuarter(year: Int, quarter: Int): FuelQuarterRowDb {
+        val existing = client.from("fuel_quarters").select(Columns.raw("id, year, quarter, status")) {
+            filter {
+                eq("year", year)
+                eq("quarter", quarter)
+            }
+        }.decodeList<FuelQuarterRowDb>().firstOrNull()
+        if (existing != null) return existing
+        return client.from("fuel_quarters").insert(
+            FuelQuarterInsert(year = year, quarter = quarter),
+        ) {
+            select(Columns.raw("id, year, quarter, status"))
+        }.decodeSingle()
+    }
+
+    private suspend fun fetchFuelOpeningByUser(year: Int, quarter: Int): Map<String, Double> {
+        val prevYear = if (quarter == 1) year - 1 else year
+        val prevQuarter = if (quarter == 1) 4 else quarter - 1
+        val prev = client.from("fuel_quarters").select(Columns.raw("id, year, quarter, status")) {
+            filter {
+                eq("year", prevYear)
+                eq("quarter", prevQuarter)
+            }
+        }.decodeList<FuelQuarterRowDb>().firstOrNull()
+        if (prev == null || prev.status != "locked") return emptyMap()
+        return client.from("fuel_quarter_distributions")
+            .select(Columns.raw("responder_id, remaining_km, cards, card_numbers")) {
+                filter { eq("quarter_id", prev.id) }
+            }.decodeList<FuelQuarterDistributionRow>()
+            .associate { it.responderId to (it.remainingKm ?: 0.0) }
+    }
+
+    private suspend fun fetchFuelSavedDistributions(quarterId: String): Map<String, FuelQuarterSavedDistribution> =
+        client.from("fuel_quarter_distributions")
+            .select(Columns.raw("responder_id, cards, card_numbers, remaining_km")) {
+                filter { eq("quarter_id", quarterId) }
+            }.decodeList<FuelQuarterDistributionRow>()
+            .associate { row ->
+                row.responderId to FuelQuarterSavedDistribution(
+                    cards = row.cards ?: 0,
+                    cardNumbers = row.cardNumbers.orEmpty(),
+                )
+            }
+
+    private suspend fun fetchFuelParticipationsInQuarter(
+        year: Int,
+        quarter: Int,
+    ): List<FuelQuarterParticipationInput> {
+        val (from, to) = quarterLocalDateRange(year, quarter)
+        val bounds = jerusalemDayBounds(from, to)
+        val rows = client.from("event_responders").select(
+            Columns.raw(
+                """
+                responder_id, total_km,
+                events!inner(created_at, status)
+                """.trimIndent(),
+            ),
+        ) {
+            filter {
+                eq("events.status", EventStatus.DONE.raw)
+                gte("events.created_at", bounds.first)
+                lte("events.created_at", bounds.second)
+            }
+        }.decodeList<FuelQuarterParticipationRow>()
+        return rows.mapNotNull { row ->
+            val event = row.events ?: return@mapNotNull null
+            if (row.totalKm == null) return@mapNotNull null
+            FuelQuarterParticipationInput(
+                responderId = row.responderId,
+                createdAt = event.createdAt,
+                totalKm = row.totalKm,
+            )
         }
     }
 

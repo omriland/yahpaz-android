@@ -8,6 +8,8 @@ const val SHIFT_DRAFT_PLATE_ERROR = "יש לבחור לוחית לרכב פרט�
 const val SHIFT_DRAFT_FORM_ERROR = "יש למלא תאריך, שם משמרת וסוג רכב לפני השמירה."
 const val SHIFT_DRAFT_SAVE_FAILED = "שמירת המשמרת נכשלה. בדקו את החיבור ונסו שוב."
 const val SHIFT_DRAFT_SAVED = "המשמרת נשמרה."
+const val SHIFT_EDIT_TITLE = "עריכת משמרת"
+const val SHIFT_EDIT_LOAD_FAILED = "טעינת המשמרת נכשלה. בדקו את החיבור ונסו שוב."
 
 const val SHIFT_CREW_MIN = 1
 const val SHIFT_CREW_MAX = 3

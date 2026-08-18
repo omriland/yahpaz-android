@@ -186,6 +186,14 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                     cancelError?.let {
                         Text(it, style = TypeScale.caption, color = FieldTheme.alert)
                     }
+                    PrimaryButton(
+                        title = "עריכה",
+                        onClick = {
+                            val id = current.id
+                            detail = null
+                            app.openEditEvent(id)
+                        },
+                    )
                     GhostButton(
                         title = eventCancelToggleLabel(current.isCancelled),
                         enabled = !cancelling && (!current.isCancelled || ui.canAdmin),

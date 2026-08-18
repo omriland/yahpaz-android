@@ -19,6 +19,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.yahpz.domain.SHIFT_EDIT_LOAD_FAILED
+import com.yahpz.domain.SHIFT_EDIT_TITLE
 import com.yahpz.domain.SHIFT_KIND_ORDER
 import com.yahpz.domain.SHIFT_VEHICLE_TYPE_ORDER
 import com.yahpz.domain.ShiftDraft
@@ -35,19 +37,55 @@ import kotlinx.coroutines.launch
 const val NEW_SHIFT_TITLE = "משמרת חדשה"
 
 @Composable
-fun ShiftFormScreen(app: AppModel, ui: AppUiState, onBack: () -> Unit) {
+fun ShiftFormScreen(
+    app: AppModel,
+    ui: AppUiState,
+    onBack: () -> Unit,
+    shiftId: String? = null,
+) {
+    val editing = shiftId != null
     val scope = rememberCoroutineScope()
     var shiftDate by remember { mutableStateOf(returnDateToInput(israelToday())) }
     var shiftKind by remember { mutableStateOf("") }
     var vehicleType by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
     var responderIds by remember { mutableStateOf(emptyList<String>()) }
+    var loaded by remember { mutableStateOf(!editing) }
+    var loadFailed by remember { mutableStateOf(false) }
     var errors by remember { mutableStateOf(ShiftDraftErrors()) }
     var formError by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
 
     LaunchedEffect(ui.userId) {
         if (ui.assignableProfiles.isEmpty() && !ui.lookupsLoading) app.reloadLookups()
+    }
+
+    LaunchedEffect(shiftId) {
+        if (shiftId == null) return@LaunchedEffect
+        loaded = false
+        loadFailed = false
+        try {
+            val detail = YahpazAPI.fetchShiftFormDetail(shiftId)
+            val draft = detail.toDraft()
+            shiftDate = draft.shiftDate
+            shiftKind = draft.shiftKind
+            vehicleType = draft.vehicleType
+            notes = draft.notes
+            responderIds = draft.responderIds
+            loaded = true
+        } catch (_: Exception) {
+            loadFailed = true
+            loaded = true
+        }
+    }
+
+    val vehicleOptions = remember(vehicleType) {
+        val base = SHIFT_VEHICLE_TYPE_ORDER.map { it to shiftVehicleTypeLabel(it) }
+        if (vehicleType.isNotEmpty() && SHIFT_VEHICLE_TYPE_ORDER.none { it == vehicleType }) {
+            base + (vehicleType to shiftVehicleTypeLabel(vehicleType))
+        } else {
+            base
+        }
     }
 
     Column(
@@ -59,8 +97,14 @@ fun ShiftFormScreen(app: AppModel, ui: AppUiState, onBack: () -> Unit) {
             .padding(top = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        ToolsBackRow(NEW_SHIFT_TITLE, onBack)
+        ToolsBackRow(if (editing) SHIFT_EDIT_TITLE else NEW_SHIFT_TITLE, onBack)
         when {
+            loadFailed -> EmptyState(
+                title = SHIFT_EDIT_LOAD_FAILED,
+                actionTitle = "חזרה",
+                onAction = onBack,
+            )
+            editing && !loaded -> LoadingBlock("טוען משמרת…")
             ui.lookupsFailed && ui.assignableProfiles.isEmpty() -> EmptyState(
                 title = "טעינת רשימת הכוננים נכשלה. בדקו את החיבור ונסו שוב.",
                 actionTitle = "רענון",
@@ -83,7 +127,7 @@ fun ShiftFormScreen(app: AppModel, ui: AppUiState, onBack: () -> Unit) {
                 )
                 OptionRowSelector(
                     label = "רכב",
-                    options = SHIFT_VEHICLE_TYPE_ORDER.map { it to shiftVehicleTypeLabel(it) },
+                    options = vehicleOptions,
                     selected = vehicleType,
                     onSelect = { vehicleType = it },
                     error = errors.vehicleType,
@@ -124,7 +168,11 @@ fun ShiftFormScreen(app: AppModel, ui: AppUiState, onBack: () -> Unit) {
                         formError = null
                         scope.launch {
                             saving = true
-                            formError = app.createUnitShift(draft)
+                            formError = if (shiftId != null) {
+                                app.updateUnitShift(shiftId, draft)
+                            } else {
+                                app.createUnitShift(draft)
+                            }
                             saving = false
                         }
                     },

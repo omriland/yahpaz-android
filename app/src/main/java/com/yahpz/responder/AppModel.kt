@@ -42,7 +42,9 @@ import kotlinx.coroutines.launch
 
 enum class AppTab { INBOX, SHIFTS, CONTACTS, UNIT_EVENTS, UNIT_SHIFTS, TOOLS, PROFILE }
 
-enum class ToolsDestination { HUB, REPORT, ADMIN_USERS, NEW_EVENT, NEW_SHIFT, BROADCAST }
+enum class ToolsDestination {
+    HUB, REPORT, ADMIN_USERS, NEW_EVENT, EDIT_EVENT, NEW_SHIFT, EDIT_SHIFT, BROADCAST, FUEL_QUARTER
+}
 
 data class AppUiState(
     val booting: Boolean = true,
@@ -85,6 +87,13 @@ data class AppUiState(
     val assignableProfiles: List<AssignableProfile> = emptyList(),
     val lookupsLoading: Boolean = false,
     val lookupsFailed: Boolean = false,
+    val editingEventId: String? = null,
+    val editingShiftId: String? = null,
+    val fuelQuarter: FuelQuarterWorkbook? = null,
+    val fuelQuarterLoading: Boolean = false,
+    val fuelQuarterFailed: Boolean = false,
+    val fuelQuarterYear: Int? = null,
+    val fuelQuarterQuarter: Int? = null,
     val tab: AppTab = AppTab.INBOX,
     val toolsDestination: ToolsDestination = ToolsDestination.HUB,
     val toast: String? = null,
@@ -140,7 +149,34 @@ class AppModel : ViewModel() {
     }
 
     fun setToolsDestination(destination: ToolsDestination) {
-        _state.update { it.copy(tab = AppTab.TOOLS, toolsDestination = destination) }
+        _state.update {
+            it.copy(
+                tab = AppTab.TOOLS,
+                toolsDestination = destination,
+                editingEventId = if (destination == ToolsDestination.EDIT_EVENT) it.editingEventId else null,
+                editingShiftId = if (destination == ToolsDestination.EDIT_SHIFT) it.editingShiftId else null,
+            )
+        }
+    }
+
+    fun openEditEvent(eventId: String) {
+        _state.update {
+            it.copy(
+                tab = AppTab.TOOLS,
+                toolsDestination = ToolsDestination.EDIT_EVENT,
+                editingEventId = eventId,
+            )
+        }
+    }
+
+    fun openEditShift(shiftId: String) {
+        _state.update {
+            it.copy(
+                tab = AppTab.TOOLS,
+                toolsDestination = ToolsDestination.EDIT_SHIFT,
+                editingShiftId = shiftId,
+            )
+        }
     }
 
     fun openFill(eventId: String) {
@@ -470,6 +506,21 @@ class AppModel : ViewModel() {
         return null
     }
 
+    suspend fun updateUnitEvent(eventId: String, draft: EventDraft, previousIsCancelled: Boolean): String? {
+        YahpazAPI.updateUnitEvent(
+            eventId = eventId,
+            draft = draft,
+            districts = _state.value.lookups.districts,
+            viewerIsAdmin = _state.value.canAdmin,
+            previousIsCancelled = previousIsCancelled,
+        )?.let { return it }
+        reloadUnitEvents()
+        viewModelScope.launch { reloadEvents() }
+        showToast(EVENT_DRAFT_SAVED, StampTone.DONE)
+        setTab(AppTab.UNIT_EVENTS)
+        return null
+    }
+
     suspend fun createUnitShift(draft: ShiftDraft): String? {
         YahpazAPI.createUnitShift(draft)?.let { return it }
         reloadUnitShifts()
@@ -477,6 +528,39 @@ class AppModel : ViewModel() {
         showToast(SHIFT_DRAFT_SAVED, StampTone.DONE)
         setTab(AppTab.UNIT_SHIFTS)
         return null
+    }
+
+    suspend fun updateUnitShift(shiftId: String, draft: ShiftDraft): String? {
+        YahpazAPI.updateUnitShift(shiftId, draft)?.let { return it }
+        reloadUnitShifts()
+        viewModelScope.launch { reloadShifts() }
+        showToast(SHIFT_DRAFT_SAVED, StampTone.DONE)
+        setTab(AppTab.UNIT_SHIFTS)
+        return null
+    }
+
+    suspend fun reloadFuelQuarter(year: Int, quarter: Int) {
+        if (_state.value.userId == null || !_state.value.canAdmin) return
+        _state.update {
+            it.copy(
+                fuelQuarterLoading = true,
+                fuelQuarterFailed = false,
+                fuelQuarterYear = year,
+                fuelQuarterQuarter = quarter,
+            )
+        }
+        try {
+            val workbook = YahpazAPI.loadFuelQuarterWorkbook(year, quarter)
+            _state.update {
+                it.copy(fuelQuarter = workbook, fuelQuarterFailed = false)
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            _state.update { it.copy(fuelQuarter = null, fuelQuarterFailed = true) }
+        } finally {
+            _state.update { it.copy(fuelQuarterLoading = false) }
+        }
     }
 
     suspend fun setEventCancelled(eventId: String, isCancelled: Boolean): String? {

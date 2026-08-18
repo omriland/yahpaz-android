@@ -26,6 +26,8 @@ const val EVENT_DRAFT_FORM_ERROR = "יש למלא תאריך, סוג אירוע 
 const val EVENT_DRAFT_FORM_LOCATION_ERROR = "יש למלא תאריך, סוג אירוע, כביש ומיקום כדי ליצור אירוע."
 const val EVENT_DRAFT_SAVE_FAILED = "שמירת האירוע נכשלה. בדקו את החיבור ונסו שוב."
 const val EVENT_DRAFT_SAVED = "האירוע נשמר."
+const val EVENT_EDIT_TITLE = "עריכת אירוע"
+const val EVENT_EDIT_LOAD_FAILED = "טעינת האירוע נכשלה. בדקו את החיבור ונסו שוב."
 
 /** Single system שלוחה that makes מיקום mandatory. Matches the web `systemDistricts`. */
 const val SYSTEM_DISTRICT_CODE = "station_other_duplicated"
@@ -39,6 +41,7 @@ data class EventDraft(
     val location: String = "",
     val notes: String = "",
     val responderIds: List<String> = emptyList(),
+    val isCancelled: Boolean = false,
 )
 
 data class EventDraftErrors(

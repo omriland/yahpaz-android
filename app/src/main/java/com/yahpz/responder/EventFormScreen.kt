@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -16,14 +17,17 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.material3.Text
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.yahpz.domain.EVENT_EDIT_LOAD_FAILED
+import com.yahpz.domain.EVENT_EDIT_TITLE
 import com.yahpz.domain.EventDraft
 import com.yahpz.domain.EventDraftErrors
 import com.yahpz.domain.applyDistrictRoadDefault
+import com.yahpz.domain.canToggleEventCancelled
 import com.yahpz.domain.districtNeedsLocation
+import com.yahpz.domain.eventCancelToggleLabel
 import com.yahpz.domain.eventDraftSummary
 import com.yahpz.domain.israelToday
 import com.yahpz.domain.returnDateToInput
@@ -34,7 +38,13 @@ import kotlinx.coroutines.launch
 const val NEW_EVENT_TITLE = "אירוע חדש"
 
 @Composable
-fun EventFormScreen(app: AppModel, ui: AppUiState, onBack: () -> Unit) {
+fun EventFormScreen(
+    app: AppModel,
+    ui: AppUiState,
+    onBack: () -> Unit,
+    eventId: String? = null,
+) {
+    val editing = eventId != null
     val scope = rememberCoroutineScope()
     var eventDate by remember { mutableStateOf(returnDateToInput(israelToday())) }
     var policeEventId by remember { mutableStateOf("") }
@@ -44,12 +54,40 @@ fun EventFormScreen(app: AppModel, ui: AppUiState, onBack: () -> Unit) {
     var location by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
     var responderIds by remember { mutableStateOf(emptyList<String>()) }
+    var isCancelled by remember { mutableStateOf(false) }
+    var previousIsCancelled by remember { mutableStateOf(false) }
+    var loaded by remember { mutableStateOf(!editing) }
+    var loadFailed by remember { mutableStateOf(false) }
     var errors by remember { mutableStateOf(EventDraftErrors()) }
     var formError by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
 
     LaunchedEffect(ui.userId) {
         if (ui.lookups.isEmpty && !ui.lookupsLoading) app.reloadLookups()
+    }
+
+    LaunchedEffect(eventId) {
+        if (eventId == null) return@LaunchedEffect
+        loaded = false
+        loadFailed = false
+        try {
+            val detail = YahpazAPI.fetchEventFormDetail(eventId)
+            val draft = detail.toDraft()
+            eventDate = draft.eventDate
+            policeEventId = draft.policeEventId
+            eventTypeId = draft.eventTypeId
+            roadId = draft.roadId
+            districtId = draft.districtId
+            location = draft.location
+            notes = draft.notes
+            responderIds = draft.responderIds
+            isCancelled = draft.isCancelled
+            previousIsCancelled = draft.isCancelled
+            loaded = true
+        } catch (_: Exception) {
+            loadFailed = true
+            loaded = true
+        }
     }
 
     fun draft() = EventDraft(
@@ -61,6 +99,7 @@ fun EventFormScreen(app: AppModel, ui: AppUiState, onBack: () -> Unit) {
         location = location,
         notes = notes,
         responderIds = responderIds,
+        isCancelled = isCancelled,
     )
 
     Column(
@@ -72,8 +111,14 @@ fun EventFormScreen(app: AppModel, ui: AppUiState, onBack: () -> Unit) {
             .padding(top = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        ToolsBackRow(NEW_EVENT_TITLE, onBack)
+        ToolsBackRow(if (editing) EVENT_EDIT_TITLE else NEW_EVENT_TITLE, onBack)
         when {
+            loadFailed -> EmptyState(
+                title = EVENT_EDIT_LOAD_FAILED,
+                actionTitle = "חזרה",
+                onAction = onBack,
+            )
+            editing && !loaded -> LoadingBlock("טוען אירוע…")
             ui.lookupsFailed && ui.lookups.isEmpty -> EmptyState(
                 title = "טעינת הרשימות נכשלה. בדקו את החיבור ונסו שוב.",
                 actionTitle = "רענון",
@@ -81,6 +126,17 @@ fun EventFormScreen(app: AppModel, ui: AppUiState, onBack: () -> Unit) {
             )
             ui.lookups.isEmpty -> LoadingBlock("טוען רשימות…")
             else -> {
+                if (editing) {
+                    GhostButton(
+                        title = eventCancelToggleLabel(isCancelled),
+                        enabled = !isCancelled || ui.canAdmin,
+                        onClick = {
+                            val next = !isCancelled
+                            formError = canToggleEventCancelled(next, ui.canAdmin)
+                            if (formError == null) isCancelled = next
+                        },
+                    )
+                }
                 ReturnDateField(
                     label = "תאריך האירוע",
                     value = eventDate,
@@ -171,7 +227,11 @@ fun EventFormScreen(app: AppModel, ui: AppUiState, onBack: () -> Unit) {
                         formError = null
                         scope.launch {
                             saving = true
-                            formError = app.createUnitEvent(current)
+                            formError = if (eventId != null) {
+                                app.updateUnitEvent(eventId, current, previousIsCancelled)
+                            } else {
+                                app.createUnitEvent(current)
+                            }
                             saving = false
                         }
                     },
