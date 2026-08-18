@@ -9,40 +9,62 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import com.yahpz.domain.CommitTreatedPlateResult
 import com.yahpz.domain.EventStatus
 import com.yahpz.domain.FillMode
 import com.yahpz.domain.ParticipationStatus
 import com.yahpz.domain.ResponderFillDraft
 import com.yahpz.domain.ResponderFillErrors
+import com.yahpz.domain.TreatedPlate
+import com.yahpz.domain.commitTreatedPlate
+import com.yahpz.domain.digitsOnly
 import com.yahpz.domain.formatDate
 import com.yahpz.domain.formatDateTime
+import com.yahpz.domain.lookupPlate
 import com.yahpz.domain.participationStamp
+import com.yahpz.domain.plateDigits
+import com.yahpz.domain.removeTreatedPlate
+import com.yahpz.domain.treatedPlateCaption
 import com.yahpz.domain.validateResponderFillDraft
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,6 +78,41 @@ fun FillScreen(eventId: String, app: AppModel) {
     var failed by remember { mutableStateOf(false) }
     var savingDraft by remember { mutableStateOf(false) }
     var completing by remember { mutableStateOf(false) }
+    var plateLookupGeneration by remember { mutableIntStateOf(0) }
+
+    fun commitPendingPlate() {
+        when (
+            val result = commitTreatedPlate(
+                pending = draft.treatedPlatePending,
+                plates = draft.treatedPlates,
+            )
+        ) {
+            is CommitTreatedPlateResult.Error -> {
+                errors = errors.copy(treatedPlates = result.message)
+            }
+            is CommitTreatedPlateResult.Ok -> {
+                draft = draft.copy(
+                    treatedPlates = result.plates,
+                    treatedPlatePending = "",
+                )
+                errors = errors.copy(treatedPlates = null)
+                plateLookupGeneration += 1
+                val generation = plateLookupGeneration
+                val plateNumber = result.plate.plateNumber
+                scope.launch {
+                    val hit = withContext(Dispatchers.IO) { lookupPlate(plateNumber) } ?: return@launch
+                    if (generation > plateLookupGeneration) return@launch
+                    val key = plateDigits(plateNumber)
+                    draft = draft.copy(
+                        treatedPlates = draft.treatedPlates.map { row ->
+                            if (plateDigits(row.plateNumber) != key) row
+                            else row.copy(model = hit.model, color = hit.color)
+                        },
+                    )
+                }
+            }
+        }
+    }
 
     suspend fun load() {
         loading = true
@@ -188,6 +245,19 @@ fun FillScreen(eventId: String, app: AppModel) {
                         FormField("מד אוץ סיום", draft.odometerEnd, { draft = draft.copy(odometerEnd = it) }, keyboardType = KeyboardType.Number, mono = true, error = errors.odometerEnd, enabled = !readOnly)
                         FormArea("נתיב נסיעה", draft.route, { draft = draft.copy(route = it) }, error = errors.route, enabled = !readOnly)
                         FormArea("פירוט הטיפול", draft.treatmentDetail, { draft = draft.copy(treatmentDetail = it) }, error = errors.treatmentDetail, enabled = !readOnly)
+                        TreatedPlatesSection(
+                            plates = draft.treatedPlates,
+                            pending = draft.treatedPlatePending,
+                            error = errors.treatedPlates,
+                            readOnly = readOnly,
+                            onPendingChange = { draft = draft.copy(treatedPlatePending = digitsOnly(it)) },
+                            onCommit = { commitPendingPlate() },
+                            onRemove = { key ->
+                                draft = draft.copy(
+                                    treatedPlates = removeTreatedPlate(draft.treatedPlates, plateDigitsKey = key),
+                                )
+                            },
+                        )
                         FormArea("הערות לטיפול", draft.treatmentNotes, { draft = draft.copy(treatmentNotes = it) }, minHeight = 80, enabled = !readOnly)
                         formError?.let { Text(it, style = TypeScale.body, color = FieldTheme.alert) }
                         Spacer(Modifier.height(80.dp))
@@ -250,6 +320,98 @@ fun FillScreen(eventId: String, app: AppModel) {
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TreatedPlatesSection(
+    plates: List<TreatedPlate>,
+    pending: String,
+    error: String?,
+    readOnly: Boolean,
+    onPendingChange: (String) -> Unit,
+    onCommit: () -> Unit,
+    onRemove: (String) -> Unit,
+) {
+    if (readOnly) {
+        if (plates.isEmpty()) return
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("מספרי כלי רכב", style = TypeScale.label, color = FieldTheme.textSecondary)
+            plates.forEach { row ->
+                TreatedPlateRow(row = row, removable = false, onRemove = {})
+            }
+        }
+        return
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        plates.forEach { row ->
+            TreatedPlateRow(row = row, removable = true, onRemove = onRemove)
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                FormField(
+                    label = "מספרי כלי רכב",
+                    value = pending,
+                    onValueChange = onPendingChange,
+                    keyboardType = KeyboardType.Number,
+                    mono = true,
+                    error = error,
+                    imeAction = ImeAction.Done,
+                    onSubmit = onCommit,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            TextButton(
+                onClick = onCommit,
+                modifier = Modifier
+                    .heightIn(min = 44.dp)
+                    .padding(bottom = if (error == null) 0.dp else 18.dp)
+                    .border(1.dp, FieldTheme.strong, RoundedCornerShape(4.dp)),
+            ) {
+                Text("הוספה", style = TypeScale.bodyStrong, color = FieldTheme.accent)
+            }
+        }
+    }
+}
+
+@Composable
+private fun TreatedPlateRow(
+    row: TreatedPlate,
+    removable: Boolean,
+    onRemove: (String) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        LicensePlate(plate = row.plateNumber)
+        treatedPlateCaption(model = row.model, color = row.color)?.let { caption ->
+            Text(
+                text = caption,
+                style = TypeScale.caption,
+                color = FieldTheme.textSecondary,
+                modifier = Modifier.weight(1f),
+            )
+        } ?: Spacer(Modifier.weight(1f))
+        if (removable) {
+            IconButton(
+                onClick = { onRemove(row.plateNumber) },
+                modifier = Modifier.size(44.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Close,
+                    contentDescription = "הסרת מספר ${row.plateNumber}",
+                    tint = FieldTheme.textMuted,
+                    modifier = Modifier.size(18.dp),
+                )
             }
         }
     }

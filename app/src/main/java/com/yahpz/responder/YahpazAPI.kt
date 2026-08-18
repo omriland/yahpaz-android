@@ -8,6 +8,7 @@ import com.yahpz.domain.ParticipationStatus
 import com.yahpz.domain.ResponderFillDraft
 import com.yahpz.domain.buildAvailabilityWrite
 import com.yahpz.domain.israelToday
+import com.yahpz.domain.mapTreatedPlateRows
 import com.yahpz.domain.parsedOdometer
 import com.yahpz.domain.passwordStrengthError
 import com.yahpz.domain.plateDigits
@@ -52,7 +53,8 @@ object YahpazAPI {
         shift_lead:profiles!events_shift_lead_id_fkey(full_name, callsign),
         responders:event_responders(
           id, responder_id, vehicle_plate, odometer_start, odometer_end, total_km,
-          route, treatment_detail, treatment_notes, status, updated_at, ended_at
+          route, treatment_detail, treatment_notes, status, updated_at, ended_at,
+          treated_plates:event_treated_plates(plate_number, model, color, sort_order)
         )
     """.trimIndent()
 
@@ -226,6 +228,8 @@ object YahpazAPI {
                 route = mine.route.orEmpty(),
                 treatmentDetail = mine.treatmentDetail.orEmpty(),
                 treatmentNotes = mine.treatmentNotes.orEmpty(),
+                treatedPlates = mapTreatedPlateRows(mine.treatedPlates.map { it.asInput }),
+                treatedPlatePending = "",
             ),
             vehicles = options,
             endedAt = mine.endedAt,
@@ -274,6 +278,22 @@ object YahpazAPI {
             }.decodeList<IdRow>()
             if (updated.isEmpty()) {
                 return "לא ניתן לערוך דיווח שהושלם. רק אחמ״ש יכול לערוך."
+            }
+            client.from("event_treated_plates").delete {
+                filter { eq("event_responder_id", context.assignmentId) }
+            }
+            if (draft.treatedPlates.isNotEmpty()) {
+                client.from("event_treated_plates").insert(
+                    draft.treatedPlates.mapIndexed { index, row ->
+                        TreatedPlateWrite(
+                            eventResponderId = context.assignmentId,
+                            plateNumber = row.plateNumber,
+                            model = row.model,
+                            color = row.color,
+                            sortOrder = index,
+                        )
+                    },
+                )
             }
             runCatching {
                 client.postgrest.rpc(

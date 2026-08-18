@@ -22,6 +22,7 @@ import com.yahpz.domain.ParticipationStatus
 import com.yahpz.domain.ResponderFillDraft
 import com.yahpz.domain.SHIFT_KIND_LABELS
 import com.yahpz.domain.ShiftStatus
+import com.yahpz.domain.TreatedPlateRowInput
 import com.yahpz.domain.VEHICLE_TYPE_LABELS
 import com.yahpz.domain.formatDate
 import com.yahpz.domain.formatPlate
@@ -144,6 +145,33 @@ data class ResponderVehicle(val plate: String, val model: String) {
 }
 
 @Serializable
+data class EventTreatedPlateRow(
+    @SerialName("plate_number") val plateNumber: String? = null,
+    val model: String? = null,
+    val color: String? = null,
+    @SerialName("sort_order")
+    @Serializable(with = OptionalIntSerializer::class)
+    val sortOrder: Int? = null,
+) {
+    val asInput: TreatedPlateRowInput
+        get() = TreatedPlateRowInput(
+            plateNumber = plateNumber,
+            model = model,
+            color = color,
+            sortOrder = sortOrder,
+        )
+}
+
+@Serializable
+data class TreatedPlateWrite(
+    @SerialName("event_responder_id") val eventResponderId: String,
+    @SerialName("plate_number") val plateNumber: String,
+    val model: String? = null,
+    val color: String? = null,
+    @SerialName("sort_order") val sortOrder: Int,
+)
+
+@Serializable
 data class FillAssignmentRow(
     val id: String,
     @SerialName("responder_id") val responderId: String,
@@ -164,6 +192,7 @@ data class FillAssignmentRow(
     val status: ParticipationStatus,
     @SerialName("updated_at") val updatedAt: String? = null,
     @SerialName("ended_at") val endedAt: String? = null,
+    @SerialName("treated_plates") val treatedPlates: List<EventTreatedPlateRow> = emptyList(),
 )
 
 @Serializable

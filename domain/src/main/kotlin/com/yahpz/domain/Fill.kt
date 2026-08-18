@@ -7,6 +7,8 @@ data class ResponderFillDraft(
     val route: String = "",
     val treatmentDetail: String = "",
     val treatmentNotes: String = "",
+    val treatedPlates: List<TreatedPlate> = emptyList(),
+    val treatedPlatePending: String = "",
 )
 
 data class ResponderFillErrors(
@@ -15,14 +17,16 @@ data class ResponderFillErrors(
     val odometerEnd: String? = null,
     val route: String? = null,
     val treatmentDetail: String? = null,
+    val treatedPlates: String? = null,
     val form: String? = null,
 ) {
     val isEmpty: Boolean
         get() = vehiclePlate == null && odometerStart == null && odometerEnd == null &&
-            route == null && treatmentDetail == null && form == null
+            route == null && treatmentDetail == null && treatedPlates == null && form == null
 
     val firstMessage: String?
         get() = form ?: vehiclePlate ?: odometerStart ?: odometerEnd ?: route ?: treatmentDetail
+            ?: treatedPlates
 }
 
 enum class FillMode { DRAFT, COMPLETE }
@@ -51,6 +55,7 @@ fun validateResponderFillDraft(
     var odometerEnd: String? = null
     var route: String? = null
     var treatmentDetail: String? = null
+    var treatedPlates: String? = null
     val start = parseOptionalNumber(draft.odometerStart)
     val end = parseOptionalNumber(draft.odometerEnd)
     val plate = plateDigits(draft.vehiclePlate)
@@ -83,12 +88,17 @@ fun validateResponderFillDraft(
         odometerEnd = "מד אוץ סיום חייב להיות גדול ממד אוץ התחלה"
     }
 
+    leftoverTreatedPlateError(pending = draft.treatedPlatePending, mode = mode)?.let {
+        treatedPlates = it
+    }
+
     return ResponderFillErrors(
         vehiclePlate = vehiclePlate,
         odometerStart = odometerStart,
         odometerEnd = odometerEnd,
         route = route,
         treatmentDetail = treatmentDetail,
+        treatedPlates = treatedPlates,
     )
 }
 

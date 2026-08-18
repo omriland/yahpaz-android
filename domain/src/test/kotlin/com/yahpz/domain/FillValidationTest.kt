@@ -73,6 +73,53 @@ class FillValidationTest {
     }
 
     @Test
+    fun completeErrorsOnLeftoverTreatedPlatePending() {
+        val errors = validateResponderFillDraft(
+            ResponderFillDraft(
+                vehiclePlate = "1234567",
+                odometerStart = "100",
+                odometerEnd = "112",
+                route = "כביש 1",
+                treatmentDetail = "טיפול",
+                treatedPlatePending = "123",
+            ),
+            FillMode.COMPLETE,
+            plates,
+            12.0,
+        )
+        assertEquals(TREATED_PLATE_LEFTOVER_ERROR, errors.treatedPlates)
+    }
+
+    @Test
+    fun draftIgnoresLeftoverTreatedPlatePending() {
+        val errors = validateResponderFillDraft(
+            ResponderFillDraft(treatedPlatePending = "123"),
+            FillMode.DRAFT,
+            plates,
+            null,
+        )
+        assertNull(errors.treatedPlates)
+    }
+
+    @Test
+    fun completeAllowsZeroTreatedPlates() {
+        val errors = validateResponderFillDraft(
+            ResponderFillDraft(
+                vehiclePlate = "1234567",
+                odometerStart = "100",
+                odometerEnd = "112",
+                route = "כביש 1",
+                treatmentDetail = "טיפול",
+            ),
+            FillMode.COMPLETE,
+            plates,
+            12.0,
+        )
+        assertNull(errors.treatedPlates)
+        assertTrue(errors.isEmpty)
+    }
+
+    @Test
     fun endMustBeGreaterThanStart() {
         val errors = validateResponderFillDraft(
             ResponderFillDraft(odometerStart = "100", odometerEnd = "100"),
