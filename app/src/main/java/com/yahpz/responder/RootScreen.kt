@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ListAlt
@@ -38,12 +39,14 @@ import kotlinx.coroutines.launch
 fun RootScreen(app: AppModel, ui: AppUiState) {
     Box(Modifier.fillMaxSize()) {
         when {
-            ui.booting -> Booting()
-            ui.forceUpdate != null -> ForceUpdateScreen(ui.forceUpdate)
-            ui.trackToken != null && !ui.isSignedIn -> LiveTrackScreen(ui.trackToken, app::closeTrack)
-            !ui.isSignedIn -> LoginGate(app, ui)
-            ui.mustChangePassword -> ProfileScreen(app, ui)
-            ui.fillEventId != null -> FillScreen(ui.fillEventId, app)
+            ui.booting -> SafeEdgeScreen { Booting() }
+            ui.forceUpdate != null -> SafeEdgeScreen { ForceUpdateScreen(ui.forceUpdate) }
+            ui.trackToken != null && !ui.isSignedIn -> SafeEdgeScreen {
+                LiveTrackScreen(ui.trackToken, app::closeTrack)
+            }
+            !ui.isSignedIn -> SafeEdgeScreen { LoginGate(app, ui) }
+            ui.mustChangePassword -> SafeEdgeScreen { ProfileScreen(app, ui) }
+            ui.fillEventId != null -> SafeEdgeScreen { FillScreen(ui.fillEventId, app) }
             else -> MainTabs(app, ui)
         }
         if (
@@ -54,7 +57,9 @@ fun RootScreen(app: AppModel, ui: AppUiState) {
             !ui.mustChangePassword
         ) {
             Box(Modifier.fillMaxSize().background(FieldTheme.page)) {
-                LiveTrackScreen(ui.trackToken, app::closeTrack)
+                SafeEdgeScreen {
+                    LiveTrackScreen(ui.trackToken, app::closeTrack)
+                }
             }
         }
         ui.toast?.let { toast ->
@@ -67,6 +72,18 @@ fun RootScreen(app: AppModel, ui: AppUiState) {
                 ToastBanner(toast, ui.toastTone)
             }
         }
+    }
+}
+
+/** Full-screen routes drawn under edge-to-edge system bars. MainTabs uses Scaffold insets instead. */
+@Composable
+private fun SafeEdgeScreen(content: @Composable () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .safeDrawingPadding(),
+    ) {
+        content()
     }
 }
 

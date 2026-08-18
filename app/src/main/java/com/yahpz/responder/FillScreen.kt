@@ -138,10 +138,14 @@ fun FillScreen(eventId: String, app: AppModel) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .heightIn(min = 44.dp)
                 .padding(horizontal = 8.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TextButton(onClick = { app.closeFill() }) {
+            TextButton(
+                onClick = { app.closeFill() },
+                modifier = Modifier.heightIn(min = 44.dp),
+            ) {
                 Text("חזרה", color = FieldTheme.accent, style = TypeScale.body)
             }
             Text("השלמת הפרטים שלי", style = TypeScale.section, color = FieldTheme.textPrimary)
