@@ -25,6 +25,8 @@ import com.yahpz.domain.BROADCAST_CAPTION
 import com.yahpz.domain.BROADCAST_TITLE
 import com.yahpz.domain.CLOSED_LISTS_CAPTION
 import com.yahpz.domain.CLOSED_LISTS_TITLE
+import com.yahpz.domain.COCKPIT_CAPTION
+import com.yahpz.domain.COCKPIT_TITLE
 import com.yahpz.domain.FUEL_QUARTER_CAPTION
 import com.yahpz.domain.FUEL_QUARTER_TITLE
 import com.yahpz.domain.canSendUnitBroadcast
@@ -51,6 +53,11 @@ fun ToolsHubScreen(app: AppModel, ui: AppUiState) {
         )
         if (ui.canManageUnit) {
             ToolsSectionLabel("היחידה")
+            ToolCard(
+                title = COCKPIT_TITLE,
+                caption = COCKPIT_CAPTION,
+                onClick = { app.setToolsDestination(ToolsDestination.COCKPIT) },
+            )
             ToolCard(
                 title = NEW_EVENT_TITLE,
                 caption = "הזנת אירוע ושיבוץ כוננים לתיעוד",

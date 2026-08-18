@@ -21,6 +21,8 @@ import com.yahpz.domain.BroadcastChannel
 import com.yahpz.domain.BroadcastLogEntry
 import com.yahpz.domain.BroadcastSendResult
 import com.yahpz.domain.ClosedListItem
+import com.yahpz.domain.CockpitEventInput
+import com.yahpz.domain.CockpitResponderInput
 import com.yahpz.domain.ContactSearchFields
 import com.yahpz.domain.DuplicateParticipation
 import com.yahpz.domain.EventDraft
@@ -154,6 +156,66 @@ data class EventListItem(
     /** Unit-wide lists also search by event type and the אחמ״ש who owns the event. */
     val unitSearchFields: List<String?>
         get() = listOf(policeEventId, road?.name, location, eventType?.name, shiftLead?.display, formatDate(eventDate))
+}
+
+@Serializable
+data class CockpitResponderRow(
+    val id: String,
+    @SerialName("responder_id") val responderId: String? = null,
+    @SerialName("ended_at") val endedAt: String? = null,
+    @Serializable(with = ParticipationStatusSerializer::class)
+    val status: ParticipationStatus = ParticipationStatus.PENDING,
+) {
+    val asInput: CockpitResponderInput
+        get() = CockpitResponderInput(
+            id = id,
+            responderId = responderId,
+            endedAt = endedAt,
+            status = status,
+        )
+}
+
+@Serializable
+data class CockpitEventListItem(
+    val id: String,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("police_event_id") val policeEventId: String? = null,
+    @Serializable(with = EventStatusSerializer::class)
+    val status: EventStatus,
+    @SerialName("is_cancelled") val isCancelled: Boolean = false,
+    val location: String? = null,
+    @SerialName("location_lat")
+    @Serializable(with = OptionalDoubleSerializer::class)
+    val locationLat: Double? = null,
+    @SerialName("location_lng")
+    @Serializable(with = OptionalDoubleSerializer::class)
+    val locationLng: Double? = null,
+    @SerialName("event_type")
+    @Serializable(with = OptionalNamedSerializer::class)
+    val eventType: Named? = null,
+    @Serializable(with = OptionalNamedSerializer::class)
+    val road: Named? = null,
+    @SerialName("shift_lead")
+    @Serializable(with = OptionalPersonNameSerializer::class)
+    val shiftLead: PersonName? = null,
+    val responders: List<CockpitResponderRow> = emptyList(),
+) {
+    val asInput: CockpitEventInput
+        get() = CockpitEventInput(
+            id = id,
+            createdAt = createdAt,
+            policeEventId = policeEventId,
+            status = status,
+            isCancelled = isCancelled,
+            location = location,
+            locationLat = locationLat,
+            locationLng = locationLng,
+            eventTypeName = eventType?.name,
+            roadName = road?.name,
+            leadFullName = shiftLead?.fullName,
+            leadCallsign = shiftLead?.callsign,
+            responders = responders.map { it.asInput },
+        )
 }
 
 @Serializable

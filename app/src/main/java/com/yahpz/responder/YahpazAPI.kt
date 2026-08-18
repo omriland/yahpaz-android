@@ -13,6 +13,7 @@ import com.yahpz.domain.CLOSED_LIST_IN_USE_CHECK_FAILED
 import com.yahpz.domain.ClosedListItem
 import com.yahpz.domain.ClosedListKey
 import com.yahpz.domain.ClosedListMutationResult
+import com.yahpz.domain.COCKPIT_WINDOW_MS
 import com.yahpz.domain.EVENT_DRAFT_DATE_ERROR
 import com.yahpz.domain.EVENT_DRAFT_FORM_ERROR
 import com.yahpz.domain.EVENT_DRAFT_SAVE_FAILED
@@ -38,6 +39,7 @@ import com.yahpz.domain.ResponderFillDraft
 import com.yahpz.domain.SET_ACTIVE_FAILED
 import com.yahpz.domain.SHIFT_DRAFT_DATE_ERROR
 import com.yahpz.domain.SHIFT_DRAFT_FORM_ERROR
+import com.yahpz.domain.filterCockpitEvents
 import com.yahpz.domain.SHIFT_DRAFT_SAVE_FAILED
 import com.yahpz.domain.SYSTEM_DISTRICT_LOCKED_ERROR
 import com.yahpz.domain.ShiftDraft
@@ -135,6 +137,21 @@ object YahpazAPI {
           personal_vehicle:vehicles!shifts_personal_vehicle_id_fkey(plate_number)
         ),
         responders:event_responders(id, responder_id, status, profile:profiles(full_name, callsign))
+    """.trimIndent()
+
+    private val cockpitSelect = """
+        id,
+        created_at,
+        police_event_id,
+        status,
+        is_cancelled,
+        location,
+        location_lat,
+        location_lng,
+        event_type:event_types(name),
+        road:roads(name),
+        shift_lead:profiles!events_shift_lead_id_fkey(full_name, callsign),
+        responders:event_responders(id, responder_id, status, ended_at)
     """.trimIndent()
 
     private val fillSelect = """
@@ -311,6 +328,21 @@ object YahpazAPI {
             order("event_date", Order.DESCENDING)
             limit(limit.toLong())
         }.decodeList<EventListItem>()
+
+    /** Ops cockpit reel — recent window, open statuses (in_progress/partial), not cancelled. */
+    suspend fun fetchCockpitEvents(now: Instant = Instant.now()): List<CockpitEventListItem> {
+        val since = now.minusMillis(COCKPIT_WINDOW_MS).toString()
+        val rows = client.from("events").select(Columns.raw(cockpitSelect)) {
+            filter {
+                gte("created_at", since)
+                eq("is_cancelled", false)
+                isIn("status", listOf(EventStatus.IN_PROGRESS.raw, EventStatus.PARTIAL.raw))
+            }
+            order("created_at", Order.DESCENDING)
+        }.decodeList<CockpitEventListItem>()
+        val kept = filterCockpitEvents(rows.map { it.asInput }, now).map { it.id }.toSet()
+        return rows.filter { it.id in kept }.sortedByDescending { it.createdAt }
+    }
 
     suspend fun fetchUnitShifts(limit: Int = 80): List<ShiftListItem> =
         client.from("shifts").select(Columns.raw(shiftListSelect)) {
