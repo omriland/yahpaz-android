@@ -9,5 +9,5 @@ object AppConfig {
     const val passwordResetRedirect = "https://yahpz.com/?set_password=1"
     const val appVersionUrl = "https://yahpz.com/android/version.json"
     /** Last-resort fallback if version.json is missing apkUrl. Prefer the versioned URL from the manifest. */
-    const val defaultApkUrl = "https://yahpz.com/android/yahpaz-0.3.2.apk"
+    const val defaultApkUrl = "https://yahpz.com/android/yahpaz-0.3.3.apk"
 }

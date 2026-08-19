@@ -1,0 +1,7 @@
+{
+  "name": "yahpaz-android",
+  "install": "echo \"sdk.dir=${ANDROID_HOME:-/home/ubuntu/android-sdk}\" > local.properties\nif [ -n \"${YAHPZ_ANDROID_KEYSTORE_BASE64:-}\" ]; then bash scripts/materialize-keystore.sh; fi\n./gradlew :domain:test :app:assembleRelease --quiet",
+  "repositoryDependencies": [
+    "github.com/omriland/op-yh-26"
+  ]
+}
