@@ -29,7 +29,7 @@ const val DEFAULT_FORCE_UPDATE_MESSAGE =
 
 suspend fun checkForceUpdate(currentVersionCode: Int): ForceUpdateRequired? =
     withContext(Dispatchers.IO) {
-        val manifest = fetchAppVersionManifest() ?: return@withContext null
+        val manifest = fetchPreferredAppVersionManifest() ?: return@withContext null
         if (!needsForceUpdate(currentVersionCode, manifest.minVersionCode)) return@withContext null
         ForceUpdateRequired(
             messageHe = manifest.messageHe.ifBlank { DEFAULT_FORCE_UPDATE_MESSAGE },
@@ -37,9 +37,16 @@ suspend fun checkForceUpdate(currentVersionCode: Int): ForceUpdateRequired? =
         )
     }
 
-private fun fetchAppVersionManifest(): AppVersionManifest? =
+/** Prefer the feed with the highest minVersionCode among reachable URLs. */
+internal fun fetchPreferredAppVersionManifest(
+    urls: List<String> = listOf(AppConfig.appVersionUrl, AppConfig.appVersionUrlFallback),
+): AppVersionManifest? =
+    urls.mapNotNull { fetchAppVersionManifest(it) }
+        .maxByOrNull { it.minVersionCode }
+
+private fun fetchAppVersionManifest(url: String): AppVersionManifest? =
     runCatching {
-        val connection = (URL(AppConfig.appVersionUrl).openConnection() as HttpURLConnection).apply {
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 5_000
             readTimeout = 5_000
             requestMethod = "GET"
