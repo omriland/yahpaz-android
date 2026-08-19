@@ -4,9 +4,7 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,10 +14,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Call
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -32,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.yahpz.domain.CONTACTS_EMPTY_TITLE
 import com.yahpz.domain.CONTACTS_FAILED_TITLE
@@ -101,16 +105,19 @@ fun ContactsScreen(app: AppModel, ui: AppUiState) {
                     modifier = Modifier.verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text(
-                        "לחיצה מתקשרת · לחיצה ארוכה שולחת וואטסאפ",
-                        style = TypeScale.caption,
-                        color = FieldTheme.textMuted,
-                    )
                     filtered.forEach { contact ->
                         ContactRow(
                             contact = contact,
-                            onCall = { openContactLink(context, telHref(contact.phone)) { app.showToast(it, StampTone.PENDING) } },
-                            onWhatsApp = { openContactLink(context, whatsAppHref(contact.phone)) { app.showToast(it, StampTone.PENDING) } },
+                            onCall = {
+                                openContactLink(context, telHref(contact.phone)) {
+                                    app.showToast(it, StampTone.PENDING)
+                                }
+                            },
+                            onWhatsApp = {
+                                openContactLink(context, whatsAppHref(contact.phone)) {
+                                    app.showToast(it, StampTone.PENDING)
+                                }
+                            },
                         )
                     }
                     Spacer(Modifier.height(24.dp))
@@ -120,14 +127,10 @@ fun ContactsScreen(app: AppModel, ui: AppUiState) {
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ContactRow(contact: UnitContact, onCall: () -> Unit, onWhatsApp: () -> Unit) {
-    FieldCard(
-        modifier = Modifier
-            .heightIn(min = 44.dp)
-            .combinedClickable(onClick = onCall, onLongClick = onWhatsApp),
-    ) {
+    val hasPhone = !contact.phone.isNullOrBlank()
+    FieldCard(modifier = Modifier.heightIn(min = 44.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -140,16 +143,38 @@ private fun ContactRow(contact: UnitContact, onCall: () -> Unit, onWhatsApp: () 
                     color = FieldTheme.textPrimary,
                 )
                 Text(
-                    listOf(contact.callsign, contact.email).filter { it.isNotEmpty() }.joinToString(" · "),
+                    listOfNotNull(
+                        contact.callsign.takeIf { it.isNotEmpty() },
+                        contact.phone?.let { formatPhone(it) }?.takeIf { it.isNotEmpty() },
+                    ).joinToString(" · ").ifEmpty { "—" },
                     style = TypeScale.caption,
                     color = FieldTheme.textMuted,
                 )
             }
-            Text(
-                text = contact.phone?.let { formatPhone(it) }?.ifEmpty { "—" } ?: "—",
-                style = TypeScale.numeric,
-                color = if (contact.phone == null) FieldTheme.textMuted else FieldTheme.accent,
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                IconButton(
+                    onClick = onCall,
+                    enabled = hasPhone && telHref(contact.phone) != null,
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Call,
+                        contentDescription = "התקשרות",
+                        tint = if (hasPhone) FieldTheme.accent else FieldTheme.textMuted,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+                IconButton(
+                    onClick = onWhatsApp,
+                    enabled = hasPhone && whatsAppHref(contact.phone) != null,
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_whatsapp),
+                        contentDescription = "וואטסאפ",
+                        tint = if (hasPhone) FieldTheme.accent else FieldTheme.textMuted,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+            }
         }
     }
 }

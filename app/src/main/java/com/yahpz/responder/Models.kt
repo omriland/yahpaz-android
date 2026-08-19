@@ -323,6 +323,64 @@ data class TreatedPlateWrite(
 )
 
 @Serializable
+data class EventMediaPlateLink(
+    @SerialName("treated_plate_id") val treatedPlateId: String,
+)
+
+@Serializable
+data class EventMediaRow(
+    val id: String,
+    @SerialName("event_id") val eventId: String,
+    @SerialName("uploaded_by") val uploadedBy: String,
+    val caption: String? = null,
+    @SerialName("taken_when") val takenWhen: String,
+    @SerialName("storage_path") val storagePath: String,
+    @SerialName("mime_type") val mimeType: String = "image/jpeg",
+    @SerialName("byte_size") val byteSize: Int,
+    val width: Int? = null,
+    val height: Int? = null,
+    @SerialName("created_at") val createdAt: String,
+    @Serializable(with = OptionalPersonNameSerializer::class)
+    val uploader: PersonName? = null,
+    val plates: List<EventMediaPlateLink> = emptyList(),
+)
+
+@Serializable
+data class EventMediaInsert(
+    val id: String,
+    @SerialName("event_id") val eventId: String,
+    @SerialName("uploaded_by") val uploadedBy: String,
+    val caption: String? = null,
+    @SerialName("taken_when") val takenWhen: String,
+    @SerialName("storage_path") val storagePath: String,
+    @SerialName("mime_type") val mimeType: String = "image/jpeg",
+    @SerialName("byte_size") val byteSize: Int,
+    val width: Int? = null,
+    val height: Int? = null,
+)
+
+@Serializable
+data class EventMediaUpdate(
+    @SerialName("taken_when") val takenWhen: String,
+    val caption: String? = null,
+)
+
+@Serializable
+data class EventMediaPlateWrite(
+    @SerialName("media_id") val mediaId: String,
+    @SerialName("treated_plate_id") val treatedPlateId: String,
+)
+
+@Serializable
+data class EventMediaPlateOptionRow(
+    val id: String,
+    @SerialName("plate_number") val plateNumber: String? = null,
+    val model: String? = null,
+    val color: String? = null,
+    @SerialName("logo_slug") val logoSlug: String? = null,
+)
+
+@Serializable
 data class FillAssignmentRow(
     val id: String,
     @SerialName("responder_id") val responderId: String,
@@ -635,6 +693,22 @@ data class AdminUsersResponse(
     val message: String? = null,
     @SerialName("user_id") val userId: String? = null,
     @SerialName("action_link") val actionLink: String? = null,
+    @SerialName("access_token") val accessToken: String? = null,
+    @SerialName("refresh_token") val refreshToken: String? = null,
+    val target: ImpersonationTargetSummary? = null,
+)
+
+@Serializable
+data class ImpersonationTargetSummary(
+    val id: String,
+    @SerialName("full_name") val fullName: String,
+    val callsign: String,
+)
+
+@Serializable
+data class ImpersonateCall(
+    val action: String,
+    @SerialName("target_user_id") val targetUserId: String,
 )
 
 @Serializable

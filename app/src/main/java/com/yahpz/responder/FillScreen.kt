@@ -3,7 +3,9 @@ package com.yahpz.responder
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,20 +15,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -34,6 +32,7 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -43,11 +42,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import com.yahpz.domain.EVENT_MEDIA_DOCS_TAB_LABEL
+import com.yahpz.domain.EVENT_MEDIA_TAB_LABEL
 import com.yahpz.domain.CommitTreatedPlateResult
 import com.yahpz.domain.EventStatus
 import com.yahpz.domain.FillMode
@@ -71,9 +76,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-@OptIn(ExperimentalMaterial3Api::class)
+private enum class FillPane { DOCS, MEDIA }
+
 @Composable
 fun FillScreen(eventId: String, app: AppModel) {
+    val ui by app.state.collectAsState()
     val scope = rememberCoroutineScope()
     var context by remember { mutableStateOf<FillContext?>(null) }
     var draft by remember { mutableStateOf(ResponderFillDraft()) }
@@ -84,6 +91,8 @@ fun FillScreen(eventId: String, app: AppModel) {
     var savingDraft by remember { mutableStateOf(false) }
     var completing by remember { mutableStateOf(false) }
     var plateLookupGeneration by remember { mutableIntStateOf(0) }
+    var pane by remember { mutableStateOf(FillPane.DOCS) }
+    var unfinishedMediaDrafts by remember { mutableIntStateOf(0) }
 
     fun commitPendingPlate() {
         when (
@@ -172,10 +181,32 @@ fun FillScreen(eventId: String, app: AppModel) {
                 val fill = context!!
                 val readOnly = fill.participationStatus == ParticipationStatus.DONE ||
                     fill.eventStatus == EventStatus.DONE || fill.isCancelled
+                val mediaWritable = !fill.isCancelled
                 Column(Modifier.fillMaxSize()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        FillPaneTab(
+                            label = EVENT_MEDIA_DOCS_TAB_LABEL,
+                            selected = pane == FillPane.DOCS,
+                            modifier = Modifier.weight(1f),
+                            onClick = { pane = FillPane.DOCS },
+                        )
+                        FillPaneTab(
+                            label = EVENT_MEDIA_TAB_LABEL,
+                            selected = pane == FillPane.MEDIA,
+                            modifier = Modifier.weight(1f),
+                            onClick = { pane = FillPane.MEDIA },
+                        )
+                    }
+                    Box(Modifier.weight(1f)) {
+                        if (pane == FillPane.DOCS) {
                     Column(
                         modifier = Modifier
-                            .weight(1f)
+                            .fillMaxSize()
                             .verticalScroll(rememberScrollState())
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -213,41 +244,14 @@ fun FillScreen(eventId: String, app: AppModel) {
                         if (fill.vehicles.isEmpty()) {
                             Text("לא מקושר רכב למשתמש. פנו למנהל המערכת.", style = TypeScale.caption, color = FieldTheme.alert)
                         } else {
-                            var expanded by remember { mutableStateOf(false) }
                             val selectedLabel = fill.vehicles.firstOrNull { it.plate == draft.vehiclePlate }?.label ?: "בחירת רכב"
-                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text("לוחית רישוי", style = TypeScale.label, color = FieldTheme.textSecondary)
-                                ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { if (!readOnly) expanded = it }) {
-                                    TextField(
-                                        value = selectedLabel,
-                                        onValueChange = {},
-                                        readOnly = true,
-                                        enabled = !readOnly,
-                                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-                        modifier = Modifier
-                            .menuAnchor(MenuAnchorType.PrimaryNotEditable)
-                            .fillMaxWidth()
-                                            .border(
-                                                1.dp,
-                                                if (errors.vehiclePlate == null) FieldTheme.strong else FieldTheme.alert,
-                                                RoundedCornerShape(4.dp),
-                                            ),
-                                    )
-                                    ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                                        DropdownMenuItem(text = { Text("בחירת רכב") }, onClick = {
-                                            draft = draft.copy(vehiclePlate = "")
-                                            expanded = false
-                                        })
-                                        fill.vehicles.forEach { vehicle ->
-                                            DropdownMenuItem(text = { Text(vehicle.label) }, onClick = {
-                                                draft = draft.copy(vehiclePlate = vehicle.plate)
-                                                expanded = false
-                                            })
-                                        }
-                                    }
-                                }
-                                errors.vehiclePlate?.let { Text(it, style = TypeScale.caption, color = FieldTheme.alert) }
-                            }
+                            FormField(
+                                label = "לוחית רישוי",
+                                value = selectedLabel,
+                                onValueChange = {},
+                                enabled = false,
+                                error = errors.vehiclePlate,
+                            )
                         }
                         FormField("מד אוץ התחלה", draft.odometerStart, { draft = draft.copy(odometerStart = it) }, keyboardType = KeyboardType.Number, mono = true, error = errors.odometerStart, enabled = !readOnly)
                         FormField("מד אוץ סיום", draft.odometerEnd, { draft = draft.copy(odometerEnd = it) }, keyboardType = KeyboardType.Number, mono = true, error = errors.odometerEnd, enabled = !readOnly)
@@ -279,7 +283,18 @@ fun FillScreen(eventId: String, app: AppModel) {
                         formError?.let { Text(it, style = TypeScale.body, color = FieldTheme.alert) }
                         Spacer(Modifier.height(80.dp))
                     }
-                    if (!readOnly) {
+                        }
+                        FillMediaTab(
+                            eventId = fill.eventId,
+                            viewerId = ui.userId,
+                            canWrite = mediaWritable,
+                            leftoverError = errors.eventMedia,
+                            modifier = if (pane == FillPane.MEDIA) Modifier.fillMaxSize() else Modifier.size(0.dp),
+                            onUnfinishedChange = { unfinishedMediaDrafts = it },
+                            onToast = { text, tone -> app.showToast(text, tone) },
+                        )
+                    }
+                    if (!readOnly && pane == FillPane.DOCS) {
                         Column(
                             modifier = Modifier
                                 .background(FieldTheme.raised)
@@ -294,12 +309,15 @@ fun FillScreen(eventId: String, app: AppModel) {
                                         FillMode.COMPLETE,
                                         fill.vehicles.map { it.plate },
                                         fill.totalKm,
+                                        unfinishedMediaDrafts,
                                     )
+                                    if (errors.eventMedia != null) pane = FillPane.MEDIA
                                     completing = true
-                                    val error = YahpazAPI.saveFill(fill, draft, true)
+                                    val error = YahpazAPI.saveFill(fill, draft, true, unfinishedMediaDrafts)
                                     completing = false
                                     if (error != null) {
                                         formError = error
+                                        if (error == errors.eventMedia) pane = FillPane.MEDIA
                                         app.showToast(error, com.yahpz.domain.StampTone.PENDING)
                                     } else {
                                         app.showToast("הדיווח הושלם")
@@ -319,9 +337,10 @@ fun FillScreen(eventId: String, app: AppModel) {
                                             FillMode.DRAFT,
                                             fill.vehicles.map { it.plate },
                                             fill.totalKm,
+                                            unfinishedMediaDrafts,
                                         )
                                         savingDraft = true
-                                        val error = YahpazAPI.saveFill(fill, draft, false)
+                                        val error = YahpazAPI.saveFill(fill, draft, false, unfinishedMediaDrafts)
                                         savingDraft = false
                                         if (error != null) {
                                             formError = error
@@ -343,6 +362,31 @@ fun FillScreen(eventId: String, app: AppModel) {
 }
 
 @Composable
+private fun FillPaneTab(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .heightIn(min = 44.dp)
+            .background(if (selected) FieldTheme.accentSubtle else FieldTheme.raised, RoundedCornerShape(4.dp))
+            .border(1.dp, if (selected) FieldTheme.accent else FieldTheme.strong, RoundedCornerShape(4.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Text(
+            text = label,
+            style = if (selected) TypeScale.bodyStrong else TypeScale.body,
+            color = if (selected) FieldTheme.accent else FieldTheme.textSecondary,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+@Composable
 private fun TreatedPlatesSection(
     plates: List<TreatedPlate>,
     pending: String,
@@ -353,125 +397,170 @@ private fun TreatedPlatesSection(
     onRemove: (String) -> Unit,
     onLeftWhereChange: (String, String) -> Unit,
 ) {
-    if (readOnly) {
-        if (plates.isEmpty()) return
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("מספרי כלי רכב", style = TypeScale.label, color = FieldTheme.textSecondary)
-            plates.forEach { row ->
-                TreatedPlateRow(
-                    row = row,
-                    removable = false,
-                    onRemove = {},
-                    onLeftWhereChange = { _, _ -> },
-                )
-            }
-        }
-        return
-    }
+    if (readOnly && plates.isEmpty()) return
 
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("מספרי כלי רכב", style = TypeScale.label, color = FieldTheme.textSecondary)
         plates.forEach { row ->
-            TreatedPlateRow(
+            TreatedPlateCard(
                 row = row,
-                removable = true,
+                removable = !readOnly,
                 onRemove = onRemove,
                 onLeftWhereChange = onLeftWhereChange,
             )
         }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.Bottom,
-        ) {
-            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                FormField(
-                    label = "מספרי כלי רכב",
-                    value = pending,
-                    onValueChange = onPendingChange,
-                    keyboardType = KeyboardType.Number,
-                    mono = true,
-                    error = error,
-                    imeAction = ImeAction.Done,
-                    onSubmit = onCommit,
-                    placeholder = "xx-xxx-xx",
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            TextButton(
-                onClick = onCommit,
-                modifier = Modifier
-                    .height(44.dp)
-                    .padding(bottom = if (error == null) 0.dp else 18.dp)
-                    .border(1.dp, FieldTheme.strong, RoundedCornerShape(4.dp)),
-            ) {
-                Text("הוספה", style = TypeScale.bodyStrong, color = FieldTheme.accent)
-            }
+        if (!readOnly) {
+            TreatedPlateAddRow(
+                pending = pending,
+                error = error,
+                onPendingChange = onPendingChange,
+                onCommit = onCommit,
+            )
         }
     }
 }
 
 @Composable
-private fun TreatedPlateRow(
+private fun TreatedPlateAddRow(
+    pending: String,
+    error: String?,
+    onPendingChange: (String) -> Unit,
+    onCommit: () -> Unit,
+) {
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    fun commitFromKeyboard() {
+        focusManager.clearFocus()
+        keyboard?.hide()
+        onCommit()
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                TextField(
+                    value = pending,
+                    onValueChange = onPendingChange,
+                    singleLine = true,
+                    textStyle = TypeScale.numeric,
+                    placeholder = {
+                        Text("xx-xxx-xx", style = TypeScale.numeric, color = FieldTheme.textMuted)
+                    },
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number,
+                        imeAction = ImeAction.Done,
+                    ),
+                    keyboardActions = KeyboardActions(onDone = { commitFromKeyboard() }),
+                    colors = treatedPlateFieldColors(),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(FormControlHeight)
+                        .border(
+                            1.dp,
+                            if (error == null) FieldTheme.strong else FieldTheme.alert,
+                            RoundedCornerShape(4.dp),
+                        ),
+                )
+            }
+            TextButton(
+                onClick = onCommit,
+                modifier = Modifier
+                    .height(FormControlHeight)
+                    .border(1.dp, FieldTheme.strong, RoundedCornerShape(4.dp)),
+            ) {
+                Text("הוספה", style = TypeScale.bodyStrong, color = FieldTheme.accent)
+            }
+        }
+        error?.let { Text(it, style = TypeScale.caption, color = FieldTheme.alert) }
+    }
+}
+
+@Composable
+private fun TreatedPlateCard(
     row: TreatedPlate,
     removable: Boolean,
     onRemove: (String) -> Unit,
     onLeftWhereChange: (String, String) -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    val caption = treatedPlateCaption(model = row.model, color = row.color)
+    val leftWhere = row.leftWhere?.trim().orEmpty()
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(FieldTheme.raised, RoundedCornerShape(8.dp))
+            .border(1.dp, FieldTheme.hairline, RoundedCornerShape(8.dp))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        CarLogo(slug = row.logoSlug)
-        LicensePlate(plate = row.plateNumber)
-        treatedPlateCaption(model = row.model, color = row.color)?.let { caption ->
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            LicensePlate(plate = row.plateNumber)
+            CarLogo(slug = row.logoSlug)
+            Spacer(Modifier.weight(1f))
+            if (removable) {
+                IconButton(
+                    onClick = { onRemove(row.plateNumber) },
+                    modifier = Modifier.size(44.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Close,
+                        contentDescription = "הסרת מספר ${row.plateNumber}",
+                        tint = FieldTheme.textMuted,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+        }
+        if (caption != null) {
             Text(
                 text = caption,
                 style = TypeScale.body,
                 color = FieldTheme.textSecondary,
-                modifier = Modifier.weight(1f),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth(),
             )
-        } ?: Spacer(Modifier.weight(1f))
+        }
         if (removable) {
             TextField(
-                value = row.leftWhere.orEmpty(),
+                value = leftWhere,
                 onValueChange = { onLeftWhereChange(row.plateNumber, it) },
                 singleLine = true,
                 textStyle = TypeScale.body,
                 placeholder = {
                     Text("איפה הרכב הושאר", style = TypeScale.body, color = FieldTheme.textMuted)
                 },
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = FieldTheme.raised,
-                    unfocusedContainerColor = FieldTheme.raised,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                ),
+                colors = treatedPlateFieldColors(),
                 modifier = Modifier
-                    .width(140.dp)
-                    .heightIn(min = 36.dp)
+                    .fillMaxWidth()
+                    .height(FormControlHeight)
                     .border(1.dp, FieldTheme.strong, RoundedCornerShape(4.dp)),
             )
-            IconButton(
-                onClick = { onRemove(row.plateNumber) },
-                modifier = Modifier.size(44.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Close,
-                    contentDescription = "הסרת מספר ${row.plateNumber}",
-                    tint = FieldTheme.textMuted,
-                    modifier = Modifier.size(18.dp),
-                )
-            }
-        } else {
-            row.leftWhere?.trim()?.takeIf { it.isNotEmpty() }?.let { left ->
-                Text(
-                    text = left,
-                    style = TypeScale.body,
-                    color = FieldTheme.textSecondary,
-                    modifier = Modifier.width(140.dp),
-                )
-            }
+        } else if (leftWhere.isNotEmpty()) {
+            Text(
+                text = leftWhere,
+                style = TypeScale.body,
+                color = FieldTheme.textSecondary,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 }
+
+@Composable
+private fun treatedPlateFieldColors() = TextFieldDefaults.colors(
+    focusedContainerColor = FieldTheme.raised,
+    unfocusedContainerColor = FieldTheme.raised,
+    disabledContainerColor = FieldTheme.raised,
+    focusedIndicatorColor = Color.Transparent,
+    unfocusedIndicatorColor = Color.Transparent,
+    disabledIndicatorColor = Color.Transparent,
+    focusedTextColor = FieldTheme.textPrimary,
+    unfocusedTextColor = FieldTheme.textPrimary,
+)

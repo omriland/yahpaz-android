@@ -2,7 +2,6 @@ package com.yahpz.responder
 
 import android.content.Intent
 import android.graphics.BitmapFactory
-import android.net.Uri
 import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -174,15 +173,8 @@ fun GhostButton(
 }
 
 @Composable
-fun PrivacyPolicyLink(command: Boolean = false) {
-    val context = LocalContext.current
-    TextButton(
-        onClick = {
-            context.startActivity(
-                Intent(Intent.ACTION_VIEW, Uri.parse("${AppConfig.appOrigin}/privacy")),
-            )
-        },
-    ) {
+fun PrivacyPolicyLink(onOpen: () -> Unit, command: Boolean = false) {
+    TextButton(onClick = onOpen) {
         Text(
             "מדיניות פרטיות",
             style = TypeScale.caption,

@@ -52,14 +52,24 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.yahpz.domain.MOBILE_MORE_LABEL
 import com.yahpz.domain.MobileNavEntry
+import com.yahpz.domain.canStartImpersonation
+import com.yahpz.domain.canStartRolePreview
 import com.yahpz.domain.defaultMobileView
 import com.yahpz.domain.mobileNavEntries
+import com.yahpz.domain.parseRolePreviewRole
 import com.yahpz.domain.splitMobileNav
 import kotlinx.coroutines.launch
 
 @Composable
 fun RootScreen(app: AppModel, ui: AppUiState) {
     Box(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize()) {
+        if (ui.isSignedIn && (ui.impersonating || ui.previewRole != null)) {
+            Box(Modifier.statusBarsPadding()) {
+                ViewAsBanner(app, ui)
+            }
+        }
+        Box(Modifier.weight(1f).fillMaxSize()) {
         when {
             ui.booting -> SafeEdgeScreen { Booting() }
             ui.forceUpdate != null -> SafeEdgeScreen { ForceUpdateScreen(ui.forceUpdate) }
@@ -94,6 +104,11 @@ fun RootScreen(app: AppModel, ui: AppUiState) {
                 ToastBanner(toast, ui.toastTone)
             }
         }
+        }
+    }
+    if (ui.privacyOpen && ui.forceUpdate == null) {
+        PrivacyPolicyScreen(onClose = app::closePrivacy)
+    }
     }
 }
 
@@ -196,6 +211,7 @@ private fun LoginGate(app: AppModel, ui: AppUiState) {
                 else -> LoginMode.SIGNIN
             }
         },
+        onOpenPrivacy = { app.openPrivacy() },
     )
 }
 
@@ -233,11 +249,21 @@ private fun MainTabs(app: AppModel, ui: AppUiState) {
             if (fallback in allowed) fallback else allowed.first()
         }
     }
+    val canViewAsUser = canStartImpersonation(ui.actualRoles, ui.impersonating)
+    val canViewAsRole = canStartRolePreview(
+        actualRoles = ui.actualRoles,
+        impersonating = ui.impersonating,
+        previewing = parseRolePreviewRole(ui.previewRole) != null,
+    )
+    val showViewAs = canViewAsUser || canViewAsRole || ui.impersonating || ui.previewRole != null
+    val showMore = split.more.isNotEmpty() || showViewAs
     val overlay = ui.toolsDestination
     val adminTab = contentTab == AppTab.TOOLS && isAdminTabDestination(overlay)
     val showingMain = overlay == ToolsDestination.HUB || adminTab
     val reduceMotion = rememberReducedMotion()
     var moreOpen by remember { mutableStateOf(false) }
+    var rolePickerOpen by remember { mutableStateOf(false) }
+    var userPickerOpen by remember { mutableStateOf(false) }
 
     BackHandler(enabled = overlay != ToolsDestination.HUB && !adminTab) {
         when (overlay) {
@@ -280,7 +306,7 @@ private fun MainTabs(app: AppModel, ui: AppUiState) {
                         modifier = Modifier.heightIn(min = 44.dp),
                     )
                 }
-                if (split.more.isNotEmpty()) {
+                if (showMore) {
                     val moreSelected = split.more.any { appTabForMobileView(it.view) == contentTab }
                     NavigationBarItem(
                         selected = moreSelected,
@@ -309,7 +335,7 @@ private fun MainTabs(app: AppModel, ui: AppUiState) {
         }
     }
 
-    if (moreOpen && split.more.isNotEmpty()) {
+    if (moreOpen && showMore) {
         ModalBottomSheet(onDismissRequest = { moreOpen = false }) {
             MoreSheet(
                 rows = split.more,
@@ -318,6 +344,49 @@ private fun MainTabs(app: AppModel, ui: AppUiState) {
                     moreOpen = false
                     app.setTab(appTabForMobileView(entry.view))
                 },
+                extra = {
+                    MoreViewAsRows(
+                        canViewAsUser = canViewAsUser,
+                        canViewAsRole = canViewAsRole,
+                        impersonating = ui.impersonating,
+                        previewing = ui.previewRole != null,
+                        onViewAsUser = {
+                            moreOpen = false
+                            userPickerOpen = true
+                        },
+                        onViewAsRole = {
+                            moreOpen = false
+                            rolePickerOpen = true
+                        },
+                        onStopImpersonation = {
+                            moreOpen = false
+                            app.stopImpersonation()
+                        },
+                        onStopPreview = {
+                            moreOpen = false
+                            app.stopRolePreview()
+                        },
+                    )
+                },
+            )
+        }
+    }
+    if (rolePickerOpen) {
+        RolePreviewSheet(
+            onClose = { rolePickerOpen = false },
+            onPick = { role ->
+                rolePickerOpen = false
+                app.startRolePreview(role)
+            },
+        )
+    }
+    if (userPickerOpen) {
+        val actorId = ui.userId
+        if (actorId != null) {
+            ImpersonationSheet(
+                actorUserId = actorId,
+                onClose = { userPickerOpen = false },
+                onConfirm = { targetId -> app.startImpersonation(targetId) },
             )
         }
     }
@@ -328,6 +397,7 @@ private fun MoreSheet(
     rows: List<MobileNavEntry>,
     current: AppTab,
     onPick: (MobileNavEntry) -> Unit,
+    extra: @Composable () -> Unit = {},
 ) {
     Column(
         modifier = Modifier
@@ -360,6 +430,10 @@ private fun MoreSheet(
                 )
             }
         }
+        if (rows.isNotEmpty()) {
+            Spacer(Modifier.height(8.dp))
+        }
+        extra()
     }
 }
 

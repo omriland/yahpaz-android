@@ -17,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -44,7 +45,8 @@ fun LicensePlate(plate: String, modifier: Modifier = Modifier) {
         Row(
             modifier = modifier
                 .height(36.dp)
-                .background(PlateFieldYellow, RoundedCornerShape(4.dp))
+                .clip(RoundedCornerShape(4.dp))
+                .background(PlateFieldYellow)
                 .border(1.dp, FieldTheme.textPrimary, RoundedCornerShape(4.dp))
                 .semantics { contentDescription = serial },
             verticalAlignment = Alignment.CenterVertically,

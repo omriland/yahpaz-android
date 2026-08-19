@@ -2,7 +2,14 @@ package com.yahpz.responder
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.yahpz.domain.IMPERSONATION_STARTED
+import com.yahpz.domain.IMPERSONATION_STOPPED
+import com.yahpz.domain.ROLE_PREVIEW_STARTED
+import com.yahpz.domain.ROLE_PREVIEW_STOPPED
+import com.yahpz.domain.AppRole
 import com.yahpz.domain.AssignableProfile
+import com.yahpz.domain.effectiveRoles
+import com.yahpz.domain.parseRolePreviewRole
 import com.yahpz.domain.AvailabilityStatus
 import com.yahpz.domain.BROADCAST_LOAD_FAILED
 import com.yahpz.domain.BroadcastCandidate
@@ -67,7 +74,12 @@ data class AppUiState(
     val forceUpdate: ForceUpdateRequired? = null,
     val userId: String? = null,
     val profile: ProfileRecord? = null,
+    val actualRoles: List<String> = emptyList(),
     val roles: List<String> = emptyList(),
+    val impersonating: Boolean = false,
+    val impersonationName: String? = null,
+    val impersonationCallsign: String? = null,
+    val previewRole: String? = null,
     val events: List<EventListItem> = emptyList(),
     val eventsFailed: Boolean = false,
     val eventsLoading: Boolean = false,
@@ -120,6 +132,7 @@ data class AppUiState(
     val fillEventId: String? = null,
     val signingIn: Boolean = false,
     val signInError: String? = null,
+    val privacyOpen: Boolean = false,
 ) {
     val isSignedIn: Boolean get() = userId != null && profile != null
     val canManageUnit: Boolean get() = managesUnit(roles)
@@ -153,7 +166,19 @@ class AppModel : ViewModel() {
     fun applyIncomingUrl(url: String) {
         parseTrackToken(url)?.let { token ->
             _state.update { it.copy(trackToken = token) }
+            return
         }
+        if (isPrivacyPolicyUrl(url)) {
+            _state.update { it.copy(privacyOpen = true) }
+        }
+    }
+
+    fun openPrivacy() {
+        _state.update { it.copy(privacyOpen = true) }
+    }
+
+    fun closePrivacy() {
+        _state.update { it.copy(privacyOpen = false) }
     }
 
     fun setTab(tab: AppTab) {
@@ -241,6 +266,60 @@ class AppModel : ViewModel() {
         viewModelScope.launch {
             YahpazAPI.signOut()
             _state.value = AppUiState(booting = false)
+        }
+    }
+
+    fun startRolePreview(role: AppRole) {
+        viewModelScope.launch {
+            ViewAsStore.clearImpersonation()
+            ViewAsStore.writeRolePreview(role.raw)
+            val id = YahpazAPI.sessionUserId() ?: return@launch
+            runCatching { applySession(id) }
+            showToast(ROLE_PREVIEW_STARTED, StampTone.DONE)
+        }
+    }
+
+    fun stopRolePreview() {
+        viewModelScope.launch {
+            ViewAsStore.clearRolePreview()
+            val id = YahpazAPI.sessionUserId() ?: return@launch
+            runCatching { applySession(id) }
+            showToast(ROLE_PREVIEW_STOPPED, StampTone.DONE)
+        }
+    }
+
+    suspend fun startImpersonation(targetUserId: String): String? {
+        YahpazAPI.startImpersonation(targetUserId)?.let { return it }
+        val id = YahpazAPI.sessionUserId() ?: return "פתיחת הצפייה נכשלה. נסו שוב."
+        return try {
+            applySession(id)
+            showToast(IMPERSONATION_STARTED, StampTone.DONE)
+            null
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            error.message ?: "פתיחת הצפייה נכשלה. נסו שוב."
+        }
+    }
+
+    fun stopImpersonation() {
+        viewModelScope.launch {
+            val error = YahpazAPI.stopImpersonation()
+            if (error != null) {
+                showToast(error, StampTone.PENDING)
+                if (error.contains("התחברו")) {
+                    _state.value = AppUiState(booting = false)
+                }
+                return@launch
+            }
+            val id = YahpazAPI.sessionUserId()
+            if (id == null) {
+                _state.value = AppUiState(booting = false)
+                showToast(IMPERSONATION_STOPPED, StampTone.DONE)
+                return@launch
+            }
+            runCatching { applySession(id) }
+            showToast(IMPERSONATION_STOPPED, StampTone.DONE)
         }
     }
 
@@ -696,16 +775,25 @@ class AppModel : ViewModel() {
     private suspend fun applySession(userId: String) {
         try {
             val (profile, roles) = YahpazAPI.loadProfile()
+            val preview = parseRolePreviewRole(ViewAsStore.rolePreviewRaw())
+            val visible = effectiveRoles(roles, preview)
+            val impersonation = ViewAsStore.readImpersonation()
             _state.update {
                 it.copy(
                     userId = userId,
                     profile = profile,
-                    roles = roles,
-                    tab = appTabForMobileView(defaultMobileView(roles)),
+                    actualRoles = roles,
+                    roles = visible,
+                    impersonating = impersonation != null,
+                    impersonationName = impersonation?.targetFullName,
+                    impersonationCallsign = impersonation?.targetCallsign,
+                    previewRole = preview?.raw,
+                    tab = appTabForMobileView(defaultMobileView(visible)),
                     toolsDestination = ToolsDestination.HUB,
                     mustChangePassword = profile.mustChangePassword,
                     vehiclesLoading = true,
                     vehiclesFailed = false,
+                    fillEventId = null,
                 )
             }
             reloadEvents()
@@ -713,12 +801,12 @@ class AppModel : ViewModel() {
             reloadVehicles()
             // Secondary surfaces load in the background so boot is not blocked on them.
             viewModelScope.launch { reloadContacts() }
-            if (managesUnit(roles)) {
+            if (managesUnit(visible)) {
                 viewModelScope.launch { reloadUnitEvents() }
                 viewModelScope.launch { reloadUnitShifts() }
                 viewModelScope.launch { reloadLookups() }
             }
-            if (isAdmin(roles)) viewModelScope.launch { reloadAdminUsers() }
+            if (isAdmin(visible)) viewModelScope.launch { reloadAdminUsers() }
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {

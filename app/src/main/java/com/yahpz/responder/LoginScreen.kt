@@ -27,6 +27,7 @@ fun LoginScreen(
     onPassword: (String) -> Unit,
     onSubmit: () -> Unit,
     onToggleMode: () -> Unit,
+    onOpenPrivacy: () -> Unit,
 ) {
     Box(
         modifier = Modifier
@@ -132,7 +133,7 @@ fun LoginScreen(
                 }
             }
             Spacer(Modifier.height(24.dp))
-            PrivacyPolicyLink(command = true)
+            PrivacyPolicyLink(onOpen = onOpenPrivacy, command = true)
         }
         if (busy && mode != LoginMode.RESET_SENT) {
             CircularProgressIndicator(

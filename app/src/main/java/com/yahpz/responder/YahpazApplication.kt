@@ -9,6 +9,11 @@ class YahpazApplication : Application() {
     override fun attachBaseContext(base: Context) {
         super.attachBaseContext(hebrewContext(base))
     }
+
+    override fun onCreate() {
+        super.onCreate()
+        ViewAsStore.init(this)
+    }
 }
 
 fun hebrewContext(base: Context): Context {

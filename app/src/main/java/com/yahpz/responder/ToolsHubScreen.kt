@@ -27,7 +27,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.yahpz.domain.visibleReportSpecs
 
-/** Mobile admin hub — same four segments as web `ADMIN_SEGMENTS`. */
+/** Mobile admin hub segments. */
 @Composable
 fun ToolsHubScreen(app: AppModel, @Suppress("UNUSED_PARAMETER") ui: AppUiState) {
     Column(
@@ -46,12 +46,6 @@ fun ToolsHubScreen(app: AppModel, @Suppress("UNUSED_PARAMETER") ui: AppUiState) 
         ToolCard(title = "דוחות וסטטיסטיקות") {
             app.setToolsDestination(ToolsDestination.REPORT_CATALOG)
         }
-        ToolCard(title = "ניהול דלק") {
-            app.setToolsDestination(ToolsDestination.FUEL_QUARTER)
-        }
-        ToolCard(title = "הגדרות") {
-            app.setToolsDestination(ToolsDestination.CLOSED_LISTS)
-        }
         Spacer(Modifier.height(24.dp))
     }
 }
@@ -61,8 +55,6 @@ private data class AdminSegmentChip(val destination: ToolsDestination, val label
 private val ADMIN_SEGMENT_CHIPS = listOf(
     AdminSegmentChip(ToolsDestination.ADMIN_USERS, "משתמשים"),
     AdminSegmentChip(ToolsDestination.REPORT_CATALOG, "דוחות וסטטיסטיקות"),
-    AdminSegmentChip(ToolsDestination.FUEL_QUARTER, "ניהול דלק"),
-    AdminSegmentChip(ToolsDestination.CLOSED_LISTS, "הגדרות"),
 )
 
 fun isAdminTabDestination(destination: ToolsDestination): Boolean =
@@ -106,8 +98,6 @@ fun AdminShell(app: AppModel, ui: AppUiState) {
                     title = "דוחות וסטטיסטיקות",
                     onBack = null,
                 )
-                ToolsDestination.FUEL_QUARTER -> FuelQuarterScreen(app, ui, onBack = null)
-                ToolsDestination.CLOSED_LISTS -> ClosedListsScreen(app, onBack = null)
                 else -> AdminUsersScreen(app, ui, onBack = null)
             }
         }

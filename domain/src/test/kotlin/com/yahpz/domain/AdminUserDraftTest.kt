@@ -192,7 +192,7 @@ class AdminUserDraftTest {
     }
 
     @Test
-    fun `admin users sort pending then active then inactive, by name`() {
+    fun `admin users sort active then inactive then invite pending, by name`() {
         val rows = listOf(
             AdminUserSortKey(fullName = "דני", active = false, invitePending = false),
             AdminUserSortKey(fullName = "בני", active = true, invitePending = false),
@@ -200,7 +200,7 @@ class AdminUserDraftTest {
             AdminUserSortKey(fullName = "אבי", active = true, invitePending = true),
         )
         assertEquals(
-            listOf("אבי", "אלי", "בני", "דני"),
+            listOf("בני", "דני", "אבי", "אלי"),
             rows.sortedWith(::compareAdminUsers).map { it.fullName },
         )
     }

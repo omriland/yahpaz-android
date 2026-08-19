@@ -101,6 +101,36 @@ class FillValidationTest {
     }
 
     @Test
+    fun completeErrorsOnUnfinishedMediaDrafts() {
+        val errors = validateResponderFillDraft(
+            ResponderFillDraft(
+                vehiclePlate = "1234567",
+                odometerStart = "100",
+                odometerEnd = "112",
+                route = "כביש 1",
+                treatmentDetail = "טיפול",
+            ),
+            FillMode.COMPLETE,
+            plates,
+            12.0,
+            unfinishedMediaDraftCount = 1,
+        )
+        assertEquals(EVENT_MEDIA_LEFTOVER_ERROR, errors.eventMedia)
+    }
+
+    @Test
+    fun draftIgnoresUnfinishedMediaDrafts() {
+        val errors = validateResponderFillDraft(
+            ResponderFillDraft(),
+            FillMode.DRAFT,
+            plates,
+            null,
+            unfinishedMediaDraftCount = 2,
+        )
+        assertNull(errors.eventMedia)
+    }
+
+    @Test
     fun completeAllowsZeroTreatedPlates() {
         val errors = validateResponderFillDraft(
             ResponderFillDraft(
@@ -172,6 +202,54 @@ class FillValidationTest {
             EventStatus.DONE,
             deriveEventStatusAfterParticipation(
                 listOf(ParticipationStatus.DONE, ParticipationStatus.DONE),
+            ),
+        )
+    }
+
+    @Test
+    fun completeOnAlreadyDoneAssignmentIsSuccess() {
+        assertEquals(
+            FillWriteGate.ALREADY_COMPLETE,
+            gateResponderFillWrite(
+                complete = true,
+                participationStatus = ParticipationStatus.DONE,
+                eventStatus = EventStatus.IN_PROGRESS,
+            ),
+        )
+    }
+
+    @Test
+    fun draftOnAlreadyDoneAssignmentIsLocked() {
+        assertEquals(
+            FillWriteGate.LOCKED,
+            gateResponderFillWrite(
+                complete = false,
+                participationStatus = ParticipationStatus.DONE,
+                eventStatus = EventStatus.IN_PROGRESS,
+            ),
+        )
+    }
+
+    @Test
+    fun writeOnDoneEventIsLocked() {
+        assertEquals(
+            FillWriteGate.LOCKED,
+            gateResponderFillWrite(
+                complete = true,
+                participationStatus = ParticipationStatus.IN_PROGRESS,
+                eventStatus = EventStatus.DONE,
+            ),
+        )
+    }
+
+    @Test
+    fun inProgressCompleteMayProceed() {
+        assertEquals(
+            FillWriteGate.PROCEED,
+            gateResponderFillWrite(
+                complete = true,
+                participationStatus = ParticipationStatus.IN_PROGRESS,
+                eventStatus = EventStatus.IN_PROGRESS,
             ),
         )
     }

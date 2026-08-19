@@ -18,15 +18,17 @@ data class ResponderFillErrors(
     val route: String? = null,
     val treatmentDetail: String? = null,
     val treatedPlates: String? = null,
+    val eventMedia: String? = null,
     val form: String? = null,
 ) {
     val isEmpty: Boolean
         get() = vehiclePlate == null && odometerStart == null && odometerEnd == null &&
-            route == null && treatmentDetail == null && treatedPlates == null && form == null
+            route == null && treatmentDetail == null && treatedPlates == null &&
+            eventMedia == null && form == null
 
     val firstMessage: String?
         get() = form ?: vehiclePlate ?: odometerStart ?: odometerEnd ?: route ?: treatmentDetail
-            ?: treatedPlates
+            ?: treatedPlates ?: eventMedia
 }
 
 enum class FillMode { DRAFT, COMPLETE }
@@ -49,6 +51,7 @@ fun validateResponderFillDraft(
     mode: FillMode,
     allowedPlates: List<String> = emptyList(),
     totalKm: Double? = null,
+    unfinishedMediaDraftCount: Int = 0,
 ): ResponderFillErrors {
     var vehiclePlate: String? = null
     var odometerStart: String? = null
@@ -56,6 +59,7 @@ fun validateResponderFillDraft(
     var route: String? = null
     var treatmentDetail: String? = null
     var treatedPlates: String? = null
+    var eventMedia: String? = null
     val start = parseOptionalNumber(draft.odometerStart)
     val end = parseOptionalNumber(draft.odometerEnd)
     val plate = plateDigits(draft.vehiclePlate)
@@ -89,6 +93,9 @@ fun validateResponderFillDraft(
     leftoverTreatedPlateError(pending = draft.treatedPlatePending, mode = mode)?.let {
         treatedPlates = it
     }
+    leftoverEventMediaError(unfinishedMediaDraftCount, mode)?.let {
+        eventMedia = it
+    }
 
     return ResponderFillErrors(
         vehiclePlate = vehiclePlate,
@@ -97,10 +104,26 @@ fun validateResponderFillDraft(
         route = route,
         treatmentDetail = treatmentDetail,
         treatedPlates = treatedPlates,
+        eventMedia = eventMedia,
     )
 }
 
 fun parsedOdometer(raw: String): Double? = when (val parsed = parseOptionalNumber(raw)) {
     is ParsedNumber.Value -> parsed.value
     else -> null
+}
+
+enum class FillWriteGate { PROCEED, LOCKED, ALREADY_COMPLETE }
+
+/** Completing an already-done assignment is success; drafts stay locked. */
+fun gateResponderFillWrite(
+    complete: Boolean,
+    participationStatus: ParticipationStatus,
+    eventStatus: EventStatus?,
+): FillWriteGate {
+    if (participationStatus == ParticipationStatus.DONE) {
+        return if (complete) FillWriteGate.ALREADY_COMPLETE else FillWriteGate.LOCKED
+    }
+    if (eventStatus == EventStatus.DONE) return FillWriteGate.LOCKED
+    return FillWriteGate.PROCEED
 }

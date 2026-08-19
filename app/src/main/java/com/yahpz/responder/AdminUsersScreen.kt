@@ -313,7 +313,9 @@ fun AdminUsersScreen(app: AppModel, ui: AppUiState, onBack: (() -> Unit)? = null
                 LedgerRow("דוא״ל", user.email)
                 LedgerRow(FIELD_ROLES, roleLabels(user.roles).joinToString(" · "))
                 LedgerRow(FIELD_VOLUNTEER_STATUS, volunteerStatusLabel(user.volunteerStatus))
-                LedgerRow("זמינות", availabilityText(user, today))
+                if (!isInvitePending(user.active, user.invitePending)) {
+                    LedgerRow("זמינות", availabilityText(user, today))
+                }
                 otpUserLabel(user.otpLoginEnabled, user.otpUsersPageEnabled)?.let {
                     LedgerRow("OTP", it)
                 }
@@ -716,6 +718,7 @@ private fun AdminUserForm(
 
 @Composable
 private fun AdminUserRow(user: AdminUserListItem, today: String, onOpen: () -> Unit) {
+    val invitePending = isInvitePending(user.active, user.invitePending)
     val effective = effectiveAvailability(user.availability, user.availableFrom, today)
     FieldCard(
         modifier = Modifier
@@ -741,17 +744,19 @@ private fun AdminUserRow(user: AdminUserListItem, today: String, onOpen: () -> U
                     color = FieldTheme.textMuted,
                 )
             }
-            StampChip(
-                StampDescriptor(
-                    availabilityLabel(effective),
-                    if (effective == AvailabilityStatus.AVAILABLE) StampTone.DONE else StampTone.PENDING,
-                ),
-            )
+            if (!invitePending) {
+                StampChip(
+                    StampDescriptor(
+                        availabilityLabel(effective),
+                        if (effective == AvailabilityStatus.AVAILABLE) StampTone.DONE else StampTone.PENDING,
+                    ),
+                )
+            }
         }
         val tags = buildList {
             add(volunteerStatusLabel(user.volunteerStatus))
             otpUserLabel(user.otpLoginEnabled, user.otpUsersPageEnabled)?.let { add("OTP · $it") }
-            if (isInvitePending(user.active, user.invitePending)) add(INVITE_PENDING_LABEL)
+            if (invitePending) add(INVITE_PENDING_LABEL)
             if (!user.active) add(INACTIVE_ACCOUNT_LABEL)
         }
         if (tags.isNotEmpty()) {

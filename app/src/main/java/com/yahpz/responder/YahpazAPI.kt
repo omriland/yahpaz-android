@@ -21,6 +21,7 @@ import com.yahpz.domain.EventDraft
 import com.yahpz.domain.EventResponderDraft
 import com.yahpz.domain.EventStatus
 import com.yahpz.domain.FillMode
+import com.yahpz.domain.FillWriteGate
 import com.yahpz.domain.FuelRefundCreditInput
 import com.yahpz.domain.FuelRefundParticipationInput
 import com.yahpz.domain.FuelRefundProfileInput
@@ -30,6 +31,11 @@ import com.yahpz.domain.DELETE_USER_FAILED
 import com.yahpz.domain.DUPLICATE_PLATE_ERROR
 import com.yahpz.domain.INVITE_IDENTITY_ERROR
 import com.yahpz.domain.INVITE_SAVE_FAILED
+import com.yahpz.domain.IMPERSONATION_ALREADY
+import com.yahpz.domain.IMPERSONATION_OPEN_FAILED
+import com.yahpz.domain.IMPERSONATION_NONE
+import com.yahpz.domain.IMPERSONATION_RESTORE_FAILED
+import com.yahpz.domain.ImpersonationTarget
 import com.yahpz.domain.InviteDraft
 import com.yahpz.domain.OTP_SET_FAILED
 import com.yahpz.domain.RESEND_INVITE_FAILED
@@ -57,6 +63,7 @@ import com.yahpz.domain.SHIFT_DRAFT_SAVE_FAILED
 import com.yahpz.domain.SYSTEM_DISTRICT_LOCKED_ERROR
 import com.yahpz.domain.ShiftDraft
 import com.yahpz.domain.buildAvailabilityWrite
+import com.yahpz.domain.canImpersonateTarget
 import com.yahpz.domain.buildDuplicateClusters
 import com.yahpz.domain.buildEventsByResponderRows
 import com.yahpz.domain.buildFuelQuarterRows
@@ -79,6 +86,7 @@ import com.yahpz.domain.FuelQuarterParticipationInput
 import com.yahpz.domain.FuelQuarterProfileInput
 import com.yahpz.domain.FuelQuarterSavedDistribution
 import com.yahpz.domain.fuelRefundReportRows
+import com.yahpz.domain.gateResponderFillWrite
 import com.yahpz.domain.isAdmin
 import com.yahpz.domain.isSystemClosedListItem
 import com.yahpz.domain.israelToday
@@ -86,7 +94,17 @@ import com.yahpz.domain.kmDiscrepancyReportRows
 import com.yahpz.domain.kmExceptionReportRows
 import com.yahpz.domain.mapClosedListDeleteError
 import com.yahpz.domain.mapClosedListWriteError
+import com.yahpz.domain.EventMedia
+import com.yahpz.domain.EventMediaPlateOption
+import com.yahpz.domain.captionError
+import com.yahpz.domain.eventMediaStoragePath
+import com.yahpz.domain.mapEventMediaError
 import com.yahpz.domain.mapTreatedPlateRows
+import com.yahpz.domain.mergeMediaPlates
+import com.yahpz.domain.parseEventMediaTakenWhen
+import com.yahpz.domain.uniquePlateIds
+import com.yahpz.domain.EVENT_MEDIA_NETWORK
+import com.yahpz.domain.EventMediaTakenWhen
 import com.yahpz.domain.needsBroadcastSubject
 import com.yahpz.domain.normalizeReturnDate
 import com.yahpz.domain.openDocReportRows
@@ -129,7 +147,11 @@ import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.postgrest.query.Order
 import io.github.jan.supabase.postgrest.rpc
+import io.github.jan.supabase.storage.Storage
+import io.github.jan.supabase.storage.storage
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.Headers
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.SerialName
@@ -138,8 +160,16 @@ import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.time.LocalDate
 import java.time.ZoneId
+import java.util.UUID
+import kotlin.time.Duration.Companion.seconds
 
 class APIException(override val message: String) : Exception(message)
+
+sealed class EventMediaWriteResult {
+    data class Uploaded(val media: EventMedia) : EventMediaWriteResult()
+    data object Done : EventMediaWriteResult()
+    data class Error(val message: String) : EventMediaWriteResult()
+}
 
 private val edgeErrorPattern = Regex("\"error\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")
 
@@ -254,6 +284,7 @@ object YahpazAPI {
         install(Auth)
         install(Postgrest)
         install(Functions)
+        install(Storage)
     }
 
     suspend fun sessionUserId(): String? {
@@ -279,8 +310,71 @@ object YahpazAPI {
     }
 
     suspend fun signOut() {
+        ViewAsStore.clearAll()
         runCatching { client.auth.signOut() }
     }
+
+    suspend fun startImpersonation(targetUserId: String): String? {
+        if (ViewAsStore.readImpersonation() != null) return IMPERSONATION_ALREADY
+        ViewAsStore.clearRolePreview()
+        val session = client.auth.currentSessionOrNull() ?: return "יש להתחבר מחדש."
+        val actorId = session.user?.id ?: return "יש להתחבר מחדש."
+        val response = invokeEdge<ImpersonateCall, AdminUsersResponse>(
+            "admin-users",
+            ImpersonateCall(action = "impersonate", targetUserId = targetUserId),
+            IMPERSONATION_OPEN_FAILED,
+        )
+        val payload = response.getOrElse { return it.message ?: IMPERSONATION_OPEN_FAILED }
+        if (payload.error != null) return payload.error
+        val access = payload.accessToken
+        val refresh = payload.refreshToken
+        val target = payload.target
+        if (access.isNullOrEmpty() || refresh.isNullOrEmpty() || target == null) {
+            return IMPERSONATION_OPEN_FAILED
+        }
+        ViewAsStore.writeImpersonation(
+            ImpersonationStash(
+                actorAccessToken = session.accessToken,
+                actorRefreshToken = session.refreshToken,
+                actorUserId = actorId,
+                targetUserId = target.id,
+                targetFullName = target.fullName,
+                targetCallsign = target.callsign,
+            ),
+        )
+        return try {
+            client.auth.importAuthToken(access, refresh, retrieveUser = true)
+            null
+        } catch (_: Exception) {
+            ViewAsStore.clearImpersonation()
+            IMPERSONATION_OPEN_FAILED
+        }
+    }
+
+    suspend fun stopImpersonation(): String? {
+        val stash = ViewAsStore.readImpersonation() ?: return IMPERSONATION_NONE
+        return try {
+            client.auth.importAuthToken(stash.actorAccessToken, stash.actorRefreshToken, retrieveUser = true)
+            ViewAsStore.clearImpersonation()
+            invokeEdge<ImpersonateCall, AdminUsersResponse>(
+                "admin-users",
+                ImpersonateCall(action = "stop_impersonation", targetUserId = stash.targetUserId),
+                IMPERSONATION_RESTORE_FAILED,
+            )
+            null
+        } catch (_: Exception) {
+            ViewAsStore.clearImpersonation()
+            IMPERSONATION_RESTORE_FAILED
+        }
+    }
+
+    suspend fun fetchImpersonationCandidates(actorUserId: String): List<AdminUserListItem> =
+        fetchAdminUsers().filter { row ->
+            canImpersonateTarget(
+                actorUserId,
+                ImpersonationTarget(id = row.id, active = row.active, roles = row.roles),
+            )
+        }
 
     suspend fun requestPasswordReset(email: String): String? {
         return try {
@@ -888,6 +982,12 @@ object YahpazAPI {
         )
     }
 
+    private fun extraFunctionHeaders(): Headers = Headers.build {
+        if (ViewAsStore.isImpersonating()) {
+            append("x-yahpaz-impersonating", "1")
+        }
+    }
+
     /**
      * Edge functions answer with `{ "error": "…" }` in Hebrew on failure. supabase-kt
      * raises those as exceptions, so pull the message back out of the body when it is there.
@@ -897,7 +997,9 @@ object YahpazAPI {
         body: B,
         fallback: String,
     ): Result<R> = try {
-        Result.success(json.decodeFromString<R>(client.functions.invoke(function, body).bodyAsText()))
+        Result.success(json.decodeFromString<R>(
+            client.functions.invoke(function, body, headers = extraFunctionHeaders()).bodyAsText(),
+        ))
     } catch (error: CancellationException) {
         throw error
     } catch (error: Exception) {
@@ -1597,12 +1699,18 @@ object YahpazAPI {
         )
     }
 
-    suspend fun saveFill(context: FillContext, draft: ResponderFillDraft, complete: Boolean): String? {
+    suspend fun saveFill(
+        context: FillContext,
+        draft: ResponderFillDraft,
+        complete: Boolean,
+        unfinishedMediaDraftCount: Int = 0,
+    ): String? {
         val errors = validateResponderFillDraft(
             draft,
             if (complete) FillMode.COMPLETE else FillMode.DRAFT,
             context.vehicles.map { it.plate },
             context.totalKm,
+            unfinishedMediaDraftCount,
         )
         if (!errors.isEmpty) {
             return if (complete) {
@@ -1613,16 +1721,27 @@ object YahpazAPI {
         }
         val start = parsedOdometer(draft.odometerStart)
         val end = parsedOdometer(draft.odometerEnd)
+        val lockError = "לא ניתן לערוך דיווח שהושלם. רק אחמ״ש יכול לערוך."
+        val saveError = "שמירת הדיווח נכשלה. בדקו את החיבור ונסו שוב."
         return try {
             val current = client.from("event_responders").select(
                 Columns.raw("status, event:events!inner(status)"),
             ) {
                 filter { eq("id", context.assignmentId) }
             }.decodeSingle<FillLockRow>()
-            if (current.status == ParticipationStatus.DONE || current.eventStatus == EventStatus.DONE) {
-                return "לא ניתן לערוך דיווח שהושלם. רק אחמ״ש יכול לערוך."
+            when (
+                gateResponderFillWrite(
+                    complete = complete,
+                    participationStatus = current.status,
+                    eventStatus = current.eventStatus,
+                )
+            ) {
+                FillWriteGate.ALREADY_COMPLETE -> return null
+                FillWriteGate.LOCKED -> return lockError
+                FillWriteGate.PROCEED -> Unit
             }
-            val updated = client.from("event_responders").update(
+            // Keep status writable until plates are saved — RLS blocks plate writes after done.
+            val fieldsUpdated = client.from("event_responders").update(
                 FillWrite(
                     vehiclePlate = plateNumberForSave(draft.vehiclePlate),
                     odometerStart = start,
@@ -1630,15 +1749,15 @@ object YahpazAPI {
                     route = draft.route.nilIfEmpty(),
                     treatmentDetail = draft.treatmentDetail.nilIfEmpty(),
                     treatmentNotes = draft.treatmentNotes.nilIfEmpty(),
-                    status = if (complete) ParticipationStatus.DONE.raw else ParticipationStatus.IN_PROGRESS.raw,
+                    status = ParticipationStatus.IN_PROGRESS.raw,
                     updatedAt = Instant.now().toString(),
                 ),
             ) {
                 filter { eq("id", context.assignmentId) }
                 select(Columns.raw("id"))
             }.decodeList<IdRow>()
-            if (updated.isEmpty()) {
-                return "לא ניתן לערוך דיווח שהושלם. רק אחמ״ש יכול לערוך."
+            if (fieldsUpdated.isEmpty()) {
+                return if (complete && participationIsDone(context.assignmentId)) null else lockError
             }
             client.from("event_treated_plates").delete {
                 filter { eq("event_responder_id", context.assignmentId) }
@@ -1659,6 +1778,20 @@ object YahpazAPI {
                     },
                 )
             }
+            if (complete) {
+                val completed = client.from("event_responders").update(
+                    FillStatusWrite(
+                        status = ParticipationStatus.DONE.raw,
+                        updatedAt = Instant.now().toString(),
+                    ),
+                ) {
+                    filter { eq("id", context.assignmentId) }
+                    select(Columns.raw("id"))
+                }.decodeList<IdRow>()
+                if (completed.isEmpty() && !participationIsDone(context.assignmentId)) {
+                    return lockError
+                }
+            }
             runCatching {
                 client.postgrest.rpc(
                     "apply_event_status_from_participations",
@@ -1667,9 +1800,16 @@ object YahpazAPI {
             }
             null
         } catch (_: Exception) {
-            "שמירת הדיווח נכשלה. בדקו את החיבור ונסו שוב."
+            if (complete && participationIsDone(context.assignmentId)) null else saveError
         }
     }
+
+    private suspend fun participationIsDone(assignmentId: String): Boolean =
+        runCatching {
+            client.from("event_responders").select(Columns.raw("status")) {
+                filter { eq("id", assignmentId) }
+            }.decodeSingle<FillLockRow>().status == ParticipationStatus.DONE
+        }.getOrDefault(false)
 
     suspend fun saveAvailability(userId: String, status: AvailabilityStatus, availableFrom: String?): String? {
         return when (val write = buildAvailabilityWrite(status, availableFrom, israelToday())) {
@@ -1690,6 +1830,151 @@ object YahpazAPI {
         }
     }
 
+    private val eventMediaSelect =
+        "id, event_id, uploaded_by, caption, taken_when, storage_path, mime_type, byte_size, width, height, created_at, uploader:profiles!event_media_uploaded_by_fkey(full_name), plates:event_media_plates(treated_plate_id)"
+
+    suspend fun listEventMedia(eventId: String): List<EventMedia> {
+        return try {
+            val rows = client.from("event_media").select(Columns.raw(eventMediaSelect)) {
+                filter { eq("event_id", eventId) }
+                order("created_at", Order.ASCENDING)
+            }.decodeList<EventMediaRow>()
+            rows.map { it.toDomain(signedUrl = signedUrlFor(it.storagePath)) }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun listEventMediaPlates(eventId: String): List<EventMediaPlateOption> {
+        val plateSelect = "id, plate_number, model, color, logo_slug"
+        val eventKeyed = runCatching {
+            client.from("event_treated_plates").select(Columns.raw(plateSelect)) {
+                filter { eq("event_id", eventId) }
+            }.decodeList<EventMediaPlateOptionRow>()
+        }.getOrDefault(emptyList())
+        val responderKeyed = runCatching {
+            client.from("event_treated_plates").select(
+                Columns.raw("$plateSelect, event_responders!event_treated_plates_event_responder_id_fkey!inner(event_id)"),
+            ) {
+                filter { eq("event_responders.event_id", eventId) }
+            }.decodeList<EventMediaPlateOptionRow>()
+        }.getOrDefault(emptyList())
+        return mergeMediaPlates(responderKeyed.mapNotNull { it.toOption() }, eventKeyed.mapNotNull { it.toOption() })
+    }
+
+    suspend fun uploadEventMedia(
+        eventId: String,
+        jpegBytes: ByteArray,
+        width: Int,
+        height: Int,
+        takenWhen: EventMediaTakenWhen,
+        treatedPlateIds: List<String>,
+        caption: String?,
+    ): EventMediaWriteResult {
+        val userId = sessionUserId() ?: return EventMediaWriteResult.Error(EVENT_MEDIA_NETWORK)
+        val trimmed = caption?.trim()?.ifEmpty { null }
+        captionError(trimmed.orEmpty())?.let { return EventMediaWriteResult.Error(it) }
+        val id = UUID.randomUUID().toString()
+        val storagePath = eventMediaStoragePath(eventId, id)
+        try {
+            client.storage.from("event-media").upload(storagePath, jpegBytes) {
+                upsert = false
+                contentType = ContentType.Image.JPEG
+            }
+        } catch (error: Exception) {
+            return EventMediaWriteResult.Error(mapEventMediaError(error.message))
+        }
+        val inserted = try {
+            client.from("event_media").insert(
+                EventMediaInsert(
+                    id = id,
+                    eventId = eventId,
+                    uploadedBy = userId,
+                    caption = trimmed,
+                    takenWhen = takenWhen.raw,
+                    storagePath = storagePath,
+                    mimeType = "image/jpeg",
+                    byteSize = jpegBytes.size,
+                    width = width,
+                    height = height,
+                ),
+            ) {
+                select(Columns.raw(eventMediaSelect))
+            }.decodeSingle<EventMediaRow>()
+        } catch (error: Exception) {
+            runCatching { client.storage.from("event-media").delete(storagePath) }
+            return EventMediaWriteResult.Error(mapEventMediaError(error.message))
+        }
+        when (val plates = replaceMediaPlates(id, treatedPlateIds)) {
+            is EventMediaWriteResult.Error -> {
+                runCatching { client.from("event_media").delete { filter { eq("id", id) } } }
+                runCatching { client.storage.from("event-media").delete(storagePath) }
+                return plates
+            }
+            else -> Unit
+        }
+        return EventMediaWriteResult.Uploaded(
+            inserted.toDomain(
+                signedUrl = signedUrlFor(storagePath),
+                treatedPlateIds = uniquePlateIds(treatedPlateIds),
+            ),
+        )
+    }
+
+    suspend fun updateEventMedia(
+        id: String,
+        takenWhen: EventMediaTakenWhen,
+        treatedPlateIds: List<String>,
+        caption: String?,
+    ): EventMediaWriteResult {
+        val trimmed = caption?.trim()?.ifEmpty { null }
+        captionError(trimmed.orEmpty())?.let { return EventMediaWriteResult.Error(it) }
+        try {
+            client.from("event_media").update(
+                EventMediaUpdate(takenWhen = takenWhen.raw, caption = trimmed),
+            ) {
+                filter { eq("id", id) }
+            }
+        } catch (error: Exception) {
+            return EventMediaWriteResult.Error(mapEventMediaError(error.message))
+        }
+        return replaceMediaPlates(id, treatedPlateIds)
+    }
+
+    suspend fun deleteEventMedia(id: String, storagePath: String): EventMediaWriteResult {
+        return try {
+            client.from("event_media").delete { filter { eq("id", id) } }
+            runCatching { client.storage.from("event-media").delete(storagePath) }
+            EventMediaWriteResult.Done
+        } catch (error: Exception) {
+            EventMediaWriteResult.Error(mapEventMediaError(error.message))
+        }
+    }
+
+    private suspend fun replaceMediaPlates(
+        mediaId: String,
+        plateIds: List<String>,
+    ): EventMediaWriteResult {
+        val unique = uniquePlateIds(plateIds)
+        try {
+            client.from("event_media_plates").delete { filter { eq("media_id", mediaId) } }
+            if (unique.isNotEmpty()) {
+                client.from("event_media_plates").insert(
+                    unique.map { EventMediaPlateWrite(mediaId = mediaId, treatedPlateId = it) },
+                )
+            }
+            return EventMediaWriteResult.Done
+        } catch (error: Exception) {
+            return EventMediaWriteResult.Error(mapEventMediaError(error.message))
+        }
+    }
+
+    private suspend fun signedUrlFor(storagePath: String): String? {
+        return runCatching {
+            client.storage.from("event-media").createSignedUrl(storagePath, 3600.seconds)
+        }.getOrNull()
+    }
+
     suspend fun loadTrack(token: String): TrackLoadResponse =
         invokeTrack(TrackCall("load", token, null, null, null, null))
 
@@ -1700,7 +1985,11 @@ object YahpazAPI {
 
     private suspend fun invokeTrack(body: TrackCall): TrackLoadResponse {
         return try {
-            val text = client.functions.invoke("responder-track", body).bodyAsText()
+            val text = client.functions.invoke(
+                "responder-track",
+                body,
+                headers = extraFunctionHeaders(),
+            ).bodyAsText()
             json.decodeFromString<TrackLoadResponse>(text)
         } catch (_: Exception) {
             TrackLoadResponse(
@@ -1709,6 +1998,41 @@ object YahpazAPI {
             )
         }
     }
+}
+
+private fun EventMediaRow.toDomain(
+    signedUrl: String?,
+    treatedPlateIds: List<String>? = null,
+): EventMedia {
+    val whenTaken = parseEventMediaTakenWhen(takenWhen) ?: EventMediaTakenWhen.BEFORE_TREATMENT
+    return EventMedia(
+        id = id,
+        eventId = eventId,
+        uploadedBy = uploadedBy,
+        uploaderName = uploader?.fullName?.trim()?.ifEmpty { null },
+        treatedPlateIds = treatedPlateIds ?: uniquePlateIds(plates.map { it.treatedPlateId }),
+        caption = caption,
+        takenWhen = whenTaken,
+        storagePath = storagePath,
+        mimeType = mimeType,
+        byteSize = byteSize,
+        width = width,
+        height = height,
+        createdAt = createdAt,
+        signedUrl = signedUrl,
+    )
+}
+
+private fun EventMediaPlateOptionRow.toOption(): EventMediaPlateOption? {
+    val plate = plateNumber?.trim().orEmpty()
+    if (id.isEmpty() || plate.isEmpty()) return null
+    return EventMediaPlateOption(
+        id = id,
+        plateNumber = plate,
+        model = model,
+        color = color,
+        logoSlug = logoSlug,
+    )
 }
 
 @Serializable
@@ -1742,6 +2066,12 @@ private data class FillWrite(
     val route: String?,
     @SerialName("treatment_detail") val treatmentDetail: String?,
     @SerialName("treatment_notes") val treatmentNotes: String?,
+    val status: String,
+    @SerialName("updated_at") val updatedAt: String,
+)
+
+@Serializable
+private data class FillStatusWrite(
     val status: String,
     @SerialName("updated_at") val updatedAt: String,
 )

@@ -287,9 +287,9 @@ fun isInvitePending(active: Boolean, invitePending: Boolean): Boolean = active &
 
 fun compareAdminUsers(a: AdminUserSortKey, b: AdminUserSortKey): Int {
     fun rank(user: AdminUserSortKey): Int = when {
-        !user.active -> 2
-        user.invitePending -> 0
-        else -> 1
+        isInvitePending(user.active, user.invitePending) -> 2
+        !user.active -> 1
+        else -> 0
     }
     val byRank = rank(a) - rank(b)
     if (byRank != 0) return byRank

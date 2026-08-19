@@ -34,6 +34,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.yahpz.domain.AvailabilityStatus
+import com.yahpz.domain.IMPERSONATION_AVAILABILITY_LOCKED
 import com.yahpz.domain.ProfileVehicle
 import com.yahpz.domain.availabilityLabel
 import com.yahpz.domain.availabilityReturnCaption
@@ -72,6 +73,7 @@ fun ProfileScreen(app: AppModel, ui: AppUiState) {
                 AvailabilityRow(
                     availability = profile.availability,
                     availableFrom = profile.availableFrom,
+                    enabled = !ui.impersonating,
                     onClick = { editingAvailability = true },
                 )
                 VehiclesSection(
@@ -110,7 +112,7 @@ fun ProfileScreen(app: AppModel, ui: AppUiState) {
                 )
             }
         }
-        PrivacyPolicyLink()
+        PrivacyPolicyLink(onOpen = { app.openPrivacy() })
         GhostButton(title = "יציאה", onClick = { app.signOut() })
     }
 
@@ -129,6 +131,7 @@ fun ProfileScreen(app: AppModel, ui: AppUiState) {
 private fun AvailabilityRow(
     availability: AvailabilityStatus,
     availableFrom: String?,
+    enabled: Boolean,
     onClick: () -> Unit,
 ) {
     val effective = effectiveAvailability(availability, availableFrom, israelToday())
@@ -140,7 +143,7 @@ private fun AvailabilityRow(
     }
     FieldCard(
         modifier = Modifier
-            .clickable(onClickLabel = "עריכת זמינות", onClick = onClick)
+            .clickable(enabled = enabled, onClickLabel = "עריכת זמינות", onClick = onClick)
             .semantics(mergeDescendants = true) {
                 contentDescription = "זמינות: $label"
             },
@@ -165,12 +168,17 @@ private fun AvailabilityRow(
                 if (caption != null) {
                     Text(caption, style = TypeScale.caption, color = FieldTheme.textMuted)
                 }
+                if (!enabled) {
+                    Text(IMPERSONATION_AVAILABILITY_LOCKED, style = TypeScale.caption, color = FieldTheme.textMuted)
+                }
             }
-            Icon(
-                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                contentDescription = null,
-                tint = FieldTheme.textMuted,
-            )
+            if (enabled) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = FieldTheme.textMuted,
+                )
+            }
         }
     }
 }
