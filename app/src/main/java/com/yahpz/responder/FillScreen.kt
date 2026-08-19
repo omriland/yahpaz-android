@@ -22,6 +22,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -93,11 +94,12 @@ fun FillScreen(eventId: String, app: AppModel) {
     var plateLookupGeneration by remember { mutableIntStateOf(0) }
     var pane by remember { mutableStateOf(FillPane.DOCS) }
     var unfinishedMediaDrafts by remember { mutableIntStateOf(0) }
+    var plateScanOpen by remember { mutableStateOf(false) }
 
-    fun commitPendingPlate() {
+    fun commitPendingPlate(pendingOverride: String? = null) {
         when (
             val result = commitTreatedPlate(
-                pending = draft.treatedPlatePending,
+                pending = pendingOverride ?: draft.treatedPlatePending,
                 plates = draft.treatedPlates,
             )
         ) {
@@ -264,6 +266,7 @@ fun FillScreen(eventId: String, app: AppModel) {
                             readOnly = readOnly,
                             onPendingChange = { draft = draft.copy(treatedPlatePending = digitsOnly(it)) },
                             onCommit = { commitPendingPlate() },
+                            onScanClick = { plateScanOpen = true },
                             onRemove = { key ->
                                 draft = draft.copy(
                                     treatedPlates = removeTreatedPlate(draft.treatedPlates, plateDigitsKey = key),
@@ -359,6 +362,16 @@ fun FillScreen(eventId: String, app: AppModel) {
             }
         }
     }
+
+    if (plateScanOpen) {
+        ExperimentalPlateScanDialog(
+            onDismiss = { plateScanOpen = false },
+            onPlateScanned = { digits ->
+                plateScanOpen = false
+                commitPendingPlate(pendingOverride = digits)
+            },
+        )
+    }
 }
 
 @Composable
@@ -394,6 +407,7 @@ private fun TreatedPlatesSection(
     readOnly: Boolean,
     onPendingChange: (String) -> Unit,
     onCommit: () -> Unit,
+    onScanClick: () -> Unit,
     onRemove: (String) -> Unit,
     onLeftWhereChange: (String, String) -> Unit,
 ) {
@@ -415,6 +429,7 @@ private fun TreatedPlatesSection(
                 error = error,
                 onPendingChange = onPendingChange,
                 onCommit = onCommit,
+                onScanClick = onScanClick,
             )
         }
     }
@@ -426,6 +441,7 @@ private fun TreatedPlateAddRow(
     error: String?,
     onPendingChange: (String) -> Unit,
     onCommit: () -> Unit,
+    onScanClick: () -> Unit,
 ) {
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
@@ -473,6 +489,22 @@ private fun TreatedPlateAddRow(
             ) {
                 Text("הוספה", style = TypeScale.bodyStrong, color = FieldTheme.accent)
             }
+        }
+        TextButton(
+            onClick = onScanClick,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(FormControlHeight)
+                .border(1.dp, FieldTheme.strong, RoundedCornerShape(4.dp)),
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.PhotoCamera,
+                contentDescription = null,
+                tint = FieldTheme.accent,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(modifier = Modifier.size(8.dp))
+            Text("סריקה ניסיונית", style = TypeScale.bodyStrong, color = FieldTheme.accent)
         }
         error?.let { Text(it, style = TypeScale.caption, color = FieldTheme.alert) }
     }

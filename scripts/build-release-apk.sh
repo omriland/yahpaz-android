@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -17,8 +17,12 @@ if [[ -n "${JAVA_HOME:-}" ]]; then
 fi
 
 if [[ ! -f "$ROOT/key.properties" ]]; then
-  echo "Missing key.properties. Run scripts/create-upload-keystore.sh first." >&2
-  exit 1
+  if [[ -n "${YAHPZ_ANDROID_KEYSTORE_BASE64:-}" ]]; then
+    "$ROOT/scripts/materialize-keystore.sh"
+  else
+    echo "Missing key.properties. Run scripts/create-upload-keystore.sh first (or set YAHPZ_ANDROID_KEYSTORE_BASE64)." >&2
+    exit 1
+  fi
 fi
 
 VERSION_CODE="$(sed -n 's/.*versionCode *= *\([0-9][0-9]*\).*/\1/p' "$ROOT/app/build.gradle.kts" | head -1)"
