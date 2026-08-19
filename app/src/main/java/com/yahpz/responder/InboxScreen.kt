@@ -11,15 +11,20 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -38,19 +43,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.yahpz.domain.FUEL_NOTE
 import com.yahpz.domain.MINE_LOGGED_EMPTY_TITLE
 import com.yahpz.domain.MINE_LOGGED_TAB_LABEL
 import com.yahpz.domain.MINE_PENDING_EMPTY_CAPTION
 import com.yahpz.domain.MINE_PENDING_EMPTY_TITLE
 import com.yahpz.domain.MINE_PENDING_EMPTY_VIEW_LOGGED
+import com.yahpz.domain.OVERDUE_FILL_CARD_TIP
 import com.yahpz.domain.MineListEvent
 import com.yahpz.domain.ParticipationStatus
 import com.yahpz.domain.cancelledStamp
 import com.yahpz.domain.formatDate
-import com.yahpz.domain.fuelNoteNeeded
+import com.yahpz.domain.isMineFillOverdue
 import com.yahpz.domain.israelToday
 import com.yahpz.domain.mineEventMatchesQuery
 import com.yahpz.domain.mineFillCtaLabel
@@ -59,9 +67,12 @@ import com.yahpz.domain.minePendingTabLabel
 import com.yahpz.domain.openMineSummary
 import com.yahpz.domain.participationStamp
 import com.yahpz.domain.partitionMineList
+import com.yahpz.domain.searchHighlightRanges
 import com.yahpz.domain.shiftGroupPendingCaption
 import com.yahpz.domain.shiftGroupShouldStartOpen
 import kotlinx.coroutines.launch
+
+private val searchHitYellow = Color(0xFFFFF59D)
 
 private enum class MineInboxTab { PENDING, LOGGED }
 
@@ -126,9 +137,6 @@ fun InboxScreen(app: AppModel, ui: AppUiState) {
                 style = TypeScale.body,
                 color = FieldTheme.textSecondary,
             )
-            if (fuelNoteNeeded(pending.size)) {
-                Text(FUEL_NOTE, style = TypeScale.body, color = FieldTheme.textPrimary)
-            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TabChip(minePendingTabLabel(pending.size), tab == MineInboxTab.PENDING) { tab = MineInboxTab.PENDING }
                 TabChip(MINE_LOGGED_TAB_LABEL, tab == MineInboxTab.LOGGED) { tab = MineInboxTab.LOGGED }
@@ -276,7 +284,10 @@ private fun LoggedList(
     onMore: () -> Unit,
     onClear: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         TextField(
             value = query,
             onValueChange = onQuery,
@@ -285,8 +296,13 @@ private fun LoggedList(
             colors = TextFieldDefaults.colors(
                 focusedContainerColor = FieldTheme.raised,
                 unfocusedContainerColor = FieldTheme.raised,
+                disabledContainerColor = FieldTheme.raised,
                 focusedIndicatorColor = Color.Transparent,
                 unfocusedIndicatorColor = Color.Transparent,
+                disabledIndicatorColor = Color.Transparent,
+                errorIndicatorColor = Color.Transparent,
+                focusedTextColor = FieldTheme.textPrimary,
+                unfocusedTextColor = FieldTheme.textPrimary,
             ),
             modifier = Modifier
                 .fillMaxWidth()
@@ -303,40 +319,77 @@ private fun LoggedList(
         } else {
             Column(
                 modifier = Modifier
-                    .background(FieldTheme.raised, RoundedCornerShape(8.dp))
-                    .border(1.dp, FieldTheme.hairline, RoundedCornerShape(8.dp))
+                    .weight(1f)
                     .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 items.forEach { event ->
+                    val place = listOf(event.road?.name, event.location).filter { !it.isNullOrEmpty() }.joinToString(" · ")
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onOpen(event) }
-                            .padding(16.dp),
+                            .padding(vertical = 12.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Column {
-                            Text(
-                                event.typeLabel.ifEmpty { "אירוע" },
+                        Column(Modifier.weight(1f)) {
+                            HighlightedText(
+                                text = event.typeLabel.ifEmpty { "אירוע" },
+                                query = query,
                                 style = TypeScale.bodyStrong,
                                 color = FieldTheme.textPrimary,
                             )
-                            Text(
-                                "${formatDate(event.eventDate)} · ${event.policeEventId.orEmpty()}",
+                            HighlightedText(
+                                text = listOf(formatDate(event.eventDate), event.policeEventId)
+                                    .filter { !it.isNullOrEmpty() }
+                                    .joinToString(" · "),
+                                query = query,
                                 style = TypeScale.caption,
                                 color = FieldTheme.textMuted,
                             )
+                            if (place.isNotEmpty()) {
+                                HighlightedText(
+                                    text = place,
+                                    query = query,
+                                    style = TypeScale.caption,
+                                    color = FieldTheme.textMuted,
+                                )
+                            }
                         }
                         StampChip(participationStamp(ParticipationStatus.DONE, true))
                     }
                 }
-            }
-            if (hasMore) {
-                GhostButton(title = "הצג 30 יום נוספים", onClick = onMore)
+                if (hasMore) {
+                    GhostButton(title = "הצג 30 יום נוספים", onClick = onMore)
+                }
+                Spacer(Modifier.height(24.dp))
             }
         }
     }
+}
+
+@Composable
+private fun HighlightedText(
+    text: String,
+    query: String,
+    style: TextStyle,
+    color: Color,
+) {
+    val ranges = remember(text, query) { searchHighlightRanges(text, query) }
+    if (ranges.isEmpty()) {
+        Text(text, style = style, color = color)
+        return
+    }
+    val annotated = remember(text, query, ranges) {
+        buildAnnotatedString {
+            append(text)
+            ranges.forEach { range ->
+                addStyle(SpanStyle(background = searchHitYellow), range.start, range.endExclusive)
+            }
+        }
+    }
+    Text(annotated, style = style, color = color)
 }
 
 @Composable
@@ -348,21 +401,32 @@ private fun EventCard(
 ) {
     val mine = userId?.let { event.ownParticipation(it) } ?: ParticipationStatus.PENDING
     val stamp = if (event.isCancelled) cancelledStamp() else participationStamp(mine, true)
+    val overdue = isMineFillOverdue(
+        isCancelled = event.isCancelled,
+        participationStatus = mine,
+        fillCompletableAt = userId?.let { event.ownFillCompletableAt(it) },
+    )
     val regular = event.origin != "shift"
     val cardShape = RoundedCornerShape(8.dp)
+    val cardFill = when {
+        overdue -> FieldTheme.alertTint
+        regular -> FieldTheme.accentSubtle
+        else -> FieldTheme.raised
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .height(IntrinsicSize.Min)
             .clip(cardShape)
-            .background(if (regular) FieldTheme.accentSubtle else FieldTheme.raised)
+            .background(cardFill)
             .border(1.dp, FieldTheme.hairline, cardShape),
     ) {
-        if (regular) {
+        if (overdue || regular) {
             Box(
                 Modifier
                     .width(3.dp)
                     .fillMaxHeight()
-                    .background(FieldTheme.accent),
+                    .background(if (overdue) FieldTheme.alert else FieldTheme.accent),
             )
         }
         Column(Modifier.weight(1f).padding(16.dp)) {
@@ -373,7 +437,20 @@ private fun EventCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text(event.typeLabel.ifEmpty { "אירוע" }, style = TypeScale.section, color = FieldTheme.textPrimary)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        if (overdue) {
+                            Icon(
+                                imageVector = Icons.Outlined.HourglassEmpty,
+                                contentDescription = OVERDUE_FILL_CARD_TIP,
+                                tint = FieldTheme.alert,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                        Text(event.typeLabel.ifEmpty { "אירוע" }, style = TypeScale.section, color = FieldTheme.textPrimary)
+                    }
                     Text(
                         listOf(formatDate(event.eventDate), event.policeEventId).filter { !it.isNullOrEmpty() }.joinToString(" · "),
                         style = TypeScale.caption,

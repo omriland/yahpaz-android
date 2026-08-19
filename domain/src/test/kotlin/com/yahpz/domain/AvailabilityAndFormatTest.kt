@@ -123,4 +123,15 @@ class AvailabilityAndFormatTest {
         assertEquals("xyz", parseTrackToken("yahpaz://track?token=xyz"))
         assertNull(parseTrackToken("https://yahpz.com/events"))
     }
+
+    @Test
+    fun timeKeystrokeInsertsColonAfterHour() {
+        assertEquals("0", applyTimeKeystroke("", "0"))
+        assertEquals("08", applyTimeKeystroke("0", "08"))
+        assertEquals("08:3", applyTimeKeystroke("08", "083"))
+        assertEquals("08:30", applyTimeKeystroke("08:3", "0830"))
+        assertEquals("08", applyTimeKeystroke("08:3", "08"))
+        assertEquals("0", applyTimeKeystroke("08", "0"))
+        assertEquals("08:3", applyTimeKeystroke("08:", "08:3"))
+    }
 }

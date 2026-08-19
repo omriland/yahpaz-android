@@ -28,6 +28,7 @@ import com.yahpz.domain.CockpitResponderInput
 import com.yahpz.domain.ContactSearchFields
 import com.yahpz.domain.DuplicateParticipation
 import com.yahpz.domain.EventDraft
+import com.yahpz.domain.EventResponderDraft
 import com.yahpz.domain.EventStatus
 import com.yahpz.domain.EventsByResponderEventInput
 import com.yahpz.domain.EventsByResponderResponderInput
@@ -46,8 +47,11 @@ import com.yahpz.domain.SHIFT_KIND_LABELS
 import com.yahpz.domain.ShiftDraft
 import com.yahpz.domain.ShiftStatus
 import com.yahpz.domain.TreatedPlateRowInput
+import com.yahpz.domain.TreatedVehicleDraft
 import com.yahpz.domain.VEHICLE_TYPE_LABELS
+import com.yahpz.domain.formatNumber
 import com.yahpz.domain.returnDateToInput
+import com.yahpz.domain.toTimeInput
 import com.yahpz.domain.FuelQuarterRow as DomainFuelQuarterRow
 import com.yahpz.domain.formatDate
 import com.yahpz.domain.formatPlate
@@ -94,8 +98,43 @@ data class ResponderSummary(
     @SerialName("responder_id") val responderId: String,
     @Serializable(with = ParticipationStatusSerializer::class)
     val status: ParticipationStatus,
+    @SerialName("fill_completable_at") val fillCompletableAt: String? = null,
     @Serializable(with = OptionalPersonNameSerializer::class)
     val profile: PersonName? = null,
+)
+
+@Serializable
+data class TreatedVehicleKindRow(
+    val quantity: Int? = null,
+    val kind: Named? = null,
+)
+
+@Serializable
+data class UnitEventDetailResponderRow(
+    val id: String,
+    @SerialName("responder_id") val responderId: String,
+    @SerialName("started_at") val startedAt: String? = null,
+    @SerialName("ended_at") val endedAt: String? = null,
+    @SerialName("vehicle_plate") val vehiclePlate: String? = null,
+    @SerialName("odometer_start")
+    @Serializable(with = OptionalDoubleSerializer::class)
+    val odometerStart: Double? = null,
+    @SerialName("odometer_end")
+    @Serializable(with = OptionalDoubleSerializer::class)
+    val odometerEnd: Double? = null,
+    @SerialName("total_km")
+    @Serializable(with = OptionalDoubleSerializer::class)
+    val totalKm: Double? = null,
+    val route: String? = null,
+    @SerialName("treatment_detail") val treatmentDetail: String? = null,
+    @SerialName("treatment_notes") val treatmentNotes: String? = null,
+    @SerialName("emergency_means") val emergencyMeans: Boolean = false,
+    @Serializable(with = ParticipationStatusSerializer::class)
+    val status: ParticipationStatus,
+    @Serializable(with = OptionalPersonNameSerializer::class)
+    val profile: PersonName? = null,
+    val treated: List<TreatedVehicleKindRow> = emptyList(),
+    @SerialName("treated_plates") val treatedPlates: List<EventTreatedPlateRow> = emptyList(),
 )
 
 @Serializable
@@ -123,6 +162,9 @@ data class EventListItem(
 ) {
     fun ownParticipation(userId: String): ParticipationStatus? =
         responders.firstOrNull { it.responderId == userId }?.status
+
+    fun ownFillCompletableAt(userId: String): String? =
+        responders.firstOrNull { it.responderId == userId }?.fillCompletableAt
 
     val typeLabel: String
         get() {
@@ -869,6 +911,7 @@ data class EventLookups(
     val districts: List<LookupOption> = emptyList(),
     val eventTypes: List<LookupOption> = emptyList(),
     val roads: List<LookupOption> = emptyList(),
+    val vehicleKinds: List<LookupOption> = emptyList(),
 ) {
     val isEmpty: Boolean get() = eventTypes.isEmpty() && roads.isEmpty()
 }
@@ -997,14 +1040,39 @@ data class EventInsert(
 data class EventResponderInsert(
     @SerialName("event_id") val eventId: String,
     @SerialName("responder_id") val responderId: String,
+    @SerialName("started_at") val startedAt: String? = null,
+    @SerialName("ended_at") val endedAt: String? = null,
+    @SerialName("total_km") val totalKm: Double? = null,
     @SerialName("emergency_means") val emergencyMeans: Boolean = false,
     val status: String = ParticipationStatus.PENDING.raw,
+)
+
+@Serializable
+data class EventResponderLeadWrite(
+    @SerialName("started_at") val startedAt: String? = null,
+    @SerialName("ended_at") val endedAt: String? = null,
+    @SerialName("total_km") val totalKm: Double? = null,
+    @SerialName("emergency_means") val emergencyMeans: Boolean = false,
+    @SerialName("updated_at") val updatedAt: String,
+)
+
+@Serializable
+data class EventTreatedVehicleInsert(
+    @SerialName("event_responder_id") val eventResponderId: String,
+    @SerialName("vehicle_kind_id") val vehicleKindId: String,
+    val quantity: Int,
 )
 
 @Serializable
 data class EventCancelWrite(
     @SerialName("is_cancelled") val isCancelled: Boolean,
     @SerialName("updated_at") val updatedAt: String,
+)
+
+@Serializable
+data class EventFormTreatedRow(
+    @SerialName("vehicle_kind_id") val vehicleKindId: String,
+    val quantity: Int = 0,
 )
 
 @Serializable
@@ -1022,7 +1090,7 @@ data class EventFormDetail(
     val status: EventStatus = EventStatus.DRAFT,
     val responders: List<EventFormResponderRow> = emptyList(),
 ) {
-    fun toDraft(): EventDraft = EventDraft(
+    fun toDraft(vehicleOwnerIds: Set<String>): EventDraft = EventDraft(
         eventDate = returnDateToInput(eventDate),
         policeEventId = policeEventId.orEmpty(),
         eventTypeId = eventTypeId.orEmpty(),
@@ -1030,7 +1098,7 @@ data class EventFormDetail(
         districtId = districtId.orEmpty(),
         location = location.orEmpty(),
         notes = notes.orEmpty(),
-        responderIds = responders.map { it.responderId },
+        responders = responders.map { it.toDraft(vehicleOwnerIds.contains(it.responderId)) },
         isCancelled = isCancelled,
     )
 }
@@ -1039,9 +1107,28 @@ data class EventFormDetail(
 data class EventFormResponderRow(
     val id: String,
     @SerialName("responder_id") val responderId: String,
+    @SerialName("started_at") val startedAt: String? = null,
+    @SerialName("ended_at") val endedAt: String? = null,
+    @SerialName("total_km")
+    @Serializable(with = OptionalDoubleSerializer::class)
+    val totalKm: Double? = null,
+    @SerialName("emergency_means") val emergencyMeans: Boolean = false,
     @Serializable(with = ParticipationStatusSerializer::class)
     val status: ParticipationStatus = ParticipationStatus.PENDING,
-)
+    val treated: List<EventFormTreatedRow> = emptyList(),
+) {
+    fun toDraft(hasVehicle: Boolean): EventResponderDraft = EventResponderDraft(
+        responderId = responderId,
+        assignmentId = id,
+        startTime = toTimeInput(startedAt),
+        endTime = toTimeInput(endedAt),
+        totalKm = totalKm?.let { formatNumber(it) }.orEmpty(),
+        emergencyMeans = emergencyMeans,
+        treated = treated.map { TreatedVehicleDraft(vehicleKindId = it.vehicleKindId, quantity = it.quantity) },
+        status = status,
+        hasVehicle = hasVehicle,
+    )
+}
 
 @Serializable
 data class EventUpdateWrite(

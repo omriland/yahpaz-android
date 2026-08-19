@@ -8,6 +8,7 @@ import com.yahpz.domain.BROADCAST_LOAD_FAILED
 import com.yahpz.domain.BroadcastCandidate
 import com.yahpz.domain.BroadcastDraft
 import com.yahpz.domain.BroadcastLogEntry
+import com.yahpz.domain.EVENT_DRAFT_PARTIAL_SAVED
 import com.yahpz.domain.EVENT_DRAFT_SAVED
 import com.yahpz.domain.EventDraft
 import com.yahpz.domain.InviteDraft
@@ -80,6 +81,7 @@ data class AppUiState(
     val contactsFailed: Boolean = false,
     val contactsLoading: Boolean = false,
     val unitEvents: List<EventListItem> = emptyList(),
+    val myActiveUnitEvents: List<EventListItem> = emptyList(),
     val unitEventsFailed: Boolean = false,
     val unitEventsLoading: Boolean = false,
     val unitShifts: List<ShiftListItem> = emptyList(),
@@ -358,18 +360,24 @@ class AppModel : ViewModel() {
         fetch = { YahpazAPI.fetchUnitContacts() },
     )
 
-    suspend fun reloadUnitEvents() = loadSection(
-        read = { it.unitEvents },
-        write = { state, rows, loading, failed ->
-            state.copy(
-                unitEvents = rows ?: state.unitEvents,
-                unitEventsLoading = loading,
-                unitEventsFailed = failed,
-            )
-        },
-        failureMessage = "טעינת האירועים נכשלה. בדקו את החיבור ונסו שוב.",
-        fetch = { YahpazAPI.fetchUnitEvents() },
-    )
+    suspend fun reloadUnitEvents() {
+        if (_state.value.userId == null) return
+        val hadEvents = _state.value.unitEvents.isNotEmpty()
+        _state.update { it.copy(unitEventsLoading = !hadEvents, unitEventsFailed = false) }
+        try {
+            val events = YahpazAPI.fetchUnitEvents()
+            val active = YahpazAPI.fetchMyActiveUnitEvents()
+            _state.update {
+                it.copy(unitEvents = events, myActiveUnitEvents = active, unitEventsFailed = false)
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            _state.update { it.copy(unitEventsFailed = true) }
+        } finally {
+            _state.update { it.copy(unitEventsLoading = false) }
+        }
+    }
 
     suspend fun reloadUnitShifts() = loadSection(
         read = { it.unitShifts },
@@ -554,11 +562,20 @@ class AppModel : ViewModel() {
         }
     }
 
-    suspend fun createUnitEvent(draft: EventDraft, stayOnForm: Boolean = false): String? {
-        YahpazAPI.createUnitEvent(draft, _state.value.lookups.districts)?.let { return it }
+    suspend fun createUnitEvent(
+        draft: EventDraft,
+        allowPartial: Boolean = false,
+        stayOnForm: Boolean = false,
+    ): String? {
+        YahpazAPI.createUnitEvent(
+            draft = draft,
+            districts = _state.value.lookups.districts,
+            vehicleKinds = _state.value.lookups.vehicleKinds,
+            allowPartial = allowPartial,
+        )?.let { return it }
         reloadUnitEvents()
         viewModelScope.launch { reloadEvents() }
-        showToast(EVENT_DRAFT_SAVED, StampTone.DONE)
+        showToast(if (allowPartial) EVENT_DRAFT_PARTIAL_SAVED else EVENT_DRAFT_SAVED, StampTone.DONE)
         if (!stayOnForm) setTab(AppTab.UNIT_EVENTS)
         return null
     }
@@ -567,18 +584,21 @@ class AppModel : ViewModel() {
         eventId: String,
         draft: EventDraft,
         previousIsCancelled: Boolean,
+        allowPartial: Boolean = false,
         stayOnForm: Boolean = false,
     ): String? {
         YahpazAPI.updateUnitEvent(
             eventId = eventId,
             draft = draft,
             districts = _state.value.lookups.districts,
+            vehicleKinds = _state.value.lookups.vehicleKinds,
             viewerIsAdmin = _state.value.canAdmin,
             previousIsCancelled = previousIsCancelled,
+            allowPartial = allowPartial,
         )?.let { return it }
         reloadUnitEvents()
         viewModelScope.launch { reloadEvents() }
-        showToast(EVENT_DRAFT_SAVED, StampTone.DONE)
+        showToast(if (allowPartial) EVENT_DRAFT_PARTIAL_SAVED else EVENT_DRAFT_SAVED, StampTone.DONE)
         if (!stayOnForm) setTab(AppTab.UNIT_EVENTS)
         return null
     }

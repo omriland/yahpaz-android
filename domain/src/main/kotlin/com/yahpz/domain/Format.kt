@@ -73,6 +73,24 @@ fun formatTime(value: String?): String? {
     return timePart.take(5).takeIf { it.length == 5 }
 }
 
+/** Digits → `HH:mm` as the user types (colon after the hour). */
+fun formatTimeInput(digits: String): String {
+    val cleaned = digitsOnly(digits).take(4)
+    val hour = cleaned.take(2)
+    val minute = cleaned.drop(2)
+    return listOf(hour, minute).filter { it.isNotEmpty() }.joinToString(":")
+}
+
+/** Same backspace semantics as the return-date field: deleting over `:` removes a digit. */
+fun applyTimeKeystroke(previous: String, incoming: String): String {
+    val previousDigits = digitsOnly(previous)
+    var nextDigits = digitsOnly(incoming).take(4)
+    if (nextDigits == previousDigits && incoming.length < previous.length && previousDigits.isNotEmpty()) {
+        nextDigits = previousDigits.dropLast(1)
+    }
+    return formatTimeInput(nextDigits)
+}
+
 fun firstName(fullName: String): String = fullName.split(" ").firstOrNull() ?: fullName
 
 /** Grouped decimal like the web `Intl.NumberFormat('he-IL')`: whole numbers lose the fraction. */

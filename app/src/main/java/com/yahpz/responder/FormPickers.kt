@@ -63,11 +63,11 @@ private fun PickerField(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 44.dp)
+                .height(FormControlHeight)
                 .background(FieldTheme.raised, fieldShape)
                 .border(1.dp, if (error == null) FieldTheme.strong else FieldTheme.alert, fieldShape)
                 .clickable(onClick = onClick)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(horizontal = 16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -293,6 +293,7 @@ fun CrewAssignmentSection(
     modifier: Modifier = Modifier,
     error: String? = null,
     removeLabel: String = EVENT_ASSIGN_REMOVE,
+    onResponderClick: ((String) -> Unit)? = null,
 ) {
     var open by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
@@ -334,7 +335,15 @@ fun CrewAssignmentSection(
                             person.display,
                             style = TypeScale.body,
                             color = FieldTheme.textPrimary,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier
+                                .weight(1f)
+                                .then(
+                                    if (onResponderClick != null) {
+                                        Modifier.clickable { onResponderClick(person.id) }
+                                    } else {
+                                        Modifier
+                                    },
+                                ),
                         )
                         TextButton(
                             onClick = { onRemove(person.id) },

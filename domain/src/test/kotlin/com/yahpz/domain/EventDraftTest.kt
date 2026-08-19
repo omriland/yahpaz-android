@@ -98,8 +98,8 @@ class EventDraftTest {
         crew = toggleEventResponder(crew, "b")
         crew = toggleEventResponder(crew, "c")
         crew = toggleEventResponder(crew, "d")
-        assertEquals(listOf("a", "b", "c", "d"), crew)
-        assertEquals(listOf("a", "c", "d"), toggleEventResponder(crew, "b"))
+        assertEquals(listOf("a", "b", "c", "d"), crew.map { it.responderId })
+        assertEquals(listOf("a", "c", "d"), toggleEventResponder(crew, "b").map { it.responderId })
     }
 
     @Test
@@ -135,10 +135,20 @@ class EventDraftTest {
         assertEquals("אירוע חדש", EVENT_NEW_TITLE)
         assertEquals("עריכת אירוע", EVENT_EDIT_TITLE)
         assertEquals("שמירת אירוע", EVENT_SAVE_TITLE)
-        assertEquals("שמירת אירוע ויצירת חדש", EVENT_SAVE_AND_NEW_TITLE)
+        assertEquals("שמירת טיוטה", EVENT_SAVE_DRAFT_TITLE)
+        assertEquals("האירועים הפעילים שלי", MY_ACTIVE_EVENTS_TITLE)
         assertEquals("הקצאת כוננים", EVENT_ASSIGN_OPEN)
         assertEquals("סגירת הקצאה", EVENT_ASSIGN_CLOSE)
         assertEquals("הסרת כונן", EVENT_ASSIGN_REMOVE)
         assertEquals("טעינת האירועים נכשלה. בדקו את החיבור ונסו שוב.", UNIT_EVENTS_LOAD_FAILED)
+    }
+
+    @Test
+    fun `draft save only requires a date`() {
+        assertTrue(validateEventDraftPartial(EventDraft(eventDate = "2026-02-02")).isEmpty)
+        assertEquals(
+            EVENT_DRAFT_DATE_ERROR,
+            validateEventDraftPartial(EventDraft(eventDate = "")).eventDate,
+        )
     }
 }

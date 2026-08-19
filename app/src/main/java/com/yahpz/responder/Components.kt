@@ -50,7 +50,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -64,9 +66,13 @@ import androidx.compose.ui.unit.dp
 import com.yahpz.domain.StampDescriptor
 import com.yahpz.domain.StampTone
 import com.yahpz.domain.applyReturnDateKeystroke
+import com.yahpz.domain.applyTimeKeystroke
 
 private val fieldShape = RoundedCornerShape(4.dp)
 private val cardShape = RoundedCornerShape(8.dp)
+
+/** Shared control height so paired form fields line up. */
+val FormControlHeight = 56.dp
 
 @Composable
 fun StampChip(stamp: StampDescriptor, modifier: Modifier = Modifier) {
@@ -186,6 +192,18 @@ fun PrivacyPolicyLink(command: Boolean = false) {
 }
 
 @Composable
+fun FormFieldRow(
+    modifier: Modifier = Modifier,
+    content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        content = content,
+    )
+}
+
+@Composable
 fun FormField(
     label: String,
     value: String,
@@ -200,7 +218,15 @@ fun FormField(
     enabled: Boolean = true,
     placeholder: String? = null,
     ltr: Boolean = false,
+    textAlignEnd: Boolean = false,
 ) {
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    fun dismissKeyboard() {
+        focusManager.clearFocus()
+        keyboard?.hide()
+        onSubmit?.invoke()
+    }
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(label, style = TypeScale.label, color = FieldTheme.textSecondary)
         CompositionLocalProvider(
@@ -212,14 +238,34 @@ fun FormField(
                 enabled = enabled,
                 singleLine = true,
                 textStyle = (if (mono) TypeScale.numeric else TypeScale.body).let { style ->
-                    if (ltr) style.copy(textDirection = TextDirection.Ltr, textAlign = TextAlign.Left) else style
+                    when {
+                        ltr -> style.copy(textDirection = TextDirection.Ltr, textAlign = TextAlign.Left)
+                        textAlignEnd -> style.copy(textAlign = TextAlign.End)
+                        else -> style
+                    }
                 },
                 placeholder = placeholder?.let { hint ->
-                    { Text(hint, style = if (mono) TypeScale.numeric else TypeScale.body, color = FieldTheme.textMuted) }
+                    {
+                        Text(
+                            hint,
+                            style = (if (mono) TypeScale.numeric else TypeScale.body).let { style ->
+                                if (textAlignEnd) style.copy(textAlign = TextAlign.End) else style
+                            },
+                            color = FieldTheme.textMuted,
+                            modifier = if (textAlignEnd) Modifier.fillMaxWidth() else Modifier,
+                            textAlign = if (textAlignEnd) TextAlign.End else TextAlign.Unspecified,
+                        )
+                    }
                 },
                 visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
                 keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = imeAction),
-                keyboardActions = KeyboardActions(onAny = { onSubmit?.invoke() }),
+                keyboardActions = KeyboardActions(
+                    onDone = { dismissKeyboard() },
+                    onGo = { dismissKeyboard() },
+                    onSearch = { dismissKeyboard() },
+                    onSend = { dismissKeyboard() },
+                    onNext = { dismissKeyboard() },
+                ),
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = FieldTheme.raised,
                     unfocusedContainerColor = FieldTheme.raised,
@@ -229,10 +275,11 @@ fun FormField(
                     disabledIndicatorColor = Color.Transparent,
                     focusedTextColor = FieldTheme.textPrimary,
                     unfocusedTextColor = FieldTheme.textPrimary,
+                    disabledTextColor = FieldTheme.textMuted,
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 44.dp)
+                    .height(FormControlHeight)
                     .border(1.dp, if (error == null) FieldTheme.strong else FieldTheme.alert, fieldShape),
             )
         }
@@ -249,6 +296,8 @@ fun ReturnDateField(
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
     var field by remember {
         mutableStateOf(TextFieldValue(value, TextRange(value.length)))
     }
@@ -279,6 +328,12 @@ fun ReturnDateField(
                     keyboardType = KeyboardType.Number,
                     imeAction = ImeAction.Done,
                 ),
+                keyboardActions = KeyboardActions(
+                    onDone = {
+                        focusManager.clearFocus()
+                        keyboard?.hide()
+                    },
+                ),
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = FieldTheme.raised,
                     unfocusedContainerColor = FieldTheme.raised,
@@ -291,7 +346,72 @@ fun ReturnDateField(
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 44.dp)
+                    .height(FormControlHeight)
+                    .border(1.dp, FieldTheme.strong, fieldShape),
+            )
+        }
+    }
+}
+
+@Composable
+fun TimeField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    placeholder: String = "08:00",
+) {
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    var field by remember {
+        mutableStateOf(TextFieldValue(value, TextRange(value.length)))
+    }
+    LaunchedEffect(value) {
+        if (value != field.text) {
+            field = TextFieldValue(value, TextRange(value.length))
+        }
+    }
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(label, style = TypeScale.label, color = FieldTheme.textSecondary)
+        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+            TextField(
+                value = field,
+                onValueChange = { incoming ->
+                    val formatted = applyTimeKeystroke(field.text, incoming.text)
+                    field = TextFieldValue(formatted, TextRange(formatted.length))
+                    onValueChange(formatted)
+                },
+                singleLine = true,
+                textStyle = TypeScale.numeric.copy(
+                    textDirection = TextDirection.Ltr,
+                    textAlign = TextAlign.Left,
+                ),
+                placeholder = {
+                    Text(placeholder, style = TypeScale.numeric, color = FieldTheme.textMuted)
+                },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Number,
+                    imeAction = ImeAction.Done,
+                ),
+                keyboardActions = KeyboardActions(
+                    onDone = {
+                        focusManager.clearFocus()
+                        keyboard?.hide()
+                    },
+                ),
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = FieldTheme.raised,
+                    unfocusedContainerColor = FieldTheme.raised,
+                    disabledContainerColor = FieldTheme.raised,
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                    disabledIndicatorColor = Color.Transparent,
+                    focusedTextColor = FieldTheme.textPrimary,
+                    unfocusedTextColor = FieldTheme.textPrimary,
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(FormControlHeight)
                     .border(1.dp, FieldTheme.strong, fieldShape),
             )
         }

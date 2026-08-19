@@ -104,3 +104,33 @@ fun textIncludesQuery(haystack: String, query: String): Boolean {
     val hay = haystack.lowercase()
     return variants.any { hay.contains(it.lowercase()) }
 }
+
+data class TextHighlightRange(val start: Int, val endExclusive: Int)
+
+fun searchHighlightRanges(text: String, query: String): List<TextHighlightRange> {
+    val variants = searchQueryVariants(query).map { it.lowercase() }.filter { it.isNotEmpty() }
+    if (variants.isEmpty() || text.isEmpty()) return emptyList()
+    val hay = text.lowercase()
+    val raw = mutableListOf<TextHighlightRange>()
+    for (variant in variants) {
+        var from = 0
+        while (from <= hay.length - variant.length) {
+            val at = hay.indexOf(variant, from)
+            if (at < 0) break
+            raw += TextHighlightRange(at, at + variant.length)
+            from = at + 1
+        }
+    }
+    if (raw.isEmpty()) return emptyList()
+    val ordered = raw.sortedBy { it.start }
+    val merged = mutableListOf(ordered.first())
+    for (range in ordered.drop(1)) {
+        val last = merged.last()
+        if (range.start <= last.endExclusive) {
+            merged[merged.lastIndex] = TextHighlightRange(last.start, maxOf(last.endExclusive, range.endExclusive))
+        } else {
+            merged += range
+        }
+    }
+    return merged
+}

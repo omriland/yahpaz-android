@@ -70,4 +70,23 @@ class MineInboxTest {
         assertEquals("טיוטה נשמרה", participationStamp(ParticipationStatus.IN_PROGRESS, true).label)
         assertEquals("ממתין למילוי פרטים", participationStamp(ParticipationStatus.PENDING, true).label)
     }
+
+    @Test
+    fun searchHighlightRangesMarksMatchingSubstring() {
+        assertEquals(
+            listOf(TextHighlightRange(5, 8)),
+            searchHighlightRanges("צומת גזר", "גזר"),
+        )
+    }
+
+    @Test
+    fun searchHighlightRangesFindsEnglishKeyboardMappedHebrew() {
+        val ranges = searchHighlightRanges("צומת גזר", "dzr")
+        assertEquals(listOf(TextHighlightRange(5, 8)), ranges)
+    }
+
+    @Test
+    fun searchHighlightRangesEmptyWhenQueryBlank() {
+        assertTrue(searchHighlightRanges("צומת גזר", "   ").isEmpty())
+    }
 }

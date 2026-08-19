@@ -18,6 +18,7 @@ import com.yahpz.domain.EVENT_DRAFT_DATE_ERROR
 import com.yahpz.domain.EVENT_DRAFT_FORM_ERROR
 import com.yahpz.domain.EVENT_DRAFT_SAVE_FAILED
 import com.yahpz.domain.EventDraft
+import com.yahpz.domain.EventResponderDraft
 import com.yahpz.domain.EventStatus
 import com.yahpz.domain.FillMode
 import com.yahpz.domain.FuelRefundCreditInput
@@ -68,8 +69,12 @@ import com.yahpz.domain.closedListMeta
 import com.yahpz.domain.closedListNameError
 import com.yahpz.domain.deriveEventStatusAfterParticipation
 import com.yahpz.domain.duplicateEventsReportRows
+import com.yahpz.domain.deriveEventStatusFromDraft
 import com.yahpz.domain.eventDraftStatus
 import com.yahpz.domain.eventsByResponderReportRows
+import com.yahpz.domain.isOvernightEnd
+import com.yahpz.domain.leadKmForSave
+import com.yahpz.domain.wallTimestamp
 import com.yahpz.domain.FuelQuarterParticipationInput
 import com.yahpz.domain.FuelQuarterProfileInput
 import com.yahpz.domain.FuelQuarterSavedDistribution
@@ -107,6 +112,7 @@ import com.yahpz.domain.plateNumberForSave
 import com.yahpz.domain.sortByRoadName
 import com.yahpz.domain.validateBroadcastDraft
 import com.yahpz.domain.validateEventDraft
+import com.yahpz.domain.validateEventDraftPartial
 import com.yahpz.domain.validateInviteDraft
 import com.yahpz.domain.validateResponderFillDraft
 import com.yahpz.domain.validateShiftDraft
@@ -129,6 +135,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 import java.time.LocalDate
 import java.time.ZoneId
 
@@ -157,7 +164,7 @@ object YahpazAPI {
           shift_date, shift_kind, vehicle_type,
           personal_vehicle:vehicles!shifts_personal_vehicle_id_fkey(plate_number)
         ),
-        responders:event_responders(id, responder_id, status, profile:profiles(full_name, callsign))
+        responders:event_responders(id, responder_id, status, fill_completable_at, profile:profiles(full_name, callsign))
     """.trimIndent()
 
     private val cockpitSelect = """
@@ -349,6 +356,45 @@ object YahpazAPI {
             order("event_date", Order.DESCENDING)
             limit(limit.toLong())
         }.decodeList<EventListItem>()
+
+    suspend fun fetchMyActiveUnitEvents(now: Instant = Instant.now()): List<EventListItem> {
+        val userId = sessionUserId() ?: return emptyList()
+        val since = now.minus(2, ChronoUnit.HOURS).toString()
+        return client.from("events").select(Columns.raw(eventListSelect)) {
+            filter {
+                eq("shift_lead_id", userId)
+                eq("is_cancelled", false)
+                gte("created_at", since)
+                isIn(
+                    "status",
+                    listOf(
+                        EventStatus.DRAFT.raw,
+                        EventStatus.IN_PROGRESS.raw,
+                        EventStatus.PARTIAL.raw,
+                    ),
+                )
+            }
+            order("event_date", Order.DESCENDING)
+        }.decodeList<EventListItem>()
+    }
+
+    suspend fun fetchUnitEventDetailResponders(eventId: String): List<UnitEventDetailResponderRow> =
+        client.from("events").select(
+            Columns.raw(
+                """
+                responders:event_responders(
+                  id, responder_id, started_at, ended_at, vehicle_plate, total_km,
+                  odometer_start, odometer_end, route, treatment_detail, treatment_notes,
+                  emergency_means, status,
+                  profile:profiles(full_name, callsign),
+                  treated:event_treated_vehicles(quantity, kind:vehicle_kinds(name)),
+                  treated_plates:event_treated_plates(plate_number, model, color, left_where, manufacturer, logo_slug, sort_order)
+                )
+                """.trimIndent(),
+            ),
+        ) {
+            filter { eq("id", eventId) }
+        }.decodeSingle<UnitEventDetailRespondersWrap>().responders
 
     /** Ops cockpit reel — recent window, open statuses (in_progress/partial), not cancelled. */
     suspend fun fetchCockpitEvents(now: Instant = Instant.now()): List<CockpitEventListItem> {
@@ -933,6 +979,7 @@ object YahpazAPI {
             districts = lookup("districts", "id, name, code"),
             eventTypes = lookup("event_types", "id, name"),
             roads = sortByRoadName(roads) { it.name },
+            vehicleKinds = lookup("vehicle_kinds", "id, name"),
         )
     }
 
@@ -1048,35 +1095,47 @@ object YahpazAPI {
     }
 
     /** Insert the event then its pending crew. Mirrors the web `saveEventForm` create path. */
-    suspend fun createUnitEvent(draft: EventDraft, districts: List<LookupOption>): String? {
-        val errors = validateEventDraft(draft, districts)
-        if (!errors.isEmpty) return errors.formMessage ?: EVENT_DRAFT_FORM_ERROR
+    suspend fun createUnitEvent(
+        draft: EventDraft,
+        districts: List<LookupOption>,
+        vehicleKinds: List<LookupOption>,
+        allowPartial: Boolean = false,
+    ): String? {
+        val errors = if (allowPartial) {
+            validateEventDraftPartial(draft)
+        } else {
+            validateEventDraft(draft, districts)
+        }
+        if (!errors.isEmpty) {
+            return errors.eventDate ?: errors.formMessage ?: EVENT_DRAFT_FORM_ERROR
+        }
         val userId = sessionUserId() ?: return "יש להתחבר מחדש."
         val eventDate = normalizeReturnDate(draft.eventDate) ?: return EVENT_DRAFT_DATE_ERROR
         return try {
+            val nextStatus = deriveEventStatusFromDraft(draft.responders)
             val inserted = client.from("events").insert(
                 EventInsert(
                     eventDate = eventDate,
                     policeEventId = draft.policeEventId.nilIfEmpty(),
                     districtId = draft.districtId.nilIfEmpty(),
-                    eventTypeId = draft.eventTypeId,
-                    roadId = draft.roadId,
+                    eventTypeId = draft.eventTypeId.nilIfEmpty(),
+                    roadId = draft.roadId.nilIfEmpty(),
                     location = draft.location.nilIfEmpty(),
                     notes = draft.notes.nilIfEmpty(),
-                    status = eventDraftStatus(draft.responderIds.size).raw,
+                    status = nextStatus.raw,
                     shiftLeadId = userId,
                     updatedAt = Instant.now().toString(),
                 ),
             ) {
                 select(Columns.raw("id"))
             }.decodeSingle<IdRow>()
-            if (draft.responderIds.isNotEmpty()) {
-                client.from("event_responders").insert(
-                    draft.responderIds.distinct().map { responderId ->
-                        EventResponderInsert(eventId = inserted.id, responderId = responderId)
-                    },
-                )
-            }
+            syncEventResponders(
+                eventId = inserted.id,
+                eventDate = eventDate,
+                responders = draft.responders,
+                vehicleKinds = vehicleKinds,
+                isCancelled = draft.isCancelled,
+            )?.let { return it }
             null
         } catch (_: Exception) {
             EVENT_DRAFT_SAVE_FAILED
@@ -1138,7 +1197,10 @@ object YahpazAPI {
                 """
                 id, event_date, police_event_id, district_id, event_type_id, road_id,
                 location, notes, is_cancelled, status,
-                responders:event_responders(id, responder_id, status)
+                responders:event_responders(
+                  id, responder_id, started_at, ended_at, total_km, emergency_means, status,
+                  treated:event_treated_vehicles(vehicle_kind_id, quantity)
+                )
                 """.trimIndent(),
             ),
         ) {
@@ -1149,47 +1211,32 @@ object YahpazAPI {
         eventId: String,
         draft: EventDraft,
         districts: List<LookupOption>,
+        vehicleKinds: List<LookupOption>,
         viewerIsAdmin: Boolean,
         previousIsCancelled: Boolean,
+        allowPartial: Boolean = false,
     ): String? {
-        val errors = validateEventDraft(draft, districts)
-        if (!errors.isEmpty) return errors.formMessage ?: EVENT_DRAFT_FORM_ERROR
+        val errors = if (allowPartial) {
+            validateEventDraftPartial(draft)
+        } else {
+            validateEventDraft(draft, districts)
+        }
+        if (!errors.isEmpty) {
+            return errors.eventDate ?: errors.formMessage ?: EVENT_DRAFT_FORM_ERROR
+        }
         if (previousIsCancelled && !draft.isCancelled) {
             canToggleEventCancelled(false, viewerIsAdmin)?.let { return it }
         }
         val eventDate = normalizeReturnDate(draft.eventDate) ?: return EVENT_DRAFT_DATE_ERROR
         return try {
-            val existing = client.from("event_responders")
-                .select(Columns.raw("id, responder_id, status")) {
-                    filter { eq("event_id", eventId) }
-                }.decodeList<EventFormResponderRow>()
-            val keepIds = draft.responderIds.distinct().toSet()
-            val toRemove = existing.filter { it.responderId !in keepIds }
-            if (toRemove.isNotEmpty()) {
-                client.from("event_responders").delete {
-                    filter { isIn("id", toRemove.map { it.id }) }
-                }
-            }
-            val existingResponderIds = existing.map { it.responderId }.toSet()
-            val toAdd = keepIds.filter { it !in existingResponderIds }
-            if (toAdd.isNotEmpty()) {
-                client.from("event_responders").insert(
-                    toAdd.map { responderId ->
-                        EventResponderInsert(eventId = eventId, responderId = responderId)
-                    },
-                )
-            }
-            val remainingStatuses = existing
-                .filter { it.responderId in keepIds }
-                .map { it.status } + List(toAdd.size) { ParticipationStatus.PENDING }
-            val nextStatus = deriveEventStatusAfterParticipation(remainingStatuses)
+            val nextStatus = deriveEventStatusFromDraft(draft.responders)
             val updated = client.from("events").update(
                 EventUpdateWrite(
                     eventDate = eventDate,
                     policeEventId = draft.policeEventId.nilIfEmpty(),
                     districtId = draft.districtId.nilIfEmpty(),
-                    eventTypeId = draft.eventTypeId,
-                    roadId = draft.roadId,
+                    eventTypeId = draft.eventTypeId.nilIfEmpty(),
+                    roadId = draft.roadId.nilIfEmpty(),
                     location = draft.location.nilIfEmpty(),
                     notes = draft.notes.nilIfEmpty(),
                     isCancelled = draft.isCancelled,
@@ -1200,10 +1247,99 @@ object YahpazAPI {
                 filter { eq("id", eventId) }
                 select(Columns.raw("id"))
             }.decodeList<IdRow>()
-            if (updated.isEmpty()) "אין הרשאה לעדכן את האירוע." else null
+            if (updated.isEmpty()) return "אין הרשאה לעדכן את האירוע."
+            syncEventResponders(
+                eventId = eventId,
+                eventDate = eventDate,
+                responders = draft.responders,
+                vehicleKinds = vehicleKinds,
+                isCancelled = draft.isCancelled,
+            )
         } catch (_: Exception) {
             EVENT_DRAFT_SAVE_FAILED
         }
+    }
+
+    private suspend fun syncEventResponders(
+        eventId: String,
+        eventDate: String,
+        responders: List<EventResponderDraft>,
+        vehicleKinds: List<LookupOption>,
+        isCancelled: Boolean,
+    ): String? {
+        val existing = client.from("event_responders")
+            .select(Columns.raw("id, responder_id, status")) {
+                filter { eq("event_id", eventId) }
+            }.decodeList<EventFormResponderRow>()
+        val keepIds = responders.map { it.responderId }.distinct().toSet()
+        val toRemove = existing.filter { it.responderId !in keepIds }
+        if (toRemove.isNotEmpty()) {
+            client.from("event_responders").delete {
+                filter { isIn("id", toRemove.map { it.id }) }
+            }
+        }
+        val existingByResponder = existing.associate { it.responderId to it.id }
+        for (responder in responders) {
+            val km = leadKmForSave(responder.hasVehicle, responder.totalKm)
+            if (responder.hasVehicle && responder.totalKm.isNotBlank() && km == null) {
+                return "קילומטרים חייבים להיות מספר."
+            }
+            val overnight = isOvernightEnd(responder.startTime, responder.endTime)
+            val startedAt = wallTimestamp(eventDate, responder.startTime, 0)
+            val endedAt = wallTimestamp(eventDate, responder.endTime, if (overnight) 1 else 0)
+            val assignmentId = responder.assignmentId.ifEmpty { null }
+                ?: existingByResponder[responder.responderId]
+            val now = Instant.now().toString()
+            val resolvedId = if (assignmentId != null) {
+                client.from("event_responders").update(
+                    EventResponderLeadWrite(
+                        startedAt = startedAt,
+                        endedAt = endedAt,
+                        totalKm = km,
+                        emergencyMeans = responder.emergencyMeans,
+                        updatedAt = now,
+                    ),
+                ) {
+                    filter { eq("id", assignmentId) }
+                    select(Columns.raw("id"))
+                }.decodeList<IdRow>().firstOrNull()?.id ?: assignmentId
+            } else {
+                client.from("event_responders").insert(
+                    EventResponderInsert(
+                        eventId = eventId,
+                        responderId = responder.responderId,
+                        startedAt = startedAt,
+                        endedAt = endedAt,
+                        totalKm = km,
+                        emergencyMeans = responder.emergencyMeans,
+                        status = responder.status.raw,
+                    ),
+                ) {
+                    select(Columns.raw("id"))
+                }.decodeSingle<IdRow>().id
+            }
+            client.from("event_treated_vehicles").delete {
+                filter { eq("event_responder_id", resolvedId) }
+            }
+            if (!isCancelled) {
+                val treatedRows = vehicleKinds.mapNotNull { kind ->
+                    val quantity = responder.treated.firstOrNull { it.vehicleKindId == kind.id }?.quantity ?: 0
+                    if (quantity > 0) {
+                        EventTreatedVehicleInsert(
+                            eventResponderId = resolvedId,
+                            vehicleKindId = kind.id,
+                            quantity = quantity,
+                        )
+                    } else {
+                        null
+                    }
+                }
+                if (treatedRows.isNotEmpty()) {
+                    client.from("event_treated_vehicles").insert(treatedRows)
+                }
+            }
+        }
+        return null
     }
 
     suspend fun fetchShiftFormDetail(shiftId: String): ShiftFormDetail =
@@ -1574,6 +1710,11 @@ object YahpazAPI {
         }
     }
 }
+
+@Serializable
+private data class UnitEventDetailRespondersWrap(
+    val responders: List<UnitEventDetailResponderRow> = emptyList(),
+)
 
 @Serializable
 private data class InviteClearRow(
