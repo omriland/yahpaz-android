@@ -81,6 +81,9 @@ import com.yahpz.domain.eventDraftStatus
 import com.yahpz.domain.eventsByResponderReportRows
 import com.yahpz.domain.isOvernightEnd
 import com.yahpz.domain.leadKmForSave
+import com.yahpz.domain.FillReadyNextRow
+import com.yahpz.domain.FillReadyPreviousRow
+import com.yahpz.domain.fillReadyNotifyIds
 import com.yahpz.domain.wallTimestamp
 import com.yahpz.domain.FuelQuarterParticipationInput
 import com.yahpz.domain.FuelQuarterProfileInput
@@ -988,6 +991,16 @@ object YahpazAPI {
         }
     }
 
+    private suspend fun notifyFillReady(eventResponderIds: List<String>) {
+        runCatching {
+            invokeEdge<NotifyFillReadyCall, NotifyFillReadyResponse>(
+                "responder-fill",
+                NotifyFillReadyCall(eventResponderIds = eventResponderIds),
+                "שליחת התראת הדיווח נכשלה.",
+            )
+        }
+    }
+
     /**
      * Edge functions answer with `{ "error": "…" }` in Hebrew on failure. supabase-kt
      * raises those as exceptions, so pull the message back out of the body when it is there.
@@ -1370,7 +1383,7 @@ object YahpazAPI {
         isCancelled: Boolean,
     ): String? {
         val existing = client.from("event_responders")
-            .select(Columns.raw("id, responder_id, status")) {
+            .select(Columns.raw("id, responder_id, status, total_km")) {
                 filter { eq("event_id", eventId) }
             }.decodeList<EventFormResponderRow>()
         val keepIds = responders.map { it.responderId }.distinct().toSet()
@@ -1381,6 +1394,7 @@ object YahpazAPI {
             }
         }
         val existingByResponder = existing.associate { it.responderId to it.id }
+        val nextKmRows = mutableListOf<FillReadyNextRow>()
         for (responder in responders) {
             val km = leadKmForSave(responder.hasVehicle, responder.totalKm)
             if (responder.hasVehicle && responder.totalKm.isNotBlank() && km == null) {
@@ -1420,6 +1434,7 @@ object YahpazAPI {
                     select(Columns.raw("id"))
                 }.decodeSingle<IdRow>().id
             }
+            nextKmRows += FillReadyNextRow(assignmentId = resolvedId, totalKm = km)
             client.from("event_treated_vehicles").delete {
                 filter { eq("event_responder_id", resolvedId) }
             }
@@ -1440,6 +1455,13 @@ object YahpazAPI {
                     client.from("event_treated_vehicles").insert(treatedRows)
                 }
             }
+        }
+        if (!isCancelled) {
+            val notifyIds = fillReadyNotifyIds(
+                previous = existing.map { FillReadyPreviousRow(it.id, it.totalKm) },
+                next = nextKmRows,
+            )
+            if (notifyIds.isNotEmpty()) notifyFillReady(notifyIds)
         }
         return null
     }

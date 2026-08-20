@@ -142,6 +142,37 @@ fun leadKmForSave(hasVehicle: Boolean, totalKm: String): Double? {
     return trimmed.toDoubleOrNull()
 }
 
+data class FillReadyPreviousRow(val id: String, val totalKm: Double? = null)
+
+data class FillReadyNextRow(val assignmentId: String, val totalKm: Double? = null)
+
+fun assignmentIdsNewlyAssigned(
+    previous: List<FillReadyPreviousRow>,
+    next: List<FillReadyNextRow>,
+): List<String> {
+    val prevIds = previous.map { it.id }.toSet()
+    return next.filter { it.assignmentId !in prevIds }.map { it.assignmentId }
+}
+
+fun assignmentIdsNewlySetKm(
+    previous: List<FillReadyPreviousRow>,
+    next: List<FillReadyNextRow>,
+): List<String> {
+    val prevById = previous.associate { it.id to it.totalKm }
+    return next.mapNotNull { row ->
+        if (row.totalKm == null) return@mapNotNull null
+        val prev = prevById[row.assignmentId]
+        if (prev == null) row.assignmentId else null
+    }
+}
+
+/** Notify on first assignment, and still on first km for rows that were already assigned. */
+fun fillReadyNotifyIds(
+    previous: List<FillReadyPreviousRow>,
+    next: List<FillReadyNextRow>,
+): List<String> = (assignmentIdsNewlyAssigned(previous, next) + assignmentIdsNewlySetKm(previous, next))
+    .distinct()
+
 fun deriveEventStatusFromDraft(responders: List<EventResponderDraft>): EventStatus {
     if (responders.isEmpty()) return EventStatus.DRAFT
     if (responders.all { it.status == ParticipationStatus.DONE }) return EventStatus.DONE

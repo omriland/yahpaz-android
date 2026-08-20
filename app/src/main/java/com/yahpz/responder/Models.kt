@@ -626,6 +626,18 @@ data class UnitBroadcastRow(
 }
 
 @Serializable
+data class NotifyFillReadyCall(
+    val action: String = "notify_fill_ready",
+    @SerialName("event_responder_ids") val eventResponderIds: List<String>,
+)
+
+@Serializable
+data class NotifyFillReadyResponse(
+    val error: String? = null,
+    val sent: List<String> = emptyList(),
+)
+
+@Serializable
 data class BroadcastSendCall(
     val action: String = "send",
     val channel: String,

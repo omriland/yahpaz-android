@@ -151,4 +151,26 @@ class EventDraftTest {
             validateEventDraftPartial(EventDraft(eventDate = "")).eventDate,
         )
     }
+
+    @Test
+    fun `fill ready notify fires on assignment even without km`() {
+        assertEquals(
+            listOf("new"),
+            fillReadyNotifyIds(
+                previous = emptyList(),
+                next = listOf(FillReadyNextRow("new", null)),
+            ),
+        )
+    }
+
+    @Test
+    fun `fill ready notify still fires when an existing assignment first gets km`() {
+        assertEquals(
+            listOf("a"),
+            fillReadyNotifyIds(
+                previous = listOf(FillReadyPreviousRow("a", null)),
+                next = listOf(FillReadyNextRow("a", 8.0)),
+            ),
+        )
+    }
 }

@@ -13,5 +13,5 @@ object AppConfig {
         "https://raw.githubusercontent.com/omriland/yahpaz-android/main/site/android/version.json"
     /** Last-resort fallback if version.json is missing apkUrl. Prefer the versioned URL from the manifest. */
     const val defaultApkUrl =
-        "https://github.com/omriland/yahpaz-android/releases/download/v0.3.3/yahpaz-0.3.3.apk"
+        "https://yahpz.com/android/yahpaz-0.3.4.apk"
 }
