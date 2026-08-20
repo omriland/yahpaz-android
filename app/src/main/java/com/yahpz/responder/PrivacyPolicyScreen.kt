@@ -36,6 +36,8 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.yahpz.domain.buildPrivacyPolicyUrl
+import com.yahpz.domain.createPrivacyPageToken
 
 fun isPrivacyPolicyUrl(url: String): Boolean {
     val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return false
@@ -50,6 +52,13 @@ fun PrivacyPolicyScreen(onClose: () -> Unit) {
     var loading by remember { mutableStateOf(true) }
     var failed by remember { mutableStateOf(false) }
     var reloadKey by remember { mutableStateOf(0) }
+    val privacyUrl = remember(reloadKey) {
+        val token = createPrivacyPageToken(
+            AppConfig.privacyPageSecret,
+            System.currentTimeMillis() / 1000,
+        )
+        buildPrivacyPolicyUrl(AppConfig.appOrigin, token)
+    }
     BackHandler { onClose() }
 
     Column(
@@ -114,7 +123,7 @@ fun PrivacyPolicyScreen(onClose: () -> Unit) {
                                         }.getOrDefault(true)
                                     }
                                 }
-                                loadUrl(AppConfig.privacyUrl)
+                                loadUrl(privacyUrl)
                             }
                         },
                         modifier = Modifier.fillMaxSize(),
