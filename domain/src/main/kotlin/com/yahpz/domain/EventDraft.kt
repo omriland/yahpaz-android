@@ -31,6 +31,7 @@ const val EVENT_EDIT_TITLE = "עריכת אירוע"
 const val EVENT_SAVE_TITLE = "שמירת אירוע"
 const val EVENT_SAVE_DRAFT_TITLE = "שמירת טיוטה"
 const val EVENT_DRAFT_PARTIAL_SAVED = "הטיוטה נשמרה."
+const val EVENT_PATROL_CALLSIGN_LABEL = "או״ק ניידת"
 const val MY_ACTIVE_EVENTS_TITLE = "האירועים הפעילים שלי"
 const val MY_ACTIVE_EVENT_DISMISSED = "הוסר מהאירועים הפעילים."
 const val NO_VEHICLE_KM_PLACEHOLDER = "מתנדב ללא רכב"
@@ -64,6 +65,7 @@ data class EventResponderDraft(
 data class EventDraft(
     val eventDate: String,
     val policeEventId: String = "",
+    val patrolCallsign: String = "",
     val eventTypeId: String = "",
     val roadId: String = "",
     val districtId: String = "",

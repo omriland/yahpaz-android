@@ -41,6 +41,7 @@ import com.yahpz.domain.EVENT_CANCELLED_LABEL
 import com.yahpz.domain.EVENT_EDIT_LOAD_FAILED
 import com.yahpz.domain.EVENT_EDIT_TITLE
 import com.yahpz.domain.EVENT_NEW_TITLE
+import com.yahpz.domain.EVENT_PATROL_CALLSIGN_LABEL
 import com.yahpz.domain.EVENT_SAVE_DRAFT_TITLE
 import com.yahpz.domain.EVENT_SAVE_TITLE
 import com.yahpz.domain.EventDraft
@@ -75,6 +76,7 @@ fun EventFormScreen(
     val scope = rememberCoroutineScope()
     var eventDate by remember { mutableStateOf(returnDateToInput(israelToday())) }
     var policeEventId by remember { mutableStateOf("") }
+    var patrolCallsign by remember { mutableStateOf("") }
     var eventTypeId by remember { mutableStateOf("") }
     var roadId by remember { mutableStateOf("") }
     var districtId by remember { mutableStateOf("") }
@@ -119,6 +121,7 @@ fun EventFormScreen(
             val draft = detail.toDraft(vehicles.map { it.userId }.toSet())
             eventDate = draft.eventDate
             policeEventId = draft.policeEventId
+            patrolCallsign = draft.patrolCallsign
             eventTypeId = draft.eventTypeId
             roadId = draft.roadId
             districtId = draft.districtId
@@ -137,6 +140,7 @@ fun EventFormScreen(
     fun draft() = EventDraft(
         eventDate = eventDate,
         policeEventId = policeEventId,
+        patrolCallsign = patrolCallsign,
         eventTypeId = eventTypeId,
         roadId = roadId,
         districtId = districtId,
@@ -262,6 +266,14 @@ fun EventFormScreen(
                         modifier = Modifier.weight(1f),
                     )
                 }
+                FormField(
+                    label = EVENT_PATROL_CALLSIGN_LABEL,
+                    value = patrolCallsign,
+                    onValueChange = { patrolCallsign = it },
+                    keyboardType = KeyboardType.Number,
+                    mono = true,
+                    ltr = true,
+                )
                 FormFieldRow {
                     LookupPickerField(
                         label = "כביש",

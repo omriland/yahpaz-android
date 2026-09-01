@@ -140,6 +140,7 @@ class EventDraftTest {
         assertEquals("הקצאת כוננים", EVENT_ASSIGN_OPEN)
         assertEquals("סגירת הקצאה", EVENT_ASSIGN_CLOSE)
         assertEquals("הסרת כונן", EVENT_ASSIGN_REMOVE)
+        assertEquals("או״ק ניידת", EVENT_PATROL_CALLSIGN_LABEL)
         assertEquals("טעינת האירועים נכשלה. בדקו את החיבור ונסו שוב.", UNIT_EVENTS_LOAD_FAILED)
     }
 

@@ -1339,6 +1339,7 @@ object YahpazAPI {
                     eventDate = eventDate,
                     policeEventId = draft.policeEventId.nilIfEmpty(),
                     districtId = draft.districtId.nilIfEmpty(),
+                    patrolCallsign = draft.patrolCallsign.nilIfEmpty(),
                     eventTypeId = draft.eventTypeId.nilIfEmpty(),
                     roadId = draft.roadId.nilIfEmpty(),
                     location = draft.location.nilIfEmpty(),
@@ -1416,7 +1417,7 @@ object YahpazAPI {
         client.from("events").select(
             Columns.raw(
                 """
-                id, event_date, police_event_id, district_id, event_type_id, road_id,
+                id, event_date, police_event_id, district_id, patrol_callsign, event_type_id, road_id,
                 location, notes, is_cancelled, status,
                 responders:event_responders(
                   id, responder_id, started_at, ended_at, total_km, emergency_means, status,
@@ -1456,6 +1457,7 @@ object YahpazAPI {
                     eventDate = eventDate,
                     policeEventId = draft.policeEventId.nilIfEmpty(),
                     districtId = draft.districtId.nilIfEmpty(),
+                    patrolCallsign = draft.patrolCallsign.nilIfEmpty(),
                     eventTypeId = draft.eventTypeId.nilIfEmpty(),
                     roadId = draft.roadId.nilIfEmpty(),
                     location = draft.location.nilIfEmpty(),
