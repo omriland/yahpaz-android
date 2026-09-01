@@ -217,13 +217,14 @@ fun EventFormScreen(
                         },
                     )
                 }
+                ReturnDateField(
+                    label = "תאריך",
+                    value = eventDate,
+                    onValueChange = { eventDate = it },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                errors.eventDate?.let { Text(it, style = TypeScale.caption, color = FieldTheme.alert) }
                 FormFieldRow {
-                    ReturnDateField(
-                        label = "תאריך",
-                        value = eventDate,
-                        onValueChange = { eventDate = it },
-                        modifier = Modifier.weight(1f),
-                    )
                     FormField(
                         label = "מספר אירוע",
                         value = policeEventId,
@@ -233,8 +234,16 @@ fun EventFormScreen(
                         ltr = true,
                         modifier = Modifier.weight(1f),
                     )
+                    FormField(
+                        label = EVENT_PATROL_CALLSIGN_LABEL,
+                        value = patrolCallsign,
+                        onValueChange = { patrolCallsign = it },
+                        keyboardType = KeyboardType.Number,
+                        mono = true,
+                        ltr = true,
+                        modifier = Modifier.weight(1f),
+                    )
                 }
-                errors.eventDate?.let { Text(it, style = TypeScale.caption, color = FieldTheme.alert) }
                 FormFieldRow {
                     LookupPickerField(
                         label = "סוג אירוע",
@@ -266,14 +275,6 @@ fun EventFormScreen(
                         modifier = Modifier.weight(1f),
                     )
                 }
-                FormField(
-                    label = EVENT_PATROL_CALLSIGN_LABEL,
-                    value = patrolCallsign,
-                    onValueChange = { patrolCallsign = it },
-                    keyboardType = KeyboardType.Number,
-                    mono = true,
-                    ltr = true,
-                )
                 FormFieldRow {
                     LookupPickerField(
                         label = "כביש",
