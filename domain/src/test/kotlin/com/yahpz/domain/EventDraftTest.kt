@@ -137,7 +137,7 @@ class EventDraftTest {
         assertEquals("שמירת אירוע", EVENT_SAVE_TITLE)
         assertEquals("שמירת טיוטה", EVENT_SAVE_DRAFT_TITLE)
         assertEquals("האירועים הפעילים שלי", MY_ACTIVE_EVENTS_TITLE)
-        assertEquals("הקצאת כוננים", EVENT_ASSIGN_OPEN)
+        assertEquals("מתנדבים", EVENT_ASSIGN_OPEN)
         assertEquals("סגירת הקצאה", EVENT_ASSIGN_CLOSE)
         assertEquals("הסרת כונן", EVENT_ASSIGN_REMOVE)
         assertEquals("או״ק ניידת", EVENT_PATROL_CALLSIGN_LABEL)
