@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -62,6 +63,14 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun RootScreen(app: AppModel, ui: AppUiState) {
+    var feedbackOpen by remember { mutableStateOf(false) }
+    val trackBlocking = ui.trackToken != null && ui.fillEventId == null && !ui.mustChangePassword
+    val showFeedbackFab = ui.isSignedIn &&
+        ui.forceUpdate == null &&
+        !ui.privacyOpen &&
+        !trackBlocking &&
+        shouldShowFeedbackFab(ui.feedbackHiddenUntilRefresh, ui.toolsDestination, ui.fillEventId != null) &&
+        !feedbackOpen
     Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize()) {
         if (ui.isSignedIn && (ui.impersonating || ui.previewRole != null)) {
@@ -77,9 +86,20 @@ fun RootScreen(app: AppModel, ui: AppUiState) {
                 LiveTrackScreen(ui.trackToken, app::closeTrack)
             }
             !ui.isSignedIn -> SafeEdgeScreen { LoginGate(app, ui) }
-            ui.mustChangePassword -> SafeEdgeScreen { ProfileScreen(app, ui) }
+            ui.mustChangePassword -> Box(Modifier.fillMaxSize()) {
+                SafeEdgeScreen { ProfileScreen(app, ui) }
+                if (showFeedbackFab) {
+                    FeedbackMiniFab(
+                        onClick = { feedbackOpen = true },
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .navigationBarsPadding()
+                            .padding(16.dp),
+                    )
+                }
+            }
             ui.fillEventId != null -> SafeEdgeScreen { FillScreen(ui.fillEventId, app) }
-            else -> MainTabs(app, ui)
+            else -> MainTabs(app, ui, showFeedbackFab) { feedbackOpen = true }
         }
         if (
             ui.forceUpdate == null &&
@@ -108,6 +128,19 @@ fun RootScreen(app: AppModel, ui: AppUiState) {
     }
     if (ui.privacyOpen && ui.forceUpdate == null) {
         PrivacyPolicyScreen(onClose = app::closePrivacy)
+    }
+    if (feedbackOpen && ui.isSignedIn && ui.forceUpdate == null) {
+        FeedbackSheet(
+            pagePath = feedbackPagePathForUi(ui),
+            onDismiss = { feedbackOpen = false },
+            onHideUntilRefresh = {
+                app.hideFeedbackUntilRefresh()
+                feedbackOpen = false
+            },
+            onSubmit = { kind, body, audio, mime ->
+                app.submitUserFeedback(kind, body, feedbackPagePathForUi(ui), audio, mime)
+            },
+        )
     }
     }
 }
@@ -238,7 +271,12 @@ private val navItemColors
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MainTabs(app: AppModel, ui: AppUiState) {
+private fun MainTabs(
+    app: AppModel,
+    ui: AppUiState,
+    showFeedbackFab: Boolean,
+    onOpenFeedback: () -> Unit,
+) {
     val entries = remember(ui.roles) { mobileNavEntries(ui.roles) }
     val split = remember(entries) { splitMobileNav(entries) }
     val allowed = remember(entries) { entries.map { appTabForMobileView(it.view) }.toSet() }
@@ -278,15 +316,27 @@ private fun MainTabs(app: AppModel, ui: AppUiState) {
     Scaffold(
         containerColor = FieldTheme.page,
         floatingActionButton = {
-            if (overlay == ToolsDestination.HUB) {
-                when (contentTab) {
-                    AppTab.UNIT_EVENTS -> PrimaryCreateFab(NEW_EVENT_TITLE) {
-                        app.setToolsDestination(ToolsDestination.NEW_EVENT)
+            val showCreate = overlay == ToolsDestination.HUB &&
+                (contentTab == AppTab.UNIT_EVENTS || contentTab == AppTab.UNIT_SHIFTS)
+            if (showFeedbackFab || showCreate) {
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    if (showFeedbackFab) {
+                        FeedbackMiniFab(onClick = onOpenFeedback)
                     }
-                    AppTab.UNIT_SHIFTS -> PrimaryCreateFab(NEW_SHIFT_TITLE) {
-                        app.setToolsDestination(ToolsDestination.NEW_SHIFT)
+                    if (showCreate) {
+                        when (contentTab) {
+                            AppTab.UNIT_EVENTS -> PrimaryCreateFab(NEW_EVENT_TITLE) {
+                                app.setToolsDestination(ToolsDestination.NEW_EVENT)
+                            }
+                            AppTab.UNIT_SHIFTS -> PrimaryCreateFab(NEW_SHIFT_TITLE) {
+                                app.setToolsDestination(ToolsDestination.NEW_SHIFT)
+                            }
+                            else -> {}
+                        }
                     }
-                    else -> {}
                 }
             }
         },

@@ -9,26 +9,27 @@ class MineShiftsTest {
     @Test
     fun futureShiftIsNotPendingLog() {
         assertTrue(isShiftFuture("2026-08-18", "2026-08-17"))
-        assertFalse(isShiftPendingLog("2026-08-18", null, null, "2026-08-17"))
+        assertFalse(isShiftPendingLog("2026-08-18", ShiftStatus.IN_PROGRESS, "2026-08-17"))
     }
 
     @Test
-    fun pastShiftWithoutOdometersIsPending() {
-        assertTrue(isShiftPendingLog("2026-08-16", null, 10.0, "2026-08-17"))
+    fun pastOpenOrDraftShiftIsPending() {
+        assertTrue(isShiftPendingLog("2026-08-16", ShiftStatus.IN_PROGRESS, "2026-08-17"))
+        assertTrue(isShiftPendingLog("2026-08-16", ShiftStatus.DRAFT, "2026-08-17"))
     }
 
     @Test
-    fun pastShiftWithBothOdometersIsLogged() {
-        assertFalse(isShiftPendingLog("2026-08-16", 1.0, 20.0, "2026-08-17"))
+    fun pastClosedShiftIsLogged() {
+        assertFalse(isShiftPendingLog("2026-08-16", ShiftStatus.CLOSED, "2026-08-17"))
     }
 
     @Test
     fun partitionSplitsPendingFutureAndLogged() {
         val sections = partitionMineShifts(
             listOf(
-                MineShiftItem("future", "2026-08-20", null, null),
-                MineShiftItem("pending", "2026-08-16", null, null),
-                MineShiftItem("logged", "2026-08-15", 1.0, 8.0),
+                MineShiftItem("future", "2026-08-20", ShiftStatus.IN_PROGRESS, null, null),
+                MineShiftItem("pending", "2026-08-16", ShiftStatus.DRAFT, null, null),
+                MineShiftItem("logged", "2026-08-15", ShiftStatus.CLOSED, 1.0, 8.0),
             ),
             "2026-08-17",
             1,
@@ -41,8 +42,8 @@ class MineShiftsTest {
 
     @Test
     fun shiftStamps() {
+        assertEquals("פתוחה", shiftStamp(ShiftStatus.IN_PROGRESS).label)
         assertEquals("טיוטה", shiftStamp(ShiftStatus.DRAFT).label)
-        assertEquals("במשמרת", shiftStamp(ShiftStatus.IN_PROGRESS).label)
         assertEquals("נסגרה", shiftStamp(ShiftStatus.CLOSED).label)
     }
 

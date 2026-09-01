@@ -107,6 +107,12 @@ import com.yahpz.domain.mergeMediaPlates
 import com.yahpz.domain.parseEventMediaTakenWhen
 import com.yahpz.domain.uniquePlateIds
 import com.yahpz.domain.EVENT_MEDIA_NETWORK
+import com.yahpz.domain.FEEDBACK_AUDIO_MAX_BYTES
+import com.yahpz.domain.FEEDBACK_AUDIO_SIZE_ERROR
+import com.yahpz.domain.FEEDBACK_NETWORK
+import com.yahpz.domain.feedbackStoragePath
+import com.yahpz.domain.feedbackSubmitError
+import com.yahpz.domain.normalizeFeedbackAudioMime
 import com.yahpz.domain.EventMediaTakenWhen
 import com.yahpz.domain.needsBroadcastSubject
 import com.yahpz.domain.normalizeReturnDate
@@ -128,6 +134,10 @@ import com.yahpz.domain.quarterLocalDateRange
 import com.yahpz.domain.quarterMonthLabels
 import com.yahpz.domain.resolveLeadKmReplacement
 import com.yahpz.domain.VehicleRowInput
+import com.yahpz.domain.VehicleFieldsError
+import com.yahpz.domain.VehicleFieldsOk
+import com.yahpz.domain.managedProfileVehicles
+import com.yahpz.domain.vehicleFieldsForSave
 import com.yahpz.domain.plateDigits
 import com.yahpz.domain.plateNumberForSave
 import com.yahpz.domain.sortByRoadName
@@ -137,7 +147,6 @@ import com.yahpz.domain.validateEventDraftPartial
 import com.yahpz.domain.validateInviteDraft
 import com.yahpz.domain.validateResponderFillDraft
 import com.yahpz.domain.validateShiftDraft
-import com.yahpz.domain.visibleProfileVehicles
 import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.Email
@@ -190,6 +199,7 @@ internal fun edgeErrorMessage(raw: String?, fallback: String): String {
 object YahpazAPI {
     private val eventListSelect = """
         id, event_date, police_event_id, location, status, is_cancelled, origin, shift_id,
+        frozen_over_60km, frozen_suspicious_duplicate,
         event_type:event_types(name),
         road:roads(name),
         shift_lead:profiles!events_shift_lead_id_fkey(full_name, callsign),
@@ -209,6 +219,8 @@ object YahpazAPI {
         location,
         location_lat,
         location_lng,
+        frozen_over_60km,
+        frozen_suspicious_duplicate,
         event_type:event_types(name),
         road:roads(name),
         shift_lead:profiles!events_shift_lead_id_fkey(full_name, callsign),
@@ -1034,13 +1046,14 @@ object YahpazAPI {
         }.decodeList<AssignableProfileRow>()
         // Refunds follow when the event was *reported*, so bound `created_at`, not `event_date`.
         val bounds = jerusalemDayBounds(from, to)
-        val eventIds = client.from("events").select(Columns.raw("id")) {
+        val eventRows = client.from("events").select(Columns.raw("id, frozen_over_60km, frozen_suspicious_duplicate")) {
             filter {
                 eq("origin", "manual")
                 gte("created_at", bounds.first)
                 lte("created_at", bounds.second)
             }
-        }.decodeList<IdRow>().map { it.id }
+        }.decodeList<FuelEventFreezeRow>()
+        val eventIds = eventRows.filter { !it.isFrozen }.map { it.id }
         val participations = if (eventIds.isEmpty()) {
             emptyList()
         } else {
@@ -1647,12 +1660,71 @@ object YahpazAPI {
 
     suspend fun fetchMyVehicles(): List<ProfileVehicle> {
         val userId = sessionUserId() ?: return emptyList()
-        val rows = client.from("vehicles").select(Columns.raw("plate_number, model, archived")) {
+        val rows = client.from("vehicles").select(
+            Columns.raw("id, plate_number, model, archived, is_default"),
+        ) {
             filter { eq("user_id", userId) }
         }.decodeList<VehicleOption>()
-        return visibleProfileVehicles(
-            rows.map { VehicleRowInput(it.plateNumber, it.model, it.archived) },
+        return managedProfileVehicles(
+            rows.map {
+                VehicleRowInput(
+                    plateRaw = it.plateNumber,
+                    modelRaw = it.model,
+                    archived = it.archived,
+                    id = it.id,
+                    isDefault = it.isDefault,
+                )
+            },
         )
+    }
+
+    suspend fun createOwnVehicle(plateNumber: String, model: String): String? {
+        val userId = sessionUserId() ?: return SAVE_VEHICLES_FAILED
+        val fields = vehicleFieldsForSave(plateNumber, model)
+        if (fields is VehicleFieldsError) return fields.message
+        val ok = fields as VehicleFieldsOk
+        return try {
+            client.from("vehicles").insert(
+                AdminVehicleInsert(
+                    userId = userId,
+                    plateNumber = ok.plateNumber,
+                    model = ok.model,
+                    archived = false,
+                ),
+            )
+            null
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            if (isUniqueViolation(error.message)) DUPLICATE_PLATE_ERROR else SAVE_VEHICLES_FAILED
+        }
+    }
+
+    suspend fun updateOwnVehicle(vehicleId: String, plateNumber: String, model: String): String? {
+        val fields = vehicleFieldsForSave(plateNumber, model)
+        if (fields is VehicleFieldsError) return fields.message
+        val ok = fields as VehicleFieldsOk
+        return try {
+            client.from("vehicles").update(
+                AdminVehiclePlateWrite(plateNumber = ok.plateNumber, model = ok.model, archived = false),
+            ) {
+                filter { eq("id", vehicleId) }
+            }
+            null
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            if (isUniqueViolation(error.message)) DUPLICATE_PLATE_ERROR else SAVE_VEHICLES_FAILED
+        }
+    }
+
+    suspend fun setDefaultVehicle(vehicleId: String): String? = try {
+        client.postgrest.rpc("set_default_vehicle", SetDefaultVehicleCall(vehicleId))
+        null
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        "עדכון הרכב הראשי נכשל."
     }
 
     private suspend inline fun <reified T : Any> fetchByIds(
@@ -2019,6 +2091,57 @@ object YahpazAPI {
                 error = "שיתוף המיקום נכשל. בדקו את החיבור ונסו שוב.",
             )
         }
+    }
+
+    suspend fun submitUserFeedback(
+        kind: String,
+        body: String,
+        pagePath: String?,
+        audioBytes: ByteArray?,
+        audioMime: String?,
+    ): String? {
+        val hasAudio = audioBytes != null && audioBytes.isNotEmpty()
+        feedbackSubmitError(kind, body, hasAudio)?.let { return it }
+        val userId = sessionUserId() ?: return FEEDBACK_NETWORK
+        if (hasAudio && audioBytes!!.size > FEEDBACK_AUDIO_MAX_BYTES) return FEEDBACK_AUDIO_SIZE_ERROR
+        val id = UUID.randomUUID().toString()
+        var storagePath: String? = null
+        var mime: String? = null
+        var size: Int? = null
+        if (hasAudio) {
+            mime = normalizeFeedbackAudioMime(audioMime ?: "audio/mp4")
+            storagePath = feedbackStoragePath(userId, id, mime)
+            size = audioBytes.size
+            try {
+                client.storage.from("user-feedback").upload(storagePath, audioBytes) {
+                    upsert = false
+                    contentType = ContentType.parse(mime)
+                }
+            } catch (_: Exception) {
+                return FEEDBACK_NETWORK
+            }
+        }
+        val trimmed = body.trim().ifEmpty { null }
+        val path = pagePath?.trim()?.take(200)?.ifEmpty { null }
+        try {
+            client.from("user_feedback").insert(
+                UserFeedbackInsert(
+                    id = id,
+                    userId = userId,
+                    kind = kind,
+                    body = trimmed,
+                    pagePath = path,
+                    status = "open",
+                    audioStoragePath = storagePath,
+                    audioMimeType = mime,
+                    audioByteSize = size,
+                ),
+            )
+        } catch (_: Exception) {
+            storagePath?.let { runCatching { client.storage.from("user-feedback").delete(it) } }
+            return FEEDBACK_NETWORK
+        }
+        return null
     }
 }
 

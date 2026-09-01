@@ -192,6 +192,13 @@ class AdminUserDraftTest {
     }
 
     @Test
+    fun `pending registration has no availability`() {
+        assertFalse(hasAvailability(active = true, invitePending = true))
+        assertTrue(hasAvailability(active = true, invitePending = false))
+        assertTrue(hasAvailability(active = false, invitePending = false))
+    }
+
+    @Test
     fun `admin users sort active then inactive then invite pending, by name`() {
         val rows = listOf(
             AdminUserSortKey(fullName = "דני", active = false, invitePending = false),
@@ -214,6 +221,8 @@ class AdminUserDraftTest {
             volunteerStatus = VolunteerStatus.ACTIVE_VOLUNTEER.raw,
             availability = AvailabilityStatus.UNAVAILABLE,
             availableFrom = "2099-01-01",
+            invitePending = false,
+            active = true,
         )
         assertTrue(adminUserMatchesQuery(row, "דנה", today = "2026-08-18"))
         assertTrue(adminUserMatchesQuery(row, "112", today = "2026-08-18"))
@@ -225,6 +234,22 @@ class AdminUserDraftTest {
             "חיפוש לפי שם, או״ק, דוא״ל, סטטוס או זמינות",
             USERS_SEARCH_PLACEHOLDER,
         )
+    }
+
+    @Test
+    fun `search ignores availability for pending registration`() {
+        val row = AdminUserSearchInput(
+            fullName = "אבי כהן",
+            callsign = "200",
+            email = "avi@yahpz.com",
+            volunteerStatus = VolunteerStatus.ACTIVE_VOLUNTEER.raw,
+            availability = AvailabilityStatus.AVAILABLE,
+            availableFrom = null,
+            invitePending = true,
+            active = true,
+        )
+        assertTrue(adminUserMatchesQuery(row, "אבי", today = "2026-08-18"))
+        assertFalse(adminUserMatchesQuery(row, "זמין", today = "2026-08-18"))
     }
 
     @Test

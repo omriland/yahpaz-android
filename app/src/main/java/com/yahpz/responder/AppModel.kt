@@ -17,6 +17,7 @@ import com.yahpz.domain.BroadcastDraft
 import com.yahpz.domain.BroadcastLogEntry
 import com.yahpz.domain.EVENT_DRAFT_PARTIAL_SAVED
 import com.yahpz.domain.EVENT_DRAFT_SAVED
+import com.yahpz.domain.FEEDBACK_SENT
 import com.yahpz.domain.EventDraft
 import com.yahpz.domain.InviteDraft
 import com.yahpz.domain.USER_DELETED
@@ -133,6 +134,7 @@ data class AppUiState(
     val signingIn: Boolean = false,
     val signInError: String? = null,
     val privacyOpen: Boolean = false,
+    val feedbackHiddenUntilRefresh: Boolean = false,
 ) {
     val isSignedIn: Boolean get() = userId != null && profile != null
     val canManageUnit: Boolean get() = managesUnit(roles)
@@ -179,6 +181,22 @@ class AppModel : ViewModel() {
 
     fun closePrivacy() {
         _state.update { it.copy(privacyOpen = false) }
+    }
+
+    fun hideFeedbackUntilRefresh() {
+        _state.update { it.copy(feedbackHiddenUntilRefresh = true) }
+    }
+
+    suspend fun submitUserFeedback(
+        kind: String,
+        body: String,
+        pagePath: String?,
+        audioBytes: ByteArray?,
+        audioMime: String?,
+    ): String? {
+        val error = YahpazAPI.submitUserFeedback(kind, body, pagePath, audioBytes, audioMime)
+        if (error == null) showToast(FEEDBACK_SENT, StampTone.DONE)
+        return error
     }
 
     fun setTab(tab: AppTab) {
@@ -560,6 +578,15 @@ class AppModel : ViewModel() {
 
     suspend fun unarchiveAdminVehicle(vehicleId: String): String? =
         YahpazAPI.unarchiveAdminVehicle(vehicleId)
+
+    suspend fun createOwnVehicle(plateNumber: String, model: String): String? =
+        YahpazAPI.createOwnVehicle(plateNumber, model)
+
+    suspend fun updateOwnVehicle(vehicleId: String, plateNumber: String, model: String): String? =
+        YahpazAPI.updateOwnVehicle(vehicleId, plateNumber, model)
+
+    suspend fun setDefaultVehicle(vehicleId: String): String? =
+        YahpazAPI.setDefaultVehicle(vehicleId)
 
     suspend fun isVehicleAttachedToEvents(
         userId: String,

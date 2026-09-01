@@ -12,8 +12,8 @@ enum class ShiftStatus(val raw: String) {
 }
 
 fun shiftStamp(status: ShiftStatus): StampDescriptor = when (status) {
+    ShiftStatus.IN_PROGRESS -> StampDescriptor("פתוחה", StampTone.PENDING)
     ShiftStatus.DRAFT -> StampDescriptor("טיוטה", StampTone.DRAFT)
-    ShiftStatus.IN_PROGRESS -> StampDescriptor("במשמרת", StampTone.PENDING)
     ShiftStatus.CLOSED -> StampDescriptor("נסגרה", StampTone.DONE)
 }
 
@@ -21,14 +21,25 @@ fun isShiftFuture(shiftDate: String, today: String): Boolean = shiftDate > today
 
 fun isShiftPendingLog(
     shiftDate: String,
+    status: ShiftStatus,
+    today: String,
+): Boolean = !isShiftFuture(shiftDate, today) && status != ShiftStatus.CLOSED
+
+fun isShiftPendingLog(
+    shiftDate: String,
     odometerStart: Double?,
     odometerEnd: Double?,
     today: String,
-): Boolean = !isShiftFuture(shiftDate, today) && (odometerStart == null || odometerEnd == null)
+): Boolean = isShiftPendingLog(
+    shiftDate,
+    if (odometerStart != null && odometerEnd != null) ShiftStatus.CLOSED else ShiftStatus.IN_PROGRESS,
+    today,
+)
 
 data class MineShiftItem(
     val id: String,
     val date: String,
+    val status: ShiftStatus,
     val odometerStart: Double?,
     val odometerEnd: Double?,
 )
@@ -55,7 +66,7 @@ fun partitionMineShifts(
             future += item
             continue
         }
-        if (isShiftPendingLog(item.date, item.odometerStart, item.odometerEnd, today)) {
+        if (isShiftPendingLog(item.date, item.status, today)) {
             pending += item
             continue
         }

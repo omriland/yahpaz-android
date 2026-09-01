@@ -198,11 +198,19 @@ fun CockpitScreen(app: AppModel, ui: AppUiState, onBack: () -> Unit) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        cockpitReelTitle(current.policeEventId),
-                        style = TypeScale.section,
-                        color = FieldTheme.textPrimary,
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        if (current.freeze.isFrozen) {
+                            FrozenEventMark(current.freeze)
+                        }
+                        Text(
+                            cockpitReelTitle(current.policeEventId),
+                            style = TypeScale.section,
+                            color = FieldTheme.textPrimary,
+                        )
+                    }
                     StampChip(stamp)
                 }
                 LedgerRow("שעה", formatCockpitClock(current.createdAt))
@@ -295,11 +303,19 @@ private fun CockpitEventRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text(
-                    cockpitReelTitle(event.policeEventId),
-                    style = TypeScale.section,
-                    color = FieldTheme.textPrimary,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (event.freeze.isFrozen) {
+                        FrozenEventMark(event.freeze)
+                    }
+                    Text(
+                        cockpitReelTitle(event.policeEventId),
+                        style = TypeScale.section,
+                        color = FieldTheme.textPrimary,
+                    )
+                }
                 cockpitReelDetail(
                     event.eventType?.name,
                     event.road?.name,

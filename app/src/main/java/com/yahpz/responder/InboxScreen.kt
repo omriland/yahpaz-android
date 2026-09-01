@@ -178,7 +178,15 @@ fun InboxScreen(app: AppModel, ui: AppUiState) {
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text("פרטי האירוע", style = TypeScale.section, color = FieldTheme.textPrimary)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (event.freeze.isFrozen) {
+                        FrozenEventMark(event.freeze)
+                    }
+                    Text("פרטי האירוע", style = TypeScale.section, color = FieldTheme.textPrimary)
+                }
                 LedgerRow("תאריך", formatDate(event.eventDate))
                 LedgerRow("מספר אירוע", event.policeEventId.orEmpty())
                 LedgerRow("סוג אירוע", event.typeLabel)
@@ -334,12 +342,20 @@ private fun LoggedList(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(Modifier.weight(1f)) {
-                            HighlightedText(
-                                text = event.typeLabel.ifEmpty { "אירוע" },
-                                query = query,
-                                style = TypeScale.bodyStrong,
-                                color = FieldTheme.textPrimary,
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                if (event.freeze.isFrozen) {
+                                    FrozenEventMark(event.freeze)
+                                }
+                                HighlightedText(
+                                    text = event.typeLabel.ifEmpty { "אירוע" },
+                                    query = query,
+                                    style = TypeScale.bodyStrong,
+                                    color = FieldTheme.textPrimary,
+                                )
+                            }
                             HighlightedText(
                                 text = listOf(formatDate(event.eventDate), event.policeEventId)
                                     .filter { !it.isNullOrEmpty() }
@@ -448,6 +464,9 @@ private fun EventCard(
                                 tint = FieldTheme.alert,
                                 modifier = Modifier.size(20.dp),
                             )
+                        }
+                        if (event.freeze.isFrozen) {
+                            FrozenEventMark(event.freeze)
                         }
                         Text(event.typeLabel.ifEmpty { "אירוע" }, style = TypeScale.section, color = FieldTheme.textPrimary)
                     }

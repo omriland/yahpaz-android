@@ -98,6 +98,7 @@ import com.yahpz.domain.deleteUserConfirm
 import com.yahpz.domain.effectiveAvailability
 import com.yahpz.domain.formatPhone
 import com.yahpz.domain.formatPlate
+import com.yahpz.domain.hasAvailability
 import com.yahpz.domain.hasSuperAdminRole
 import com.yahpz.domain.isAssignableRoleLocked
 import com.yahpz.domain.isInvitePending
@@ -313,7 +314,7 @@ fun AdminUsersScreen(app: AppModel, ui: AppUiState, onBack: (() -> Unit)? = null
                 LedgerRow("דוא״ל", user.email)
                 LedgerRow(FIELD_ROLES, roleLabels(user.roles).joinToString(" · "))
                 LedgerRow(FIELD_VOLUNTEER_STATUS, volunteerStatusLabel(user.volunteerStatus))
-                if (!isInvitePending(user.active, user.invitePending)) {
+                if (hasAvailability(user.active, user.invitePending)) {
                     LedgerRow("זמינות", availabilityText(user, today))
                 }
                 otpUserLabel(user.otpLoginEnabled, user.otpUsersPageEnabled)?.let {
@@ -744,7 +745,7 @@ private fun AdminUserRow(user: AdminUserListItem, today: String, onOpen: () -> U
                     color = FieldTheme.textMuted,
                 )
             }
-            if (!invitePending) {
+            if (hasAvailability(user.active, user.invitePending)) {
                 StampChip(
                     StampDescriptor(
                         availabilityLabel(effective),

@@ -28,6 +28,7 @@ import com.yahpz.domain.CockpitResponderInput
 import com.yahpz.domain.ContactSearchFields
 import com.yahpz.domain.DuplicateParticipation
 import com.yahpz.domain.EventDraft
+import com.yahpz.domain.EventFreezeFlags
 import com.yahpz.domain.EventResponderDraft
 import com.yahpz.domain.EventStatus
 import com.yahpz.domain.EventsByResponderEventInput
@@ -148,6 +149,8 @@ data class EventListItem(
     @SerialName("is_cancelled") val isCancelled: Boolean = false,
     val origin: String? = null,
     @SerialName("shift_id") val shiftId: String? = null,
+    @SerialName("frozen_over_60km") val frozenOver60km: Boolean = false,
+    @SerialName("frozen_suspicious_duplicate") val frozenSuspiciousDuplicate: Boolean = false,
     @SerialName("event_type")
     @Serializable(with = OptionalNamedSerializer::class)
     val eventType: Named? = null,
@@ -165,6 +168,9 @@ data class EventListItem(
 
     fun ownFillCompletableAt(userId: String): String? =
         responders.firstOrNull { it.responderId == userId }?.fillCompletableAt
+
+    val freeze: EventFreezeFlags
+        get() = EventFreezeFlags(frozenOver60km, frozenSuspiciousDuplicate)
 
     val typeLabel: String
         get() {
@@ -228,6 +234,8 @@ data class CockpitEventListItem(
     val status: EventStatus,
     @SerialName("is_cancelled") val isCancelled: Boolean = false,
     val location: String? = null,
+    @SerialName("frozen_over_60km") val frozenOver60km: Boolean = false,
+    @SerialName("frozen_suspicious_duplicate") val frozenSuspiciousDuplicate: Boolean = false,
     @SerialName("location_lat")
     @Serializable(with = OptionalDoubleSerializer::class)
     val locationLat: Double? = null,
@@ -244,6 +252,9 @@ data class CockpitEventListItem(
     val shiftLead: PersonName? = null,
     val responders: List<CockpitResponderRow> = emptyList(),
 ) {
+    val freeze: EventFreezeFlags
+        get() = EventFreezeFlags(frozenOver60km, frozenSuspiciousDuplicate)
+
     val asInput: CockpitEventInput
         get() = CockpitEventInput(
             id = id,
@@ -264,9 +275,11 @@ data class CockpitEventListItem(
 
 @Serializable
 data class VehicleOption(
+    val id: String? = null,
     @SerialName("plate_number") val plateNumber: String,
     val model: String? = null,
     val archived: Boolean? = null,
+    @SerialName("is_default") val isDefault: Boolean? = null,
 )
 
 @Serializable
@@ -343,6 +356,19 @@ data class EventMediaRow(
     @Serializable(with = OptionalPersonNameSerializer::class)
     val uploader: PersonName? = null,
     val plates: List<EventMediaPlateLink> = emptyList(),
+)
+
+@Serializable
+data class UserFeedbackInsert(
+    val id: String,
+    @SerialName("user_id") val userId: String,
+    val kind: String,
+    val body: String? = null,
+    @SerialName("page_path") val pagePath: String? = null,
+    val status: String = "open",
+    @SerialName("audio_storage_path") val audioStoragePath: String? = null,
+    @SerialName("audio_mime_type") val audioMimeType: String? = null,
+    @SerialName("audio_byte_size") val audioByteSize: Int? = null,
 )
 
 @Serializable
@@ -563,6 +589,8 @@ data class AdminUserListItem(
             volunteerStatus = volunteerStatus,
             availability = availability,
             availableFrom = availableFrom,
+            active = active,
+            invitePending = invitePending,
         )
 
     val sortKey: AdminUserSortKey
@@ -787,6 +815,11 @@ data class PhoneOtpResponse(
 @Serializable
 data class VehiclePlateRef(
     @SerialName("vehicle_plate") val vehiclePlate: String? = null,
+)
+
+@Serializable
+data class SetDefaultVehicleCall(
+    @SerialName("p_vehicle_id") val vehicleId: String,
 )
 
 @Serializable
@@ -1092,6 +1125,15 @@ data class FuelParticipationRow(
     @Serializable(with = OptionalDoubleSerializer::class)
     val totalKm: Double? = null,
 )
+
+@Serializable
+data class FuelEventFreezeRow(
+    val id: String,
+    @SerialName("frozen_over_60km") val frozenOver60km: Boolean = false,
+    @SerialName("frozen_suspicious_duplicate") val frozenSuspiciousDuplicate: Boolean = false,
+) {
+    val isFrozen: Boolean get() = frozenOver60km || frozenSuspiciousDuplicate
+}
 
 @Serializable
 data class FuelShiftRow(
@@ -1408,7 +1450,7 @@ data class ShiftListItem(
         }
 
     val mineItem: MineShiftItem
-        get() = MineShiftItem(id, shiftDate, odometerStart, odometerEnd)
+        get() = MineShiftItem(id, shiftDate, status, odometerStart, odometerEnd)
 
     val unitSearchFields: List<String?>
         get() = listOf(

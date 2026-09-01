@@ -152,6 +152,8 @@ data class AdminUserSearchInput(
     val volunteerStatus: String?,
     val availability: AvailabilityStatus,
     val availableFrom: String?,
+    val active: Boolean = true,
+    val invitePending: Boolean = false,
 )
 
 /** Deliberately loose: the invite email is the real check, this only catches typos. */
@@ -285,6 +287,8 @@ fun canMutateAdminUser(actorIsSuperAdmin: Boolean, targetRoles: List<String>): B
 
 fun isInvitePending(active: Boolean, invitePending: Boolean): Boolean = active && invitePending
 
+fun hasAvailability(active: Boolean, invitePending: Boolean): Boolean = !isInvitePending(active, invitePending)
+
 fun compareAdminUsers(a: AdminUserSortKey, b: AdminUserSortKey): Int {
     fun rank(user: AdminUserSortKey): Int = when {
         isInvitePending(user.active, user.invitePending) -> 2
@@ -299,16 +303,16 @@ fun compareAdminUsers(a: AdminUserSortKey, b: AdminUserSortKey): Int {
 fun adminUserMatchesQuery(row: AdminUserSearchInput, query: String, today: String): Boolean {
     val trimmed = query.trim()
     if (trimmed.isEmpty()) return true
-    return fieldsMatchQuery(
-        listOf(
-            row.fullName,
-            row.callsign,
-            row.email,
-            volunteerStatusLabel(row.volunteerStatus),
-            availabilitySearchLabel(row.availability, row.availableFrom, today),
-        ),
-        trimmed,
-    )
+    val fields = buildList {
+        add(row.fullName)
+        add(row.callsign)
+        add(row.email)
+        add(volunteerStatusLabel(row.volunteerStatus))
+        if (hasAvailability(row.active, row.invitePending)) {
+            add(availabilitySearchLabel(row.availability, row.availableFrom, today))
+        }
+    }
+    return fieldsMatchQuery(fields, trimmed)
 }
 
 fun addressKindLabel(kind: String?, customLabel: String? = null): String = when (kind) {

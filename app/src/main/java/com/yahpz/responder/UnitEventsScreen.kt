@@ -284,7 +284,15 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("פרטי האירוע", style = TypeScale.section, color = FieldTheme.textPrimary)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        if (current.freeze.isFrozen) {
+                            FrozenEventMark(current.freeze)
+                        }
+                        Text("פרטי האירוע", style = TypeScale.section, color = FieldTheme.textPrimary)
+                    }
                     StampChip(stamp)
                 }
                 LedgerRow("תאריך", formatDate(current.eventDate))
@@ -515,11 +523,19 @@ private fun UnitEventRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text(
-                    event.typeLabel.ifEmpty { "אירוע" },
-                    style = TypeScale.section,
-                    color = FieldTheme.textPrimary,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (event.freeze.isFrozen) {
+                        FrozenEventMark(event.freeze)
+                    }
+                    Text(
+                        event.typeLabel.ifEmpty { "אירוע" },
+                        style = TypeScale.section,
+                        color = FieldTheme.textPrimary,
+                    )
+                }
                 Text(
                     listOfNotNull(
                         formatDate(event.eventDate),

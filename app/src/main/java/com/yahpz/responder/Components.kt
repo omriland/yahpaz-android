@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AcUnit
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -62,6 +63,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import com.yahpz.domain.EventFreezeFlags
 import com.yahpz.domain.StampDescriptor
 import com.yahpz.domain.StampTone
 import com.yahpz.domain.applyReturnDateKeystroke
@@ -83,6 +85,17 @@ fun StampChip(stamp: StampDescriptor, modifier: Modifier = Modifier) {
             .background(stamp.tone.tint, RoundedCornerShape(3.dp))
             .border(1.dp, stamp.tone.ink.copy(alpha = 0.25f), RoundedCornerShape(3.dp))
             .padding(horizontal = 8.dp, vertical = 4.dp),
+    )
+}
+
+@Composable
+fun FrozenEventMark(flags: EventFreezeFlags, modifier: Modifier = Modifier) {
+    val tip = flags.tooltipHe ?: return
+    Icon(
+        imageVector = Icons.Outlined.AcUnit,
+        contentDescription = tip,
+        tint = FieldTheme.pending,
+        modifier = modifier.size(20.dp),
     )
 }
 
