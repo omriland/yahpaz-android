@@ -45,13 +45,23 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import com.yahpz.domain.EVENT_DELETE_ACTION
+import com.yahpz.domain.EVENT_DELETE_CONFIRM
+import com.yahpz.domain.EVENT_DELETE_TITLE
+import com.yahpz.domain.EVENT_EDIT_TITLE
+import com.yahpz.domain.MY_ACTIVE_DRAG_TO_ACTIVE
+import com.yahpz.domain.MY_ACTIVE_DRAG_TO_ADD
+import com.yahpz.domain.MY_ACTIVE_DROP_TO_ADD
+import com.yahpz.domain.MY_ACTIVE_EVENTS_EMPTY
 import com.yahpz.domain.MY_ACTIVE_EVENT_DISMISSED
+import com.yahpz.domain.MY_ACTIVE_EVENT_PINNED
 import com.yahpz.domain.MY_ACTIVE_EVENTS_TITLE
 import com.yahpz.domain.ParticipationStatus
 import com.yahpz.domain.StampTone
 import com.yahpz.domain.UNIT_EVENTS_LOAD_FAILED
+import com.yahpz.domain.canAddEventToMyActive
+import com.yahpz.domain.canDeleteUnassignedEvent
 import com.yahpz.domain.cancelledStamp
-import com.yahpz.domain.EVENT_EDIT_TITLE
 import com.yahpz.domain.eventStamp
 import com.yahpz.domain.fieldsMatchQuery
 import com.yahpz.domain.formatDate
@@ -60,10 +70,13 @@ import com.yahpz.domain.formatPlate
 import com.yahpz.domain.formatTime
 import com.yahpz.domain.mineFillCtaLabel
 import com.yahpz.domain.participationStamp
+import com.yahpz.domain.visibleMyActiveIds
 import kotlinx.coroutines.launch
 
 private const val UNIT_EVENTS_CAPTION =
     "מציג 80 אירועים אחרונים - ניתן לחפש גם אירועים ישנים יותר"
+
+private enum class ActiveDragSource { ACTIVE, CATALOG }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -78,11 +91,23 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
             ui.userId?.let { ActiveEventDismissStore.dismissedIds(context, it) }.orEmpty(),
         )
     }
+    var pinnedIds by remember(ui.userId) {
+        mutableStateOf(
+            ui.userId?.let { ActiveEventPinStore.pinnedIds(context, it) }.orEmpty(),
+        )
+    }
     var draggingId by remember { mutableStateOf<String?>(null) }
+    var dragSource by remember { mutableStateOf<ActiveDragSource?>(null) }
     var dragOffset by remember { mutableStateOf(Offset.Zero) }
     var fingerInRoot by remember { mutableStateOf(Offset.Zero) }
-    var dropZone by remember { mutableStateOf(Rect.Zero) }
-    val overDropZone = draggingId != null && dropZone.contains(fingerInRoot)
+    var activeDropZone by remember { mutableStateOf(Rect.Zero) }
+    var catalogDropZone by remember { mutableStateOf(Rect.Zero) }
+    val overActiveDrop = draggingId != null &&
+        dragSource == ActiveDragSource.CATALOG &&
+        activeDropZone.contains(fingerInRoot)
+    val overCatalogDrop = draggingId != null &&
+        dragSource == ActiveDragSource.ACTIVE &&
+        catalogDropZone.contains(fingerInRoot)
 
     LaunchedEffect(ui.userId) {
         if (ui.userId != null && ui.unitEvents.isEmpty()) app.reloadUnitEvents()
@@ -90,21 +115,43 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
 
     LaunchedEffect(ui.userId, ui.unitEvents, ui.myActiveUnitEvents) {
         val userId = ui.userId ?: return@LaunchedEffect
-        val known = (ui.unitEvents.map { it.id } + ui.myActiveUnitEvents.map { it.id }).toSet()
+        val known = (
+            ui.unitEvents.map { it.id } +
+                ui.myActiveUnitEvents.map { it.id } +
+                pinnedIds
+            ).toSet()
         ActiveEventDismissStore.prune(context, userId, known)
+        ActiveEventPinStore.prune(context, userId, known)
         dismissedIds = ActiveEventDismissStore.dismissedIds(context, userId)
+        pinnedIds = ActiveEventPinStore.pinnedIds(context, userId)
     }
 
     fun dismissFromActive(eventId: String) {
         val userId = ui.userId ?: return
+        ActiveEventPinStore.unpin(context, userId, eventId)
         ActiveEventDismissStore.dismiss(context, userId, eventId)
+        pinnedIds = ActiveEventPinStore.pinnedIds(context, userId)
         dismissedIds = ActiveEventDismissStore.dismissedIds(context, userId)
         app.showToast(MY_ACTIVE_EVENT_DISMISSED, StampTone.DONE)
     }
 
+    fun addToActive(eventId: String) {
+        val userId = ui.userId ?: return
+        ActiveEventDismissStore.undismiss(context, userId, eventId)
+        ActiveEventPinStore.pin(context, userId, eventId)
+        dismissedIds = ActiveEventDismissStore.dismissedIds(context, userId)
+        pinnedIds = ActiveEventPinStore.pinnedIds(context, userId)
+        app.showToast(MY_ACTIVE_EVENT_PINNED, StampTone.DONE)
+    }
+
     val trimmed = query.trim()
-    val activeEvents = ui.myActiveUnitEvents
-        .filter { it.id !in dismissedIds }
+    val catalogById = (ui.unitEvents + ui.myActiveUnitEvents).associateBy { it.id }
+    val activeOrderedIds = visibleMyActiveIds(
+        serverIds = ui.myActiveUnitEvents.map { it.id },
+        pinnedIds = pinnedIds,
+        dismissedIds = dismissedIds,
+    )
+    val activeEvents = activeOrderedIds.mapNotNull { catalogById[it] }
         .let { rows ->
             if (trimmed.isEmpty()) rows
             else rows.filter { fieldsMatchQuery(it.unitSearchFields, trimmed) }
@@ -119,7 +166,6 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
         (ui.unitEvents + dismissedActive).distinctBy { it.id }
             .filter { fieldsMatchQuery(it.unitSearchFields, trimmed) }
     }.sortedByDescending { it.eventDate }
-    val hasAnyEvents = activeEvents.isNotEmpty() || events.isNotEmpty()
 
     PullToRefreshBox(
         isRefreshing = refreshing,
@@ -160,66 +206,24 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                 )
                 ui.unitEventsLoading && ui.unitEvents.isEmpty() && ui.myActiveUnitEvents.isEmpty() ->
                     LoadingBlock("טוען אירועים…")
-                !hasAnyEvents -> EmptyState(
-                    title = if (trimmed.isEmpty()) "אין אירועים להצגה" else "לא נמצאו אירועים תואמים",
-                    actionTitle = if (trimmed.isEmpty()) null else "ניקוי חיפוש",
-                    onAction = if (trimmed.isEmpty()) null else ({ query = "" }),
-                )
                 else -> Column(
                     modifier = Modifier.verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    if (activeEvents.isNotEmpty()) {
-                        Text(MY_ACTIVE_EVENTS_TITLE, style = TypeScale.section, color = FieldTheme.textPrimary)
-                        Text(
-                            "לחיצה ארוכה וגרירה לרשימה המלאה להסרה",
-                            style = TypeScale.caption,
-                            color = FieldTheme.textMuted,
-                        )
-                        activeEvents.forEach { event ->
-                            DraggableActiveEventRow(
-                                event = event,
-                                dragging = draggingId == event.id,
-                                dragOffset = if (draggingId == event.id) dragOffset else Offset.Zero,
-                                onOpen = { app.openEditEvent(event.id) },
-                                onDragStart = { startInRoot ->
-                                    draggingId = event.id
-                                    dragOffset = Offset.Zero
-                                    fingerInRoot = startInRoot
-                                },
-                                onDrag = { amount ->
-                                    dragOffset += amount
-                                    fingerInRoot += amount
-                                },
-                                onDragEnd = {
-                                    if (dropZone.contains(fingerInRoot)) {
-                                        dismissFromActive(event.id)
-                                    }
-                                    draggingId = null
-                                    dragOffset = Offset.Zero
-                                },
-                                onDragCancel = {
-                                    draggingId = null
-                                    dragOffset = Offset.Zero
-                                },
-                            )
-                        }
-                        Spacer(Modifier.height(8.dp))
-                    }
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .onGloballyPositioned { dropZone = it.boundsInRoot() }
+                            .onGloballyPositioned { activeDropZone = it.boundsInRoot() }
                             .then(
-                                if (draggingId != null) {
+                                if (dragSource == ActiveDragSource.CATALOG) {
                                     Modifier
                                         .border(
                                             width = 2.dp,
-                                            color = if (overDropZone) FieldTheme.accent else FieldTheme.hairline,
+                                            color = if (overActiveDrop) FieldTheme.accent else FieldTheme.hairline,
                                             shape = RoundedCornerShape(8.dp),
                                         )
                                         .background(
-                                            if (overDropZone) FieldTheme.accentSubtle else FieldTheme.page,
+                                            if (overActiveDrop) FieldTheme.accentSubtle else FieldTheme.page,
                                             RoundedCornerShape(8.dp),
                                         )
                                         .padding(8.dp)
@@ -229,11 +233,79 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                             ),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        if (draggingId != null) {
+                        Text(MY_ACTIVE_EVENTS_TITLE, style = TypeScale.section, color = FieldTheme.textPrimary)
+                        Text(
+                            when {
+                                dragSource == ActiveDragSource.CATALOG && overActiveDrop -> MY_ACTIVE_DROP_TO_ADD
+                                dragSource == ActiveDragSource.CATALOG -> MY_ACTIVE_DRAG_TO_ADD
+                                activeEvents.isEmpty() -> MY_ACTIVE_EVENTS_EMPTY
+                                else -> "לחיצה ארוכה וגרירה לרשימה המלאה להסרה"
+                            },
+                            style = TypeScale.caption,
+                            color = if (overActiveDrop) FieldTheme.accent else FieldTheme.textMuted,
+                        )
+                        if (activeEvents.isEmpty() && dragSource == ActiveDragSource.CATALOG) {
+                            Spacer(Modifier.height(48.dp))
+                        }
+                        activeEvents.forEach { event ->
+                            DraggableActiveEventRow(
+                                event = event,
+                                dragging = draggingId == event.id,
+                                dragOffset = if (draggingId == event.id) dragOffset else Offset.Zero,
+                                onOpen = { app.openEditEvent(event.id) },
+                                onDragStart = { startInRoot ->
+                                    draggingId = event.id
+                                    dragSource = ActiveDragSource.ACTIVE
+                                    dragOffset = Offset.Zero
+                                    fingerInRoot = startInRoot
+                                },
+                                onDrag = { amount ->
+                                    dragOffset += amount
+                                    fingerInRoot += amount
+                                },
+                                onDragEnd = {
+                                    if (overCatalogDrop) dismissFromActive(event.id)
+                                    draggingId = null
+                                    dragSource = null
+                                    dragOffset = Offset.Zero
+                                },
+                                onDragCancel = {
+                                    draggingId = null
+                                    dragSource = null
+                                    dragOffset = Offset.Zero
+                                },
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onGloballyPositioned { catalogDropZone = it.boundsInRoot() }
+                            .then(
+                                if (dragSource == ActiveDragSource.ACTIVE) {
+                                    Modifier
+                                        .border(
+                                            width = 2.dp,
+                                            color = if (overCatalogDrop) FieldTheme.accent else FieldTheme.hairline,
+                                            shape = RoundedCornerShape(8.dp),
+                                        )
+                                        .background(
+                                            if (overCatalogDrop) FieldTheme.accentSubtle else FieldTheme.page,
+                                            RoundedCornerShape(8.dp),
+                                        )
+                                        .padding(8.dp)
+                                } else {
+                                    Modifier
+                                },
+                            ),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        if (dragSource == ActiveDragSource.ACTIVE) {
                             Text(
-                                if (overDropZone) "שחררו כאן להסרה מהפעילים" else "גררו לכאן להסרה מהפעילים",
+                                if (overCatalogDrop) "שחררו כאן להסרה מהפעילים" else "גררו לכאן להסרה מהפעילים",
                                 style = TypeScale.caption,
-                                color = if (overDropZone) FieldTheme.accent else FieldTheme.textMuted,
+                                color = if (overCatalogDrop) FieldTheme.accent else FieldTheme.textMuted,
                             )
                         }
                         if (events.isNotEmpty()) {
@@ -242,14 +314,58 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                                 style = TypeScale.caption,
                                 color = FieldTheme.textMuted,
                             )
-                            events.forEach { event -> UnitEventRow(event) { detail = event } }
-                        } else if (draggingId != null) {
+                            Text(
+                                MY_ACTIVE_DRAG_TO_ACTIVE,
+                                style = TypeScale.caption,
+                                color = FieldTheme.textMuted,
+                            )
+                            events.forEach { event ->
+                                val canPin = canAddEventToMyActive(event.isCancelled, event.status)
+                                if (canPin) {
+                                    DraggableActiveEventRow(
+                                        event = event,
+                                        dragging = draggingId == event.id,
+                                        dragOffset = if (draggingId == event.id) dragOffset else Offset.Zero,
+                                        onOpen = { detail = event },
+                                        onDragStart = { startInRoot ->
+                                            draggingId = event.id
+                                            dragSource = ActiveDragSource.CATALOG
+                                            dragOffset = Offset.Zero
+                                            fingerInRoot = startInRoot
+                                        },
+                                        onDrag = { amount ->
+                                            dragOffset += amount
+                                            fingerInRoot += amount
+                                        },
+                                        onDragEnd = {
+                                            if (overActiveDrop) addToActive(event.id)
+                                            draggingId = null
+                                            dragSource = null
+                                            dragOffset = Offset.Zero
+                                        },
+                                        onDragCancel = {
+                                            draggingId = null
+                                            dragSource = null
+                                            dragOffset = Offset.Zero
+                                        },
+                                    )
+                                } else {
+                                    UnitEventRow(event) { detail = event }
+                                }
+                            }
+                        } else if (dragSource == ActiveDragSource.ACTIVE) {
                             Text(
                                 UNIT_EVENTS_CAPTION,
                                 style = TypeScale.caption,
                                 color = FieldTheme.textMuted,
                             )
                             Spacer(Modifier.height(48.dp))
+                        } else {
+                            EmptyState(
+                                title = if (trimmed.isEmpty()) "אין אירועים להצגה" else "לא נמצאו אירועים תואמים",
+                                actionTitle = if (trimmed.isEmpty()) null else "ניקוי חיפוש",
+                                onAction = if (trimmed.isEmpty()) null else ({ query = "" }),
+                            )
                         }
                     }
                     Spacer(Modifier.height(88.dp))
@@ -259,11 +375,15 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
     }
 
     detail?.let { event ->
-        val current = ui.unitEvents.firstOrNull { it.id == event.id } ?: event
+        val current = ui.unitEvents.firstOrNull { it.id == event.id }
+            ?: ui.myActiveUnitEvents.firstOrNull { it.id == event.id }
+            ?: event
         val mine = ui.userId?.let { current.ownParticipation(it) }
         val stamp = if (current.isCancelled) cancelledStamp() else eventStamp(current.status)
         var expandedResponderIds by remember(current.id) { mutableStateOf(setOf<String>()) }
         var detailResponders by remember(current.id) { mutableStateOf<List<UnitEventDetailResponderRow>?>(null) }
+        var confirmDelete by remember(current.id) { mutableStateOf(false) }
+        var deleting by remember(current.id) { mutableStateOf(false) }
 
         LaunchedEffect(current.id) {
             expandedResponderIds = emptySet()
@@ -348,6 +468,36 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                             app.openEditEvent(id)
                         },
                     )
+                }
+                if (canDeleteUnassignedEvent(ui.canManageUnit, current.responders.size)) {
+                    if (confirmDelete) {
+                        Text(EVENT_DELETE_CONFIRM, style = TypeScale.body, color = FieldTheme.textSecondary)
+                        GhostButton(
+                            title = EVENT_DELETE_ACTION,
+                            danger = true,
+                            enabled = !deleting,
+                            onClick = {
+                                val id = current.id
+                                scope.launch {
+                                    deleting = true
+                                    val error = app.deleteUnitEvent(id)
+                                    deleting = false
+                                    if (error != null) {
+                                        app.showToast(error, StampTone.PENDING)
+                                        confirmDelete = false
+                                    } else {
+                                        detail = null
+                                    }
+                                }
+                            },
+                        )
+                    } else {
+                        GhostButton(
+                            title = EVENT_DELETE_TITLE,
+                            danger = true,
+                            onClick = { confirmDelete = true },
+                        )
+                    }
                 }
                 TextButton(onClick = { detail = null }, modifier = Modifier.align(Alignment.End)) {
                     Text("סגירה", color = FieldTheme.accent)

@@ -32,7 +32,7 @@ class MobileNavTest {
                 MobileNavEntry("mine", "האירועים שלי"),
             ),
         )
-        assertEquals(listOf("mine", "events", "my_shifts"), views(split.tabs))
+        assertEquals(listOf("events", "mine", "my_shifts"), views(split.tabs))
         assertEquals(listOf("shifts", "contacts", "reports"), views(split.more))
     }
 
@@ -48,7 +48,7 @@ class MobileNavTest {
                 MobileNavEntry("users", "ניהול"),
             ),
         )
-        assertEquals(listOf("mine", "events", "users"), views(split.tabs))
+        assertEquals(listOf("events", "mine", "users"), views(split.tabs))
         assertEquals(listOf("my_shifts", "shifts", "contacts"), views(split.more))
     }
 

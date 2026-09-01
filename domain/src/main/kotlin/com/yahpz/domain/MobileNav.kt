@@ -8,7 +8,7 @@ package com.yahpz.domain
 const val MOBILE_MORE_LABEL = "עוד"
 
 /** Daily destinations — keep these in the tab bar when they exist. */
-private val MOBILE_TAB_PRIMARY = listOf("mine", "events", "users", "my_shifts")
+private val MOBILE_TAB_PRIMARY = listOf("events", "mine", "users", "my_shifts")
 
 /** Reachable on mobile, but not every-session. Overflow into עוד. */
 private val MOBILE_TAB_SECONDARY = listOf("shifts", "contacts", "reports")

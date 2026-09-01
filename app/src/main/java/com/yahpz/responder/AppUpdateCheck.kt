@@ -32,7 +32,7 @@ suspend fun checkForceUpdate(currentVersionCode: Int): ForceUpdateRequired? =
         val manifest = fetchPreferredAppVersionManifest() ?: return@withContext null
         if (!needsForceUpdate(currentVersionCode, manifest.minVersionCode)) return@withContext null
         ForceUpdateRequired(
-            messageHe = manifest.messageHe.ifBlank { DEFAULT_FORCE_UPDATE_MESSAGE },
+            messageHe = manifest.messageHe,
             apkUrl = manifest.apkUrl.ifBlank { AppConfig.defaultApkUrl },
         )
     }

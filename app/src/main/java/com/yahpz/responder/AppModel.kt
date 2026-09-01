@@ -15,6 +15,7 @@ import com.yahpz.domain.BROADCAST_LOAD_FAILED
 import com.yahpz.domain.BroadcastCandidate
 import com.yahpz.domain.BroadcastDraft
 import com.yahpz.domain.BroadcastLogEntry
+import com.yahpz.domain.EVENT_DELETED
 import com.yahpz.domain.EVENT_DRAFT_PARTIAL_SAVED
 import com.yahpz.domain.EVENT_DRAFT_SAVED
 import com.yahpz.domain.FEEDBACK_SENT
@@ -43,7 +44,8 @@ import com.yahpz.domain.managesUnit
 import com.yahpz.domain.normalizeReturnDate
 import com.yahpz.domain.ProfileVehicle
 import com.yahpz.domain.StampTone
-import com.yahpz.domain.parseTrackToken
+import com.yahpz.domain.androidSessionRpcParams
+import com.yahpz.domain.shouldReportAndroidSession
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -146,6 +148,7 @@ class AppModel : ViewModel() {
     private val _state = MutableStateFlow(AppUiState())
     val state: StateFlow<AppUiState> = _state
     private var toastJob: Job? = null
+    private var lastAndroidReportAtMs: Long? = null
 
     fun bootstrap() {
         viewModelScope.launch {
@@ -153,6 +156,7 @@ class AppModel : ViewModel() {
             val forceUpdate = checkForceUpdate(BuildConfig.VERSION_CODE)
             if (forceUpdate != null) {
                 _state.update { it.copy(forceUpdate = forceUpdate, booting = false) }
+                reportAndroidSessionIfDue()
                 return@launch
             }
             val id = YahpazAPI.sessionUserId()
@@ -163,6 +167,10 @@ class AppModel : ViewModel() {
             }
             _state.update { it.copy(forceUpdate = null, booting = false) }
         }
+    }
+
+    fun onForeground() {
+        viewModelScope.launch { reportAndroidSessionIfDue() }
     }
 
     fun applyIncomingUrl(url: String) {
@@ -283,6 +291,7 @@ class AppModel : ViewModel() {
     fun signOut() {
         viewModelScope.launch {
             YahpazAPI.signOut()
+            lastAndroidReportAtMs = null
             _state.value = AppUiState(booting = false)
         }
     }
@@ -709,6 +718,14 @@ class AppModel : ViewModel() {
         return null
     }
 
+    suspend fun deleteUnitEvent(eventId: String): String? {
+        YahpazAPI.deleteUnitEvent(eventId)?.let { return it }
+        reloadUnitEvents()
+        viewModelScope.launch { reloadEvents() }
+        showToast(EVENT_DELETED, StampTone.DONE)
+        return null
+    }
+
     suspend fun createUnitShift(draft: ShiftDraft): String? {
         YahpazAPI.createUnitShift(draft)?.let { return it }
         reloadUnitShifts()
@@ -834,6 +851,7 @@ class AppModel : ViewModel() {
                 viewModelScope.launch { reloadLookups() }
             }
             if (isAdmin(visible)) viewModelScope.launch { reloadAdminUsers() }
+            reportAndroidSessionIfDue()
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
@@ -848,5 +866,14 @@ class AppModel : ViewModel() {
             }
             throw error
         }
+    }
+
+    private suspend fun reportAndroidSessionIfDue() {
+        if (YahpazAPI.sessionUserId() == null) return
+        val now = System.currentTimeMillis()
+        if (!shouldReportAndroidSession(lastAndroidReportAtMs, now)) return
+        val params = androidSessionRpcParams(BuildConfig.VERSION_CODE, BuildConfig.VERSION_NAME)
+        runCatching { YahpazAPI.reportAndroidSession(params.versionCode, params.versionName) }
+            .onSuccess { lastAndroidReportAtMs = now }
     }
 }

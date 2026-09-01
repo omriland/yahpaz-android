@@ -823,6 +823,12 @@ data class SetDefaultVehicleCall(
 )
 
 @Serializable
+data class ReportAndroidSessionCall(
+    @SerialName("p_version_code") val versionCode: Int,
+    @SerialName("p_version_name") val versionName: String,
+)
+
+@Serializable
 data class KmDiscrepancyResponderRow(
     val id: String,
     @Serializable(with = ParticipationStatusSerializer::class)

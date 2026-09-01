@@ -186,13 +186,17 @@ private fun ForceUpdateScreen(update: ForceUpdateRequired) {
                 color = CommandTheme.textPrimary,
             )
             Spacer(Modifier.height(16.dp))
-            Text(
-                text = update.messageHe,
-                style = TypeScale.body,
-                color = CommandTheme.textSecondary,
-                textAlign = TextAlign.Center,
-            )
-            Spacer(Modifier.height(24.dp))
+            if (update.messageHe.isNotBlank()) {
+                Text(
+                    text = update.messageHe,
+                    style = TypeScale.body,
+                    color = CommandTheme.textSecondary,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(24.dp))
+            } else {
+                Spacer(Modifier.height(24.dp))
+            }
             PrimaryButton(
                 title = "הורדה והתקנה",
                 onClick = {

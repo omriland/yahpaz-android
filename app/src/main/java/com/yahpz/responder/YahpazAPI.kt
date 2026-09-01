@@ -14,6 +14,7 @@ import com.yahpz.domain.ClosedListItem
 import com.yahpz.domain.ClosedListKey
 import com.yahpz.domain.ClosedListMutationResult
 import com.yahpz.domain.COCKPIT_WINDOW_MS
+import com.yahpz.domain.EVENT_DELETE_FAILED
 import com.yahpz.domain.EVENT_DRAFT_DATE_ERROR
 import com.yahpz.domain.EVENT_DRAFT_FORM_ERROR
 import com.yahpz.domain.EVENT_DRAFT_SAVE_FAILED
@@ -439,6 +440,13 @@ object YahpazAPI {
         return profile to roles
     }
 
+    suspend fun reportAndroidSession(versionCode: Int, versionName: String) {
+        client.postgrest.rpc(
+            "report_android_session",
+            ReportAndroidSessionCall(versionCode = versionCode, versionName = versionName),
+        )
+    }
+
     suspend fun fetchMyEvents(): List<EventListItem> {
         val userId = sessionUserId() ?: return emptyList()
         val ids = client.from("event_responders").select(Columns.raw("event_id")) {
@@ -485,6 +493,19 @@ object YahpazAPI {
             }
             order("event_date", Order.DESCENDING)
         }.decodeList<EventListItem>()
+    }
+
+    suspend fun deleteUnitEvent(eventId: String): String? = try {
+        client.from("events").delete { filter { eq("id", eventId) } }
+        val stillThere = client.from("events").select(Columns.raw("id")) {
+            filter { eq("id", eventId) }
+            limit(1)
+        }.decodeList<IdRow>()
+        if (stillThere.isNotEmpty()) EVENT_DELETE_FAILED else null
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        EVENT_DELETE_FAILED
     }
 
     suspend fun fetchUnitEventDetailResponders(eventId: String): List<UnitEventDetailResponderRow> =
