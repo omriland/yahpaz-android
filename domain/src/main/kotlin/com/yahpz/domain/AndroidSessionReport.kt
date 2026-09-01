@@ -1,6 +1,6 @@
 package com.yahpz.domain
 
-const ANDROID_SESSION_REPORT_THROTTLE_MS = 15L * 60 * 1000
+const val ANDROID_SESSION_REPORT_THROTTLE_MS = 15L * 60 * 1000
 
 data class AndroidSessionRpcParams(
     val versionCode: Int,
