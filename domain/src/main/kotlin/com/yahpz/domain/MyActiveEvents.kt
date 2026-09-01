@@ -1,6 +1,24 @@
 package com.yahpz.domain
 
-const val MY_ACTIVE_EVENTS_EMPTY = "אין אירועים פעילים באחמ״ש שלך"
+const val MY_ACTIVE_EVENTS_EMPTY = "אין אירועים פעילים באחמו\"ש שלך"
+
+data class ActivePref(val eventId: String, val kind: String)
+
+fun prefsAfterAddToMyActive(
+    prefs: List<ActivePref>,
+    eventId: String,
+    alreadyAuto: Boolean,
+): List<ActivePref> {
+    val others = prefs.filterNot { it.eventId == eventId }
+    return if (alreadyAuto) others else others + ActivePref(eventId, "pin")
+}
+
+fun prefsRestoringEvent(
+    prefs: List<ActivePref>,
+    eventId: String,
+    previous: List<ActivePref>,
+): List<ActivePref> = prefs.filterNot { it.eventId == eventId } + previous
+
 const val MY_ACTIVE_EVENT_PINNED = "נוסף לאירועים הפעילים."
 const val MY_ACTIVE_ADD = "הוספה"
 const val MY_ACTIVE_REMOVE = "הסרה"

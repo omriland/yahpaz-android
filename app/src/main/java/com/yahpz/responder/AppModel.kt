@@ -16,10 +16,12 @@ import com.yahpz.domain.BroadcastCandidate
 import com.yahpz.domain.BroadcastDraft
 import com.yahpz.domain.BroadcastLogEntry
 import com.yahpz.domain.EVENT_DELETED
+import com.yahpz.domain.ActivePref
 import com.yahpz.domain.MY_ACTIVE_EVENT_DISMISSED
-import com.yahpz.domain.MY_ACTIVE_EVENT_PINNED
 import com.yahpz.domain.MY_ACTIVE_REMOVE_LOCKED
 import com.yahpz.domain.canRemoveFromMyActive
+import com.yahpz.domain.prefsAfterAddToMyActive
+import com.yahpz.domain.prefsRestoringEvent
 import com.yahpz.domain.EVENT_DRAFT_PARTIAL_SAVED
 import com.yahpz.domain.EVENT_DRAFT_SAVED
 import com.yahpz.domain.FEEDBACK_SENT
@@ -744,14 +746,57 @@ class AppModel : ViewModel() {
     }
 
     suspend fun addEventToMyActiveBoard(eventId: String) {
-        val autoIds = _state.value.myActiveUnitEvents.map { it.id }.toSet()
-        val error = YahpazAPI.addEventToMyActive(eventId, alreadyAuto = eventId in autoIds)
+        val snapshot = _state.value
+        val autoIds = snapshot.myActiveUnitEvents.map { it.id }.toSet()
+        val alreadyAuto = eventId in autoIds
+        val previousForEvent = snapshot.myActiveEventPrefs.filter { it.eventId == eventId }
+        val previousPinned = snapshot.myActivePinnedEvents
+        val userId = snapshot.userId.orEmpty()
+        val event = (
+            snapshot.unitEvents + snapshot.myActiveUnitEvents + snapshot.myActivePinnedEvents
+            ).firstOrNull { it.id == eventId }
+        val nextPrefs = prefsAfterAddToMyActive(
+            prefs = snapshot.myActiveEventPrefs.map { ActivePref(it.eventId, it.kind) },
+            eventId = eventId,
+            alreadyAuto = alreadyAuto,
+        ).toPrefRows(snapshot.myActiveEventPrefs, userId)
+        _state.update { current ->
+            current.copy(
+                myActiveEventPrefs = nextPrefs,
+                myActivePinnedEvents = if (
+                    event != null &&
+                    !alreadyAuto &&
+                    current.myActivePinnedEvents.none { it.id == eventId }
+                ) {
+                    current.myActivePinnedEvents + event
+                } else {
+                    current.myActivePinnedEvents
+                },
+            )
+        }
+        val error = YahpazAPI.addEventToMyActive(eventId, alreadyAuto = alreadyAuto)
         if (error != null) {
+            _state.update { current ->
+                current.copy(
+                    myActiveEventPrefs = prefsRestoringEvent(
+                        prefs = current.myActiveEventPrefs.map { ActivePref(it.eventId, it.kind) },
+                        eventId = eventId,
+                        previous = previousForEvent.map { ActivePref(it.eventId, it.kind) },
+                    ).toPrefRows(previousForEvent + current.myActiveEventPrefs, userId),
+                    myActivePinnedEvents = previousPinned,
+                )
+            }
             showToast(error, StampTone.PENDING)
             return
         }
-        reloadUnitEvents()
-        showToast(MY_ACTIVE_EVENT_PINNED, StampTone.DONE)
+    }
+
+    private fun List<ActivePref>.toPrefRows(
+        existing: List<MyActiveEventPrefRow>,
+        userId: String,
+    ): List<MyActiveEventPrefRow> = map { pref ->
+        existing.firstOrNull { it.eventId == pref.eventId && it.kind == pref.kind }
+            ?: MyActiveEventPrefRow(userId = userId, eventId = pref.eventId, kind = pref.kind)
     }
 
     suspend fun removeEventFromMyActiveBoard(eventId: String) {
