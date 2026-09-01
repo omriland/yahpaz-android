@@ -15,6 +15,7 @@ import com.yahpz.domain.ClosedListKey
 import com.yahpz.domain.ClosedListMutationResult
 import com.yahpz.domain.COCKPIT_WINDOW_MS
 import com.yahpz.domain.EVENT_DELETE_FAILED
+import com.yahpz.domain.MY_ACTIVE_PREF_FAILED
 import com.yahpz.domain.EVENT_DRAFT_DATE_ERROR
 import com.yahpz.domain.EVENT_DRAFT_FORM_ERROR
 import com.yahpz.domain.EVENT_DRAFT_SAVE_FAILED
@@ -199,7 +200,7 @@ internal fun edgeErrorMessage(raw: String?, fallback: String): String {
 
 object YahpazAPI {
     private val eventListSelect = """
-        id, event_date, police_event_id, location, status, is_cancelled, origin, shift_id,
+        id, event_date, police_event_id, location, status, is_cancelled, origin, shift_lead_id, shift_id,
         frozen_over_60km, frozen_suspicious_duplicate,
         event_type:event_types(name),
         road:roads(name),
@@ -476,8 +477,16 @@ object YahpazAPI {
 
     suspend fun fetchMyActiveUnitEvents(now: Instant = Instant.now()): List<EventListItem> {
         val userId = sessionUserId() ?: return emptyList()
+        val drafts = client.from("events").select(Columns.raw(eventListSelect)) {
+            filter {
+                eq("shift_lead_id", userId)
+                eq("is_cancelled", false)
+                eq("status", EventStatus.DRAFT.raw)
+            }
+            order("event_date", Order.DESCENDING)
+        }.decodeList<EventListItem>()
         val since = now.minus(2, ChronoUnit.HOURS).toString()
-        return client.from("events").select(Columns.raw(eventListSelect)) {
+        val recent = client.from("events").select(Columns.raw(eventListSelect)) {
             filter {
                 eq("shift_lead_id", userId)
                 eq("is_cancelled", false)
@@ -493,6 +502,69 @@ object YahpazAPI {
             }
             order("event_date", Order.DESCENDING)
         }.decodeList<EventListItem>()
+        return (drafts + recent).distinctBy { it.id }
+    }
+
+    suspend fun fetchMyActiveEventPrefs(): List<MyActiveEventPrefRow> {
+        val userId = sessionUserId() ?: return emptyList()
+        return client.from("my_active_event_prefs").select(
+            Columns.raw("user_id, event_id, kind"),
+        ) {
+            filter { eq("user_id", userId) }
+        }.decodeList<MyActiveEventPrefRow>()
+    }
+
+    suspend fun fetchUnitEventsByIds(ids: List<String>): List<EventListItem> {
+        if (ids.isEmpty()) return emptyList()
+        return fetchByIds(ids, "events", eventListSelect)
+    }
+
+    suspend fun addEventToMyActive(eventId: String, alreadyAuto: Boolean): String? {
+        val userId = sessionUserId() ?: return MY_ACTIVE_PREF_FAILED
+        return try {
+            deleteMyActivePref(userId, eventId)
+            if (!alreadyAuto) {
+                client.from("my_active_event_prefs").insert(
+                    MyActiveEventPrefWrite(userId = userId, eventId = eventId, kind = "pin"),
+                )
+            }
+            null
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            MY_ACTIVE_PREF_FAILED
+        }
+    }
+
+    suspend fun removeEventFromMyActive(eventId: String, isAuto: Boolean): String? {
+        val userId = sessionUserId() ?: return MY_ACTIVE_PREF_FAILED
+        return try {
+            deleteMyActivePref(userId, eventId)
+            if (isAuto) {
+                client.from("my_active_event_prefs").insert(
+                    MyActiveEventPrefWrite(userId = userId, eventId = eventId, kind = "hide"),
+                )
+            }
+            null
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            val raw = error.message.orEmpty()
+            if (raw.contains("בהזנה")) {
+                "לא ניתן להסיר אירוע בהזנה שאתם אחמ״ש שלו."
+            } else {
+                MY_ACTIVE_PREF_FAILED
+            }
+        }
+    }
+
+    private suspend fun deleteMyActivePref(userId: String, eventId: String) {
+        client.from("my_active_event_prefs").delete {
+            filter {
+                eq("user_id", userId)
+                eq("event_id", eventId)
+            }
+        }
     }
 
     suspend fun deleteUnitEvent(eventId: String): String? = try {
@@ -2204,6 +2276,13 @@ private fun EventMediaPlateOptionRow.toOption(): EventMediaPlateOption? {
 @Serializable
 private data class UnitEventDetailRespondersWrap(
     val responders: List<UnitEventDetailResponderRow> = emptyList(),
+)
+
+@Serializable
+private data class MyActiveEventPrefWrite(
+    @SerialName("user_id") val userId: String,
+    @SerialName("event_id") val eventId: String,
+    val kind: String,
 )
 
 @Serializable

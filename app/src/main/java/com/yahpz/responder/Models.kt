@@ -148,6 +148,7 @@ data class EventListItem(
     val status: EventStatus,
     @SerialName("is_cancelled") val isCancelled: Boolean = false,
     val origin: String? = null,
+    @SerialName("shift_lead_id") val shiftLeadId: String? = null,
     @SerialName("shift_id") val shiftId: String? = null,
     @SerialName("frozen_over_60km") val frozenOver60km: Boolean = false,
     @SerialName("frozen_suspicious_duplicate") val frozenSuspiciousDuplicate: Boolean = false,
@@ -356,6 +357,13 @@ data class EventMediaRow(
     @Serializable(with = OptionalPersonNameSerializer::class)
     val uploader: PersonName? = null,
     val plates: List<EventMediaPlateLink> = emptyList(),
+)
+
+@Serializable
+data class MyActiveEventPrefRow(
+    @SerialName("user_id") val userId: String,
+    @SerialName("event_id") val eventId: String,
+    val kind: String,
 )
 
 @Serializable

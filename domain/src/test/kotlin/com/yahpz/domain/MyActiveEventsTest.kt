@@ -12,24 +12,66 @@ class MyActiveEventsTest {
     }
 
     @Test
-    fun `cannot pin done or cancelled events`() {
-        assertTrue(canAddEventToMyActive(isCancelled = false, status = EventStatus.IN_PROGRESS))
+    fun `any event can be added to my active`() {
+        assertTrue(canAddEventToMyActive(isCancelled = false, status = EventStatus.DONE))
+        assertTrue(canAddEventToMyActive(isCancelled = true, status = EventStatus.IN_PROGRESS))
         assertTrue(canAddEventToMyActive(isCancelled = false, status = EventStatus.DRAFT))
-        assertTrue(canAddEventToMyActive(isCancelled = false, status = EventStatus.PARTIAL))
-        assertFalse(canAddEventToMyActive(isCancelled = false, status = EventStatus.DONE))
-        assertFalse(canAddEventToMyActive(isCancelled = true, status = EventStatus.IN_PROGRESS))
     }
 
     @Test
-    fun `visible active is server minus dismissed plus pins`() {
-        assertEquals(
-            listOf("a", "c"),
-            visibleMyActiveIds(
-                serverIds = listOf("a", "b"),
-                pinnedIds = setOf("c", "b"),
-                dismissedIds = setOf("b"),
+    fun `cannot remove own draft בהזנה event`() {
+        assertFalse(
+            canRemoveFromMyActive(
+                viewerId = "lead",
+                shiftLeadId = "lead",
+                status = EventStatus.DRAFT,
+                isCancelled = false,
             ),
         )
+        assertTrue(
+            canRemoveFromMyActive(
+                viewerId = "lead",
+                shiftLeadId = "lead",
+                status = EventStatus.IN_PROGRESS,
+                isCancelled = false,
+            ),
+        )
+        assertTrue(
+            canRemoveFromMyActive(
+                viewerId = "lead",
+                shiftLeadId = "other",
+                status = EventStatus.DRAFT,
+                isCancelled = false,
+            ),
+        )
+        assertTrue(
+            canRemoveFromMyActive(
+                viewerId = "lead",
+                shiftLeadId = "lead",
+                status = EventStatus.DRAFT,
+                isCancelled = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `visible active is locked then auto minus hides then pins`() {
+        assertEquals(
+            listOf("lock", "auto", "pin"),
+            visibleMyActiveIds(
+                lockedIds = listOf("lock"),
+                autoIds = listOf("lock", "auto", "hidden"),
+                pinnedIds = setOf("pin"),
+                hiddenIds = setOf("hidden", "lock"),
+            ),
+        )
+    }
+
+    @Test
+    fun `add and remove labels`() {
+        assertEquals("הוספה", MY_ACTIVE_ADD)
+        assertEquals("הסרה", MY_ACTIVE_REMOVE)
+        assertEquals("אירוע בהזנה — לא ניתן להסיר", MY_ACTIVE_REMOVE_LOCKED)
     }
 
     @Test

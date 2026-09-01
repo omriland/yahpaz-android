@@ -32,6 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,25 +43,25 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.yahpz.domain.EVENT_DELETE_ACTION
 import com.yahpz.domain.EVENT_DELETE_CONFIRM
 import com.yahpz.domain.EVENT_DELETE_TITLE
 import com.yahpz.domain.EVENT_EDIT_TITLE
+import com.yahpz.domain.MY_ACTIVE_ADD
 import com.yahpz.domain.MY_ACTIVE_DRAG_TO_ACTIVE
 import com.yahpz.domain.MY_ACTIVE_DRAG_TO_ADD
 import com.yahpz.domain.MY_ACTIVE_DROP_TO_ADD
 import com.yahpz.domain.MY_ACTIVE_EVENTS_EMPTY
-import com.yahpz.domain.MY_ACTIVE_EVENT_DISMISSED
-import com.yahpz.domain.MY_ACTIVE_EVENT_PINNED
 import com.yahpz.domain.MY_ACTIVE_EVENTS_TITLE
+import com.yahpz.domain.MY_ACTIVE_REMOVE
+import com.yahpz.domain.MY_ACTIVE_REMOVE_LOCKED
 import com.yahpz.domain.ParticipationStatus
 import com.yahpz.domain.StampTone
 import com.yahpz.domain.UNIT_EVENTS_LOAD_FAILED
-import com.yahpz.domain.canAddEventToMyActive
 import com.yahpz.domain.canDeleteUnassignedEvent
+import com.yahpz.domain.canRemoveFromMyActive
 import com.yahpz.domain.cancelledStamp
 import com.yahpz.domain.eventStamp
 import com.yahpz.domain.fieldsMatchQuery
@@ -82,20 +83,9 @@ private enum class ActiveDragSource { ACTIVE, CATALOG }
 @Composable
 fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
     var query by remember { mutableStateOf("") }
     var detail by remember { mutableStateOf<EventListItem?>(null) }
     var refreshing by remember { mutableStateOf(false) }
-    var dismissedIds by remember(ui.userId) {
-        mutableStateOf(
-            ui.userId?.let { ActiveEventDismissStore.dismissedIds(context, it) }.orEmpty(),
-        )
-    }
-    var pinnedIds by remember(ui.userId) {
-        mutableStateOf(
-            ui.userId?.let { ActiveEventPinStore.pinnedIds(context, it) }.orEmpty(),
-        )
-    }
     var draggingId by remember { mutableStateOf<String?>(null) }
     var dragSource by remember { mutableStateOf<ActiveDragSource?>(null) }
     var dragOffset by remember { mutableStateOf(Offset.Zero) }
@@ -113,43 +103,25 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
         if (ui.userId != null && ui.unitEvents.isEmpty()) app.reloadUnitEvents()
     }
 
-    LaunchedEffect(ui.userId, ui.unitEvents, ui.myActiveUnitEvents) {
-        val userId = ui.userId ?: return@LaunchedEffect
-        val known = (
-            ui.unitEvents.map { it.id } +
-                ui.myActiveUnitEvents.map { it.id } +
-                pinnedIds
-            ).toSet()
-        ActiveEventDismissStore.prune(context, userId, known)
-        ActiveEventPinStore.prune(context, userId, known)
-        dismissedIds = ActiveEventDismissStore.dismissedIds(context, userId)
-        pinnedIds = ActiveEventPinStore.pinnedIds(context, userId)
-    }
-
-    fun dismissFromActive(eventId: String) {
-        val userId = ui.userId ?: return
-        ActiveEventPinStore.unpin(context, userId, eventId)
-        ActiveEventDismissStore.dismiss(context, userId, eventId)
-        pinnedIds = ActiveEventPinStore.pinnedIds(context, userId)
-        dismissedIds = ActiveEventDismissStore.dismissedIds(context, userId)
-        app.showToast(MY_ACTIVE_EVENT_DISMISSED, StampTone.DONE)
-    }
-
-    fun addToActive(eventId: String) {
-        val userId = ui.userId ?: return
-        ActiveEventDismissStore.undismiss(context, userId, eventId)
-        ActiveEventPinStore.pin(context, userId, eventId)
-        dismissedIds = ActiveEventDismissStore.dismissedIds(context, userId)
-        pinnedIds = ActiveEventPinStore.pinnedIds(context, userId)
-        app.showToast(MY_ACTIVE_EVENT_PINNED, StampTone.DONE)
-    }
-
+    var pendingBoardIds by remember { mutableStateOf(setOf<String>()) }
     val trimmed = query.trim()
-    val catalogById = (ui.unitEvents + ui.myActiveUnitEvents).associateBy { it.id }
+    val pinnedIds = ui.myActiveEventPrefs.filter { it.kind == "pin" }.map { it.eventId }.toSet()
+    val hiddenIds = ui.myActiveEventPrefs.filter { it.kind == "hide" }.map { it.eventId }.toSet()
+    val viewerId = ui.userId
+    val lockedIds = ui.myActiveUnitEvents
+        .filter { event ->
+            viewerId != null &&
+                !canRemoveFromMyActive(viewerId, event.shiftLeadId, event.status, event.isCancelled)
+        }
+        .map { it.id }
+    val catalogById = (
+        ui.unitEvents + ui.myActiveUnitEvents + ui.myActivePinnedEvents
+        ).associateBy { it.id }
     val activeOrderedIds = visibleMyActiveIds(
-        serverIds = ui.myActiveUnitEvents.map { it.id },
+        lockedIds = lockedIds,
+        autoIds = ui.myActiveUnitEvents.map { it.id },
         pinnedIds = pinnedIds,
-        dismissedIds = dismissedIds,
+        hiddenIds = hiddenIds,
     )
     val activeEvents = activeOrderedIds.mapNotNull { catalogById[it] }
         .let { rows ->
@@ -157,15 +129,40 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
             else rows.filter { fieldsMatchQuery(it.unitSearchFields, trimmed) }
         }
     val activeVisibleIds = activeEvents.map { it.id }.toSet()
-    val dismissedActive = ui.myActiveUnitEvents.filter { it.id in dismissedIds }
+    val hiddenAuto = ui.myActiveUnitEvents.filter { it.id in hiddenIds && it.id !in lockedIds }
     val events = if (trimmed.isEmpty()) {
-        (ui.unitEvents.filter { it.id !in activeVisibleIds } + dismissedActive.filter { d ->
+        (ui.unitEvents.filter { it.id !in activeVisibleIds } + hiddenAuto.filter { d ->
             ui.unitEvents.none { it.id == d.id }
         })
     } else {
-        (ui.unitEvents + dismissedActive).distinctBy { it.id }
+        (ui.unitEvents + hiddenAuto).distinctBy { it.id }
             .filter { fieldsMatchQuery(it.unitSearchFields, trimmed) }
-    }.sortedByDescending { it.eventDate }
+    }.filter { it.id !in activeVisibleIds }
+        .sortedByDescending { it.eventDate }
+
+    fun dismissFromActive(eventId: String) {
+        if (eventId in pendingBoardIds) return
+        pendingBoardIds = pendingBoardIds + eventId
+        scope.launch {
+            try {
+                app.removeEventFromMyActiveBoard(eventId)
+            } finally {
+                pendingBoardIds = pendingBoardIds - eventId
+            }
+        }
+    }
+
+    fun addToActive(eventId: String) {
+        if (eventId in pendingBoardIds) return
+        pendingBoardIds = pendingBoardIds + eventId
+        scope.launch {
+            try {
+                app.addEventToMyActiveBoard(eventId)
+            } finally {
+                pendingBoardIds = pendingBoardIds - eventId
+            }
+        }
+    }
 
     PullToRefreshBox(
         isRefreshing = refreshing,
@@ -207,7 +204,10 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                 ui.unitEventsLoading && ui.unitEvents.isEmpty() && ui.myActiveUnitEvents.isEmpty() ->
                     LoadingBlock("טוען אירועים…")
                 else -> Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    modifier = Modifier.verticalScroll(
+                        rememberScrollState(),
+                        enabled = draggingId == null,
+                    ),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Column(
@@ -239,7 +239,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                                 dragSource == ActiveDragSource.CATALOG && overActiveDrop -> MY_ACTIVE_DROP_TO_ADD
                                 dragSource == ActiveDragSource.CATALOG -> MY_ACTIVE_DRAG_TO_ADD
                                 activeEvents.isEmpty() -> MY_ACTIVE_EVENTS_EMPTY
-                                else -> "לחיצה ארוכה וגרירה לרשימה המלאה להסרה"
+                                else -> "הסרה מהפעילים, או לחיצה ארוכה וגרירה לרשימה"
                             },
                             style = TypeScale.caption,
                             color = if (overActiveDrop) FieldTheme.accent else FieldTheme.textMuted,
@@ -248,10 +248,21 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                             Spacer(Modifier.height(48.dp))
                         }
                         activeEvents.forEach { event ->
+                            val canRemove = viewerId != null &&
+                                canRemoveFromMyActive(
+                                    viewerId,
+                                    event.shiftLeadId,
+                                    event.status,
+                                    event.isCancelled,
+                                )
                             DraggableActiveEventRow(
                                 event = event,
                                 dragging = draggingId == event.id,
                                 dragOffset = if (draggingId == event.id) dragOffset else Offset.Zero,
+                                boardActionTitle = MY_ACTIVE_REMOVE,
+                                boardActionEnabled = canRemove && event.id !in pendingBoardIds,
+                                boardActionHint = if (canRemove) null else MY_ACTIVE_REMOVE_LOCKED,
+                                onBoardAction = { dismissFromActive(event.id) },
                                 onOpen = { app.openEditEvent(event.id) },
                                 onDragStart = { startInRoot ->
                                     draggingId = event.id
@@ -320,38 +331,37 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                                 color = FieldTheme.textMuted,
                             )
                             events.forEach { event ->
-                                val canPin = canAddEventToMyActive(event.isCancelled, event.status)
-                                if (canPin) {
-                                    DraggableActiveEventRow(
-                                        event = event,
-                                        dragging = draggingId == event.id,
-                                        dragOffset = if (draggingId == event.id) dragOffset else Offset.Zero,
-                                        onOpen = { detail = event },
-                                        onDragStart = { startInRoot ->
-                                            draggingId = event.id
-                                            dragSource = ActiveDragSource.CATALOG
-                                            dragOffset = Offset.Zero
-                                            fingerInRoot = startInRoot
-                                        },
-                                        onDrag = { amount ->
-                                            dragOffset += amount
-                                            fingerInRoot += amount
-                                        },
-                                        onDragEnd = {
-                                            if (overActiveDrop) addToActive(event.id)
-                                            draggingId = null
-                                            dragSource = null
-                                            dragOffset = Offset.Zero
-                                        },
-                                        onDragCancel = {
-                                            draggingId = null
-                                            dragSource = null
-                                            dragOffset = Offset.Zero
-                                        },
-                                    )
-                                } else {
-                                    UnitEventRow(event) { detail = event }
-                                }
+                                DraggableActiveEventRow(
+                                    event = event,
+                                    dragging = draggingId == event.id,
+                                    dragOffset = if (draggingId == event.id) dragOffset else Offset.Zero,
+                                    boardActionTitle = MY_ACTIVE_ADD,
+                                    boardActionEnabled = event.id !in pendingBoardIds,
+                                    boardActionHint = null,
+                                    onBoardAction = { addToActive(event.id) },
+                                    onOpen = { detail = event },
+                                    onDragStart = { startInRoot ->
+                                        draggingId = event.id
+                                        dragSource = ActiveDragSource.CATALOG
+                                        dragOffset = Offset.Zero
+                                        fingerInRoot = startInRoot
+                                    },
+                                    onDrag = { amount ->
+                                        dragOffset += amount
+                                        fingerInRoot += amount
+                                    },
+                                    onDragEnd = {
+                                        if (overActiveDrop) addToActive(event.id)
+                                        draggingId = null
+                                        dragSource = null
+                                        dragOffset = Offset.Zero
+                                    },
+                                    onDragCancel = {
+                                        draggingId = null
+                                        dragSource = null
+                                        dragOffset = Offset.Zero
+                                    },
+                                )
                             }
                         } else if (dragSource == ActiveDragSource.ACTIVE) {
                             Text(
@@ -377,6 +387,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
     detail?.let { event ->
         val current = ui.unitEvents.firstOrNull { it.id == event.id }
             ?: ui.myActiveUnitEvents.firstOrNull { it.id == event.id }
+            ?: ui.myActivePinnedEvents.firstOrNull { it.id == event.id }
             ?: event
         val mine = ui.userId?.let { current.ownParticipation(it) }
         val stamp = if (current.isCancelled) cancelledStamp() else eventStamp(current.status)
@@ -512,6 +523,10 @@ private fun DraggableActiveEventRow(
     event: EventListItem,
     dragging: Boolean,
     dragOffset: Offset,
+    boardActionTitle: String,
+    boardActionEnabled: Boolean,
+    boardActionHint: String?,
+    onBoardAction: () -> Unit,
     onOpen: () -> Unit,
     onDragStart: (startInRoot: Offset) -> Unit,
     onDrag: (amount: Offset) -> Unit,
@@ -519,6 +534,10 @@ private fun DraggableActiveEventRow(
     onDragCancel: () -> Unit,
 ) {
     var originInRoot by remember { mutableStateOf(Offset.Zero) }
+    val latestOnDragStart by rememberUpdatedState(onDragStart)
+    val latestOnDrag by rememberUpdatedState(onDrag)
+    val latestOnDragEnd by rememberUpdatedState(onDragEnd)
+    val latestOnDragCancel by rememberUpdatedState(onDragCancel)
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -535,18 +554,26 @@ private fun DraggableActiveEventRow(
             .pointerInput(event.id) {
                 detectDragGesturesAfterLongPress(
                     onDragStart = { start ->
-                        onDragStart(originInRoot + start)
+                        latestOnDragStart(originInRoot + start)
                     },
                     onDrag = { change, amount ->
                         change.consume()
-                        onDrag(amount)
+                        latestOnDrag(amount)
                     },
-                    onDragEnd = onDragEnd,
-                    onDragCancel = onDragCancel,
+                    onDragEnd = { latestOnDragEnd() },
+                    onDragCancel = { latestOnDragCancel() },
                 )
             },
     ) {
-        UnitEventRow(event = event, enabled = !dragging, onOpen = onOpen)
+        UnitEventRow(
+            event = event,
+            enabled = !dragging,
+            boardActionTitle = boardActionTitle,
+            boardActionEnabled = boardActionEnabled && !dragging,
+            boardActionHint = boardActionHint,
+            onBoardAction = onBoardAction,
+            onOpen = onOpen,
+        )
     }
 }
 
@@ -659,6 +686,10 @@ private fun treatedPlatesLabel(plates: List<EventTreatedPlateRow>): String =
 private fun UnitEventRow(
     event: EventListItem,
     enabled: Boolean = true,
+    boardActionTitle: String? = null,
+    boardActionEnabled: Boolean = false,
+    boardActionHint: String? = null,
+    onBoardAction: (() -> Unit)? = null,
     onOpen: () -> Unit,
 ) {
     val stamp = if (event.isCancelled) cancelledStamp() else eventStamp(event.status)
@@ -700,7 +731,25 @@ private fun UnitEventRow(
                     Text("אחמ״ש: $lead", style = TypeScale.caption, color = FieldTheme.textMuted)
                 }
             }
-            StampChip(stamp)
+            Column(horizontalAlignment = Alignment.End) {
+                StampChip(stamp)
+                if (boardActionTitle != null && onBoardAction != null) {
+                    TextButton(
+                        onClick = onBoardAction,
+                        enabled = boardActionEnabled,
+                        modifier = Modifier.heightIn(min = 44.dp),
+                    ) {
+                        Text(
+                            boardActionTitle,
+                            style = TypeScale.bodyStrong,
+                            color = if (boardActionEnabled) FieldTheme.accent else FieldTheme.textMuted,
+                        )
+                    }
+                    boardActionHint?.let { hint ->
+                        Text(hint, style = TypeScale.caption, color = FieldTheme.textMuted)
+                    }
+                }
+            }
         }
         val pending = event.responders.count { it.status != ParticipationStatus.DONE }
         if (event.responders.isNotEmpty()) {

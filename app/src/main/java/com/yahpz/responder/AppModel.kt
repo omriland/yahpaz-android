@@ -16,6 +16,10 @@ import com.yahpz.domain.BroadcastCandidate
 import com.yahpz.domain.BroadcastDraft
 import com.yahpz.domain.BroadcastLogEntry
 import com.yahpz.domain.EVENT_DELETED
+import com.yahpz.domain.MY_ACTIVE_EVENT_DISMISSED
+import com.yahpz.domain.MY_ACTIVE_EVENT_PINNED
+import com.yahpz.domain.MY_ACTIVE_REMOVE_LOCKED
+import com.yahpz.domain.canRemoveFromMyActive
 import com.yahpz.domain.EVENT_DRAFT_PARTIAL_SAVED
 import com.yahpz.domain.EVENT_DRAFT_SAVED
 import com.yahpz.domain.FEEDBACK_SENT
@@ -98,6 +102,8 @@ data class AppUiState(
     val contactsLoading: Boolean = false,
     val unitEvents: List<EventListItem> = emptyList(),
     val myActiveUnitEvents: List<EventListItem> = emptyList(),
+    val myActiveEventPrefs: List<MyActiveEventPrefRow> = emptyList(),
+    val myActivePinnedEvents: List<EventListItem> = emptyList(),
     val unitEventsFailed: Boolean = false,
     val unitEventsLoading: Boolean = false,
     val unitShifts: List<ShiftListItem> = emptyList(),
@@ -474,8 +480,18 @@ class AppModel : ViewModel() {
         try {
             val events = YahpazAPI.fetchUnitEvents()
             val active = YahpazAPI.fetchMyActiveUnitEvents()
+            val prefs = YahpazAPI.fetchMyActiveEventPrefs()
+            val knownIds = (events.map { it.id } + active.map { it.id }).toSet()
+            val pinnedIds = prefs.filter { it.kind == "pin" }.map { it.eventId }.toSet()
+            val extra = YahpazAPI.fetchUnitEventsByIds((pinnedIds - knownIds).toList())
             _state.update {
-                it.copy(unitEvents = events, myActiveUnitEvents = active, unitEventsFailed = false)
+                it.copy(
+                    unitEvents = events,
+                    myActiveUnitEvents = active,
+                    myActiveEventPrefs = prefs,
+                    myActivePinnedEvents = extra,
+                    unitEventsFailed = false,
+                )
             }
         } catch (error: CancellationException) {
             throw error
@@ -725,6 +741,41 @@ class AppModel : ViewModel() {
         viewModelScope.launch { reloadEvents() }
         showToast(EVENT_DELETED, StampTone.DONE)
         return null
+    }
+
+    suspend fun addEventToMyActiveBoard(eventId: String) {
+        val autoIds = _state.value.myActiveUnitEvents.map { it.id }.toSet()
+        val error = YahpazAPI.addEventToMyActive(eventId, alreadyAuto = eventId in autoIds)
+        if (error != null) {
+            showToast(error, StampTone.PENDING)
+            return
+        }
+        reloadUnitEvents()
+        showToast(MY_ACTIVE_EVENT_PINNED, StampTone.DONE)
+    }
+
+    suspend fun removeEventFromMyActiveBoard(eventId: String) {
+        val snapshot = _state.value
+        val viewerId = snapshot.userId
+        val event = (
+            snapshot.unitEvents + snapshot.myActiveUnitEvents + snapshot.myActivePinnedEvents
+            ).firstOrNull { it.id == eventId }
+        if (
+            event != null &&
+            viewerId != null &&
+            !canRemoveFromMyActive(viewerId, event.shiftLeadId, event.status, event.isCancelled)
+        ) {
+            showToast(MY_ACTIVE_REMOVE_LOCKED, StampTone.PENDING)
+            return
+        }
+        val autoIds = snapshot.myActiveUnitEvents.map { it.id }.toSet()
+        val error = YahpazAPI.removeEventFromMyActive(eventId, isAuto = eventId in autoIds)
+        if (error != null) {
+            showToast(error, StampTone.PENDING)
+            return
+        }
+        reloadUnitEvents()
+        showToast(MY_ACTIVE_EVENT_DISMISSED, StampTone.DONE)
     }
 
     suspend fun createUnitShift(draft: ShiftDraft): String? {
