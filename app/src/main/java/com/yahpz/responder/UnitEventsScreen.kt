@@ -23,6 +23,8 @@ import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -72,6 +74,8 @@ import com.yahpz.domain.formatTime
 import com.yahpz.domain.mineFillCtaLabel
 import com.yahpz.domain.participationStamp
 import com.yahpz.domain.visibleMyActiveIds
+import com.yahpz.domain.SHOW_OTHERS_CREATED_EVENTS_LABEL
+import com.yahpz.domain.shouldFilterUnitEventsToOwnCreated
 import kotlinx.coroutines.launch
 
 private const val UNIT_EVENTS_CAPTION =
@@ -195,6 +199,33 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                 onValueChange = { query = it },
                 placeholder = "אירוע, כביש, מיקום או אחמ״ש",
             )
+            if (shouldFilterUnitEventsToOwnCreated(ui.roles)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 44.dp)
+                        .clickable { app.setShowOthersCreatedEvents(!ui.showOthersCreatedEvents) },
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        SHOW_OTHERS_CREATED_EVENTS_LABEL,
+                        style = TypeScale.body,
+                        color = FieldTheme.textPrimary,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Switch(
+                        checked = ui.showOthersCreatedEvents,
+                        onCheckedChange = { app.setShowOthersCreatedEvents(it) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = FieldTheme.textOnAccent,
+                            checkedTrackColor = FieldTheme.accent,
+                            uncheckedThumbColor = FieldTheme.raised,
+                            uncheckedTrackColor = FieldTheme.strong,
+                        ),
+                    )
+                }
+            }
             when {
                 ui.unitEventsFailed -> EmptyState(
                     title = UNIT_EVENTS_LOAD_FAILED,

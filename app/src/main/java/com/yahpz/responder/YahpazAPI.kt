@@ -485,8 +485,11 @@ object YahpazAPI {
     suspend fun fetchUnitContacts(): List<UnitContact> =
         client.postgrest.rpc("list_unit_contacts").decodeList<UnitContact>()
 
-    suspend fun fetchUnitEvents(limit: Int = 80): List<EventListItem> =
+    suspend fun fetchUnitEvents(limit: Int = 80, shiftLeadId: String? = null): List<EventListItem> =
         client.from("events").select(Columns.raw(eventListSelect)) {
+            if (shiftLeadId != null) {
+                filter { eq("shift_lead_id", shiftLeadId) }
+            }
             order("event_date", Order.DESCENDING)
             limit(limit.toLong())
         }.decodeList<EventListItem>()

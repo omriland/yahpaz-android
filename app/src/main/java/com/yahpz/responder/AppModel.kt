@@ -47,6 +47,7 @@ import com.yahpz.domain.setActiveToast
 import com.yahpz.domain.isResponder
 import com.yahpz.domain.israelToday
 import com.yahpz.domain.managesUnit
+import com.yahpz.domain.unitEventsCreatedByFilter
 import com.yahpz.domain.normalizeReturnDate
 import com.yahpz.domain.ProfileVehicle
 import com.yahpz.domain.StampTone
@@ -108,6 +109,7 @@ data class AppUiState(
     val myActivePinnedEvents: List<EventListItem> = emptyList(),
     val unitEventsFailed: Boolean = false,
     val unitEventsLoading: Boolean = false,
+    val showOthersCreatedEvents: Boolean = false,
     val unitShifts: List<ShiftListItem> = emptyList(),
     val unitShiftsFailed: Boolean = false,
     val unitShiftsLoading: Boolean = false,
@@ -483,12 +485,24 @@ class AppModel : ViewModel() {
         fetch = { YahpazAPI.fetchUnitContacts() },
     )
 
+    fun setShowOthersCreatedEvents(show: Boolean) {
+        if (_state.value.showOthersCreatedEvents == show) return
+        _state.update { it.copy(showOthersCreatedEvents = show, unitEvents = emptyList()) }
+        viewModelScope.launch { reloadUnitEvents() }
+    }
+
     suspend fun reloadUnitEvents() {
         if (_state.value.userId == null) return
-        val hadEvents = _state.value.unitEvents.isNotEmpty()
+        val snapshot = _state.value
+        val hadEvents = snapshot.unitEvents.isNotEmpty()
         _state.update { it.copy(unitEventsLoading = !hadEvents, unitEventsFailed = false) }
         try {
-            val events = YahpazAPI.fetchUnitEvents()
+            val ownOnlyId = unitEventsCreatedByFilter(
+                roles = snapshot.roles,
+                showOthersCreated = snapshot.showOthersCreatedEvents,
+                userId = snapshot.userId,
+            )
+            val events = YahpazAPI.fetchUnitEvents(shiftLeadId = ownOnlyId)
             val active = YahpazAPI.fetchMyActiveUnitEvents()
             val prefs = YahpazAPI.fetchMyActiveEventPrefs()
             val knownIds = (events.map { it.id } + active.map { it.id }).toSet()
@@ -943,6 +957,7 @@ class AppModel : ViewModel() {
                     vehiclesLoading = true,
                     vehiclesFailed = false,
                     fillEventId = null,
+                    showOthersCreatedEvents = false,
                 )
             }
             reloadEvents()
