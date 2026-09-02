@@ -31,6 +31,19 @@ class EventDraftTest {
     )
 
     @Test
+    fun `district lookups follow sort_order not name`() {
+        val shuffled = listOf(
+            LookupOption("c", "צפון", sortOrder = 2),
+            LookupOption("a", "דרום", sortOrder = 1),
+            LookupOption("b", "אבן", sortOrder = 3),
+        )
+        assertEquals(
+            listOf("a", "c", "b"),
+            sortLookupsBySortOrder(shuffled).map { it.id },
+        )
+    }
+
+    @Test
     fun `date, type and road are the minimum`() {
         assertTrue(validateEventDraft(draft()).isEmpty)
         assertEquals(EVENT_DRAFT_DATE_ERROR, validateEventDraft(draft(date = "")).eventDate)

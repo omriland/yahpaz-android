@@ -106,10 +106,14 @@ fun formatNumber(value: Double): String {
 fun formatNumber(value: Int): String = String.format(Locale.US, "%,d", value)
 
 /**
- * Road names sort as pure numbers first ascending, then names containing letters
- * (e.g. `עירוני (101)`) by Hebrew name.
+ * Road names sort with the urban road (`עירוני`, including legacy `עירוני (101)`)
+ * pinned first, then pure numbers ascending, then names containing letters
+ * by Hebrew name.
  */
 fun compareRoadNames(left: String, right: String): Int {
+    val leftUrban = left.contains("עירוני")
+    val rightUrban = right.contains("עירוני")
+    if (leftUrban != rightUrban) return if (leftUrban) -1 else 1
     val leftNumber = left.trim().toIntOrNull()
     val rightNumber = right.trim().toIntOrNull()
     if (leftNumber != null && rightNumber != null) return leftNumber - rightNumber

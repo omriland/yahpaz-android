@@ -5,7 +5,11 @@ data class LookupOption(
     val id: String,
     val name: String,
     val code: String? = null,
+    val sortOrder: Int = 0,
 )
+
+fun sortLookupsBySortOrder(items: List<LookupOption>): List<LookupOption> =
+    items.sortedWith(compareBy({ it.sortOrder }, { it.name }))
 
 /** An active profile that a shift lead may assign to an event or a shift. */
 data class AssignableProfile(

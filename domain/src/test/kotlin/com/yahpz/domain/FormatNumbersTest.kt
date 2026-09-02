@@ -23,13 +23,30 @@ class FormatNumbersTest {
     @Test
     fun `numeric road names sort before named ones`() {
         val roads = listOf(
+            LookupOption("b", "70"),
+            LookupOption("c", "6"),
+            LookupOption("d", "מנהרות"),
+        )
+        assertEquals(listOf("6", "70", "מנהרות"), sortByRoadName(roads) { it.name }.map { it.name })
+        assertTrue(compareRoadNames("6", "70") < 0)
+        assertTrue(compareRoadNames("מנהרות", "70") > 0)
+        assertEquals(0, compareRoadNames(" 6 ", "6"))
+    }
+
+    @Test
+    fun `urban road is pinned first`() {
+        val roads = listOf(
             LookupOption("a", "עירוני (101)"),
             LookupOption("b", "70"),
             LookupOption("c", "6"),
+            LookupOption("d", "עירוני"),
+            LookupOption("e", "מנהרות"),
         )
-        assertEquals(listOf("6", "70", "עירוני (101)"), sortByRoadName(roads) { it.name }.map { it.name })
-        assertTrue(compareRoadNames("6", "70") < 0)
-        assertTrue(compareRoadNames("עירוני", "70") > 0)
-        assertEquals(0, compareRoadNames(" 6 ", "6"))
+        assertEquals(
+            listOf("עירוני", "עירוני (101)", "6", "70", "מנהרות"),
+            sortByRoadName(roads) { it.name }.map { it.name },
+        )
+        assertTrue(compareRoadNames("עירוני", "70") < 0)
+        assertTrue(compareRoadNames("עירוני", "מנהרות") < 0)
     }
 }

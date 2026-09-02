@@ -1022,8 +1022,10 @@ data class LookupRow(
     val id: String,
     val name: String = "",
     val code: String? = null,
+    @SerialName("sort_order") val sortOrder: Int = 0,
 ) {
-    val asOption: LookupOption get() = LookupOption(id = id, name = name, code = code)
+    val asOption: LookupOption
+        get() = LookupOption(id = id, name = name, code = code, sortOrder = sortOrder)
 }
 
 @Serializable

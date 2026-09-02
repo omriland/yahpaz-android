@@ -156,6 +156,7 @@ import com.yahpz.domain.vehicleFieldsForSave
 import com.yahpz.domain.plateDigits
 import com.yahpz.domain.plateNumberForSave
 import com.yahpz.domain.sortByRoadName
+import com.yahpz.domain.sortLookupsBySortOrder
 import com.yahpz.domain.validateBroadcastDraft
 import com.yahpz.domain.validateEventDraft
 import com.yahpz.domain.validateEventDraftPartial
@@ -1218,7 +1219,7 @@ object YahpazAPI {
             }.decodeList<LookupRow>().map { it.asOption }
         val roads = lookup("roads", "id, name")
         return EventLookups(
-            districts = lookup("districts", "id, name, code"),
+            districts = sortLookupsBySortOrder(lookup("districts", "id, name, code, sort_order")),
             eventTypes = lookup("event_types", "id, name"),
             roads = sortByRoadName(roads) { it.name },
             vehicleKinds = lookup("vehicle_kinds", "id, name"),
@@ -1236,7 +1237,11 @@ object YahpazAPI {
             order("sort_order", Order.ASCENDING)
             order("name", Order.ASCENDING)
         }.decodeList<ClosedListItemRow>().map { it.asItem }
-        return if (key == ClosedListKey.ROADS) sortByRoadName(items) { it.name } else items
+        return when (key) {
+            ClosedListKey.ROADS -> sortByRoadName(items) { it.name }
+            ClosedListKey.DISTRICTS -> items.sortedWith(compareBy({ it.sortOrder }, { it.name }))
+            else -> items
+        }
     }
 
     suspend fun createClosedListItem(key: ClosedListKey, name: String): ClosedListMutationResult {
