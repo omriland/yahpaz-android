@@ -15,10 +15,12 @@ import com.yahpz.domain.ClosedListKey
 import com.yahpz.domain.ClosedListMutationResult
 import com.yahpz.domain.COCKPIT_WINDOW_MS
 import com.yahpz.domain.EVENT_DELETE_FAILED
+import com.yahpz.domain.EVENT_DELETE_OTHER_LEAD
 import com.yahpz.domain.MY_ACTIVE_PREF_FAILED
 import com.yahpz.domain.EVENT_DRAFT_DATE_ERROR
 import com.yahpz.domain.EVENT_DRAFT_FORM_ERROR
 import com.yahpz.domain.EVENT_DRAFT_SAVE_FAILED
+import com.yahpz.domain.EVENT_SELF_ASSIGN_ON_CREATE_ERROR
 import com.yahpz.domain.EventDraft
 import com.yahpz.domain.EventResponderDraft
 import com.yahpz.domain.EventStatus
@@ -78,6 +80,7 @@ import com.yahpz.domain.closedListMeta
 import com.yahpz.domain.closedListNameError
 import com.yahpz.domain.deriveEventStatusAfterParticipation
 import com.yahpz.domain.duplicateEventsReportRows
+import com.yahpz.domain.createIncludesSelfAssign
 import com.yahpz.domain.deriveEventStatusFromDraft
 import com.yahpz.domain.eventDraftStatus
 import com.yahpz.domain.eventsByResponderReportRows
@@ -109,12 +112,20 @@ import com.yahpz.domain.mergeMediaPlates
 import com.yahpz.domain.parseEventMediaTakenWhen
 import com.yahpz.domain.uniquePlateIds
 import com.yahpz.domain.EVENT_MEDIA_NETWORK
+import com.yahpz.domain.FEEDBACK_ATTACH_TYPE_ERROR
+import com.yahpz.domain.FEEDBACK_ATTACH_UNAVAILABLE
 import com.yahpz.domain.FEEDBACK_AUDIO_MAX_BYTES
 import com.yahpz.domain.FEEDBACK_AUDIO_SIZE_ERROR
 import com.yahpz.domain.FEEDBACK_NETWORK
+import com.yahpz.domain.FeedbackPickedMeta
+import com.yahpz.domain.addFeedbackAttachments
+import com.yahpz.domain.feedbackAttachmentStoragePath
 import com.yahpz.domain.feedbackStoragePath
 import com.yahpz.domain.feedbackSubmitError
+import com.yahpz.domain.isMissingFeedbackAttachmentsColumn
+import com.yahpz.domain.normalizeFeedbackAttachmentMime
 import com.yahpz.domain.normalizeFeedbackAudioMime
+import com.yahpz.domain.sanitizeFeedbackAttachmentName
 import com.yahpz.domain.EventMediaTakenWhen
 import com.yahpz.domain.needsBroadcastSubject
 import com.yahpz.domain.normalizeReturnDate
@@ -200,7 +211,7 @@ internal fun edgeErrorMessage(raw: String?, fallback: String): String {
 
 object YahpazAPI {
     private val eventListSelect = """
-        id, event_date, police_event_id, location, status, is_cancelled, origin, shift_lead_id, shift_id,
+        id, event_date, police_event_id, location, status, is_cancelled, bus_lane, origin, shift_lead_id, shift_id,
         frozen_over_60km, frozen_suspicious_duplicate,
         event_type:event_types(name),
         road:roads(name),
@@ -569,11 +580,17 @@ object YahpazAPI {
 
     suspend fun deleteUnitEvent(eventId: String): String? = try {
         client.from("events").delete { filter { eq("id", eventId) } }
-        val stillThere = client.from("events").select(Columns.raw("id")) {
+        val stillThere = client.from("events").select(Columns.raw("id, shift_lead_id")) {
             filter { eq("id", eventId) }
             limit(1)
-        }.decodeList<IdRow>()
-        if (stillThere.isNotEmpty()) EVENT_DELETE_FAILED else null
+        }.decodeList<EventOwnerRow>()
+        if (stillThere.isEmpty()) null
+        else {
+            val viewerId = sessionUserId()
+            val ownerId = stillThere.first().shiftLeadId
+            if (viewerId != null && ownerId != null && ownerId != viewerId) EVENT_DELETE_OTHER_LEAD
+            else EVENT_DELETE_FAILED
+        }
     } catch (error: CancellationException) {
         throw error
     } catch (_: Exception) {
@@ -1331,6 +1348,9 @@ object YahpazAPI {
             return errors.eventDate ?: errors.formMessage ?: EVENT_DRAFT_FORM_ERROR
         }
         val userId = sessionUserId() ?: return "יש להתחבר מחדש."
+        if (createIncludesSelfAssign(userId, draft.responders)) {
+            return EVENT_SELF_ASSIGN_ON_CREATE_ERROR
+        }
         val eventDate = normalizeReturnDate(draft.eventDate) ?: return EVENT_DRAFT_DATE_ERROR
         return try {
             val nextStatus = deriveEventStatusFromDraft(draft.responders)
@@ -1344,6 +1364,7 @@ object YahpazAPI {
                     roadId = draft.roadId.nilIfEmpty(),
                     location = draft.location.nilIfEmpty(),
                     notes = draft.notes.nilIfEmpty(),
+                    busLane = draft.busLane,
                     status = nextStatus.raw,
                     shiftLeadId = userId,
                     updatedAt = Instant.now().toString(),
@@ -1418,7 +1439,7 @@ object YahpazAPI {
             Columns.raw(
                 """
                 id, event_date, police_event_id, district_id, patrol_callsign, event_type_id, road_id,
-                location, notes, is_cancelled, status,
+                location, notes, is_cancelled, bus_lane, status,
                 responders:event_responders(
                   id, responder_id, started_at, ended_at, total_km, emergency_means, status,
                   treated:event_treated_vehicles(vehicle_kind_id, quantity)
@@ -1463,6 +1484,7 @@ object YahpazAPI {
                     location = draft.location.nilIfEmpty(),
                     notes = draft.notes.nilIfEmpty(),
                     isCancelled = draft.isCancelled,
+                    busLane = draft.busLane,
                     status = nextStatus.raw,
                     updatedAt = Instant.now().toString(),
                 ),
@@ -2194,15 +2216,22 @@ object YahpazAPI {
         pagePath: String?,
         audioBytes: ByteArray?,
         audioMime: String?,
+        attachments: List<FeedbackAttachmentUpload> = emptyList(),
     ): String? {
         val hasAudio = audioBytes != null && audioBytes.isNotEmpty()
         feedbackSubmitError(kind, body, hasAudio)?.let { return it }
         val userId = sessionUserId() ?: return FEEDBACK_NETWORK
         if (hasAudio && audioBytes!!.size > FEEDBACK_AUDIO_MAX_BYTES) return FEEDBACK_AUDIO_SIZE_ERROR
+        val incomingMeta = attachments.map {
+            FeedbackPickedMeta(name = it.name, mime = it.mime, size = it.bytes.size)
+        }
+        val added = addFeedbackAttachments(emptyList(), incomingMeta)
+        if (added.error != null) return added.error
         val id = UUID.randomUUID().toString()
         var storagePath: String? = null
         var mime: String? = null
         var size: Int? = null
+        val uploadedPaths = mutableListOf<String>()
         if (hasAudio) {
             mime = normalizeFeedbackAudioMime(audioMime ?: "audio/mp4")
             storagePath = feedbackStoragePath(userId, id, mime)
@@ -2212,7 +2241,40 @@ object YahpazAPI {
                     upsert = false
                     contentType = ContentType.parse(mime)
                 }
+                uploadedPaths += storagePath
             } catch (_: Exception) {
+                return FEEDBACK_NETWORK
+            }
+        }
+        val attachmentRows = mutableListOf<UserFeedbackAttachmentJson>()
+        for (file in attachments) {
+            val fileMime = normalizeFeedbackAttachmentMime(file.mime, file.name)
+            val attachmentId = UUID.randomUUID().toString()
+            val filePath = fileMime?.let {
+                feedbackAttachmentStoragePath(userId, id, attachmentId, it, file.name)
+            }
+            if (fileMime == null || filePath == null) {
+                uploadedPaths.forEach { path ->
+                    runCatching { client.storage.from("user-feedback").delete(path) }
+                }
+                return FEEDBACK_ATTACH_TYPE_ERROR
+            }
+            try {
+                client.storage.from("user-feedback").upload(filePath, file.bytes) {
+                    upsert = false
+                    contentType = ContentType.parse(fileMime)
+                }
+                uploadedPaths += filePath
+                attachmentRows += UserFeedbackAttachmentJson(
+                    path = filePath,
+                    mime = fileMime,
+                    size = file.bytes.size,
+                    name = sanitizeFeedbackAttachmentName(file.name),
+                )
+            } catch (_: Exception) {
+                uploadedPaths.forEach { path ->
+                    runCatching { client.storage.from("user-feedback").delete(path) }
+                }
                 return FEEDBACK_NETWORK
             }
         }
@@ -2230,10 +2292,16 @@ object YahpazAPI {
                     audioStoragePath = storagePath,
                     audioMimeType = mime,
                     audioByteSize = size,
+                    attachments = attachmentRows.takeIf { it.isNotEmpty() },
                 ),
             )
-        } catch (_: Exception) {
-            storagePath?.let { runCatching { client.storage.from("user-feedback").delete(it) } }
+        } catch (error: Exception) {
+            uploadedPaths.forEach { path ->
+                runCatching { client.storage.from("user-feedback").delete(path) }
+            }
+            if (attachmentRows.isNotEmpty() && isMissingFeedbackAttachmentsColumn(error.message)) {
+                return FEEDBACK_ATTACH_UNAVAILABLE
+            }
             return FEEDBACK_NETWORK
         }
         return null

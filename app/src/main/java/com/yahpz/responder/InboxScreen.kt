@@ -193,7 +193,7 @@ fun InboxScreen(app: AppModel, ui: AppUiState) {
                 LedgerRow("כביש", event.road?.name.orEmpty())
                 LedgerRow("מיקום", event.location.orEmpty())
                 LedgerRow("אחמ״ש", event.shiftLead?.display.orEmpty())
-                Text("כוננים (${event.responders.size})", style = TypeScale.section, color = FieldTheme.textPrimary)
+                Text("מתנדבים (${event.responders.size})", style = TypeScale.section, color = FieldTheme.textPrimary)
                 event.responders.forEach { row ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -201,7 +201,7 @@ fun InboxScreen(app: AppModel, ui: AppUiState) {
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            row.profile?.display ?: "כונן",
+                            row.profile?.display ?: "מתנדב",
                             style = TypeScale.body,
                             color = FieldTheme.textPrimary,
                         )
@@ -299,7 +299,7 @@ private fun LoggedList(
         TextField(
             value = query,
             onValueChange = onQuery,
-            placeholder = { Text("חיפוש לפי מספר אירוע, כביש, מיקום", style = TypeScale.body) },
+            placeholder = { Text("אירוע, כביש או מיקום", style = TypeScale.body) },
             textStyle = TypeScale.body,
             colors = TextFieldDefaults.colors(
                 focusedContainerColor = FieldTheme.raised,

@@ -33,7 +33,7 @@ class AdminUserDraftTest {
         assertEquals("הפעל OTP לניהול משתמשים", otpUsersPageActionLabel(enabled = false))
         assertEquals("מנהל", roleLabel(AppRole.ADMIN))
         assertEquals("אחמ״ש", roleLabel(AppRole.SHIFT_LEAD))
-        assertEquals("כונן", roleLabel(AppRole.RESPONDER))
+        assertEquals("מתנדב", roleLabel(AppRole.RESPONDER))
         assertEquals("שם מלא", FIELD_FULL_NAME)
         assertEquals("דוא״ל", FIELD_EMAIL)
         assertEquals("או״ק", FIELD_CALLSIGN)
@@ -231,7 +231,7 @@ class AdminUserDraftTest {
         assertTrue(adminUserMatchesQuery(row, "לא זמין", today = "2026-08-18"))
         assertFalse(adminUserMatchesQuery(row, "מנהלה", today = "2026-08-18"))
         assertEquals(
-            "חיפוש לפי שם, או״ק, דוא״ל, סטטוס או זמינות",
+            "שם, או״ק, דוא״ל או סטטוס",
             USERS_SEARCH_PLACEHOLDER,
         )
     }

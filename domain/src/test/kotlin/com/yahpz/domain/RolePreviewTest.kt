@@ -78,10 +78,10 @@ class RolePreviewTest {
 
     @Test
     fun previewLabelsMatchTheRestOfTheApp() {
-        assertEquals("כונן", rolePreviewLabel(AppRole.RESPONDER))
+        assertEquals("מתנדב", rolePreviewLabel(AppRole.RESPONDER))
         assertEquals("אחמ״ש", rolePreviewLabel(AppRole.SHIFT_LEAD))
         assertEquals("מנהל", rolePreviewLabel(AppRole.ADMIN))
-        assertEquals("צופה כתפקיד כונן", rolePreviewBannerText(AppRole.RESPONDER))
+        assertEquals("צופה כתפקיד מתנדב", rolePreviewBannerText(AppRole.RESPONDER))
         assertEquals("צופה כ־דנה · או״ק 112", impersonationBannerText("דנה", "112"))
     }
 }

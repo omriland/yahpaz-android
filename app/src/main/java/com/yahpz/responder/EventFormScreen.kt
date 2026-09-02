@@ -37,6 +37,8 @@ import com.yahpz.domain.AssignableProfile
 import com.yahpz.domain.EVENT_ASSIGN_CLOSE
 import com.yahpz.domain.EVENT_ASSIGN_EMPTY
 import com.yahpz.domain.EVENT_ASSIGN_OPEN
+import com.yahpz.domain.EVENT_SELF_ASSIGN_DISABLED_HINT
+import com.yahpz.domain.EVENT_SELF_ASSIGN_ON_CREATE_ERROR
 import com.yahpz.domain.EVENT_CANCELLED_LABEL
 import com.yahpz.domain.EVENT_EDIT_LOAD_FAILED
 import com.yahpz.domain.EVENT_EDIT_TITLE
@@ -52,7 +54,9 @@ import com.yahpz.domain.NO_VEHICLE_KM_PLACEHOLDER
 import com.yahpz.domain.applyDistrictRoadDefault
 import com.yahpz.domain.bumpTreatedVehicle
 import com.yahpz.domain.canToggleEventCancelled
+import com.yahpz.domain.createIncludesSelfAssign
 import com.yahpz.domain.eventDraftSummary
+import com.yahpz.domain.isSelfAssignDisabledOnCreate
 import com.yahpz.domain.israelToday
 import com.yahpz.domain.returnDateToInput
 import com.yahpz.domain.toggleEventResponder
@@ -84,6 +88,7 @@ fun EventFormScreen(
     var notes by remember { mutableStateOf("") }
     var responders by remember { mutableStateOf(emptyList<EventResponderDraft>()) }
     var isCancelled by remember { mutableStateOf(false) }
+    var busLane by remember { mutableStateOf(false) }
     var previousIsCancelled by remember { mutableStateOf(false) }
     var loaded by remember { mutableStateOf(!editing) }
     var loadFailed by remember { mutableStateOf(false) }
@@ -129,6 +134,7 @@ fun EventFormScreen(
             notes = draft.notes
             responders = draft.responders
             isCancelled = draft.isCancelled
+            busLane = draft.busLane
             previousIsCancelled = draft.isCancelled
             loaded = true
         } catch (_: Exception) {
@@ -148,10 +154,15 @@ fun EventFormScreen(
         notes = notes,
         responders = responders,
         isCancelled = isCancelled,
+        busLane = busLane,
     )
 
     fun persist(allowPartial: Boolean) {
         val current = draft()
+        if (!editing && createIncludesSelfAssign(ui.userId.orEmpty(), current.responders)) {
+            formError = EVENT_SELF_ASSIGN_ON_CREATE_ERROR
+            return
+        }
         val next = if (allowPartial) {
             validateEventDraftPartial(current)
         } else {
@@ -301,13 +312,17 @@ fun EventFormScreen(
                     profiles = ui.assignableProfiles,
                     selectedIds = responders.map { it.responderId },
                     onAdd = { id ->
-                        responders = toggleEventResponder(
-                            responders,
-                            id,
-                            hasVehicle = vehicleOwnerIds.contains(id),
-                        )
-                        detailResponderId = id
+                        if (!isSelfAssignDisabledOnCreate(!editing, ui.userId, id)) {
+                            responders = toggleEventResponder(
+                                responders,
+                                id,
+                                hasVehicle = vehicleOwnerIds.contains(id),
+                            )
+                            detailResponderId = id
+                        }
                     },
+                    disabledIds = if (!editing) setOfNotNull(ui.userId) else emptySet(),
+                    disabledHint = EVENT_SELF_ASSIGN_DISABLED_HINT,
                     onRemove = { id ->
                         responders = toggleEventResponder(responders, id)
                         if (detailResponderId == id) detailResponderId = null
@@ -316,7 +331,7 @@ fun EventFormScreen(
                     caption = eventDraftSummary(responders.size),
                     emptyHint = EVENT_ASSIGN_EMPTY,
                     emptyRoster = "אין משתמשים פעילים להקצאה.",
-                    emptyQuery = "לא נמצאו כוננים להקצאה",
+                    emptyQuery = "לא נמצאו מתנדבים להקצאה",
                 )
                 FormArea(
                     label = "הערות",
@@ -346,6 +361,8 @@ fun EventFormScreen(
                 profile = detailProfile,
                 responder = detailResponder,
                 vehicleKinds = ui.lookups.vehicleKinds,
+                busLane = busLane,
+                onToggleBusLane = { busLane = it },
                 onDismiss = { detailResponderId = null },
                 onChange = { updated ->
                     responders = updateEventResponder(responders, updated.responderId) { updated }
@@ -360,6 +377,8 @@ private fun EventResponderDetailSheet(
     profile: AssignableProfile,
     responder: EventResponderDraft,
     vehicleKinds: List<LookupOption>,
+    busLane: Boolean,
+    onToggleBusLane: (Boolean) -> Unit,
     onDismiss: () -> Unit,
     onChange: (EventResponderDraft) -> Unit,
 ) {
@@ -402,6 +421,11 @@ private fun EventResponderDetailSheet(
             label = "אמצעים",
             checked = responder.emergencyMeans,
             onCheckedChange = { onChange(responder.copy(emergencyMeans = it)) },
+        )
+        FormCheckbox(
+            label = "נת״צ",
+            checked = busLane,
+            onCheckedChange = onToggleBusLane,
         )
         Text("רכבים שטופלו", style = TypeScale.label, color = FieldTheme.textSecondary)
         if (vehicleKinds.isEmpty()) {

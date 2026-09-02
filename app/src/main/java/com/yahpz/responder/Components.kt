@@ -439,6 +439,7 @@ fun FormArea(
             value = value,
             onValueChange = onValueChange,
             enabled = enabled,
+            minLines = 3,
             textStyle = TypeScale.body,
             colors = TextFieldDefaults.colors(
                 focusedContainerColor = FieldTheme.raised,

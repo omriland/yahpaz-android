@@ -55,7 +55,7 @@ data class OpenDocRow(
         get() = listOfNotNull(
             responderName?.trim()?.takeIf { it.isNotEmpty() },
             responderCallsign?.trim()?.takeIf { it.isNotEmpty() },
-        ).joinToString(" · ").ifEmpty { "כונן" }
+        ).joinToString(" · ").ifEmpty { "מתנדב" }
 
     val leadDisplay: String
         get() = listOfNotNull(

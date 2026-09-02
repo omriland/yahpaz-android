@@ -162,7 +162,7 @@ fun FillScreen(eventId: String, app: AppModel) {
             ) {
                 Text("חזרה", color = FieldTheme.accent, style = TypeScale.body)
             }
-            Text("השלמת הפרטים שלי", style = TypeScale.section, color = FieldTheme.textPrimary)
+            Text("השלמת התיעוד שלי", style = TypeScale.section, color = FieldTheme.textPrimary)
         }
         when {
             loading -> Column(

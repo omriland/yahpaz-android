@@ -63,7 +63,7 @@ class ReportsTest {
     fun `person and place displays drop blanks`() {
         assertEquals("דנה כהן · 12", personDisplay("דנה כהן", "12"))
         assertEquals("דנה כהן", personDisplay("דנה כהן", "  "))
-        assertEquals("כונן", personDisplay(null, null))
+        assertEquals("מתנדב", personDisplay(null, null))
         assertEquals("", personDisplay(null, null, fallback = ""))
         assertEquals("כביש 6 · צומת", placeDisplay("כביש 6", "צומת"))
         assertEquals("", placeDisplay(null, ""))

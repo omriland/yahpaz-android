@@ -13,7 +13,7 @@ const val COCKPIT_WINDOW_MS = 2L * 60L * 60L * 1000L
 
 const val COCKPIT_TITLE = "הקוקפיט"
 const val COCKPIT_CAPTION = "אירועים פתוחים מהשעתיים האחרונות"
-const val COCKPIT_SEARCH_PLACEHOLDER = "חיפוש לפי מספר אירוע, כביש, מיקום או אחמ״ש"
+const val COCKPIT_SEARCH_PLACEHOLDER = "אירוע, כביש, מיקום או אחמ״ש"
 const val COCKPIT_LOAD_FAILED = "טעינת המצב המבצעי נכשלה"
 const val COCKPIT_LOAD_FAILED_CAPTION = "בדקו את החיבור ונסו שוב."
 const val COCKPIT_EMPTY = "אין אירועים פתוחים מהשעתיים האחרונות."
@@ -185,13 +185,13 @@ fun formatCockpitAge(iso: String, now: Instant = Instant.now()): String {
 }
 
 fun cockpitResponderSummary(responders: List<CockpitResponderInput>): String {
-    if (responders.isEmpty()) return "אין כוננים משובצים"
+    if (responders.isEmpty()) return "אין מתנדבים משובצים"
     val open = responders.count { it.endedAt.isNullOrBlank() }
     val doneFill = responders.count { it.status == ParticipationStatus.DONE }
     return when {
-        open == 0 -> "${responders.size} כוננים · הסתיים"
-        doneFill > 0 -> "${responders.size} כוננים · $open פעילים · $doneFill תיעוד הושלם"
-        else -> "${responders.size} כוננים · $open פעילים"
+        open == 0 -> "${responders.size} מתנדבים · הסתיים"
+        doneFill > 0 -> "${responders.size} מתנדבים · $open פעילים · $doneFill תיעוד הושלם"
+        else -> "${responders.size} מתנדבים · $open פעילים"
     }
 }
 

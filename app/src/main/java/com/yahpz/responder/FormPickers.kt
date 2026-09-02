@@ -294,11 +294,13 @@ fun CrewAssignmentSection(
     error: String? = null,
     removeLabel: String = EVENT_ASSIGN_REMOVE,
     onResponderClick: ((String) -> Unit)? = null,
+    disabledIds: Set<String> = emptySet(),
+    disabledHint: String? = null,
 ) {
     var open by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     val selectedPeople = selectedIds.map { id ->
-        profiles.firstOrNull { it.id == id } ?: AssignableProfile(id, "כונן", "—")
+        profiles.firstOrNull { it.id == id } ?: AssignableProfile(id, "מתנדב", "—")
     }
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -401,11 +403,12 @@ fun CrewAssignmentSection(
                         )
                     }
                     visible.forEach { profile ->
+                        val disabled = profile.id in disabledIds
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .heightIn(min = 44.dp)
-                                .clickable { onAdd(profile.id) }
+                                .clickable(enabled = !disabled) { onAdd(profile.id) }
                                 .padding(vertical = 10.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
@@ -413,10 +416,14 @@ fun CrewAssignmentSection(
                             Text(
                                 profile.display,
                                 style = TypeScale.body,
-                                color = FieldTheme.textPrimary,
+                                color = if (disabled) FieldTheme.textMuted else FieldTheme.textPrimary,
                                 modifier = Modifier.weight(1f),
                             )
-                            Text("הוספה", style = TypeScale.caption, color = FieldTheme.accent)
+                            Text(
+                                if (disabled) disabledHint ?: "לא ניתן לשבץ" else "הוספה",
+                                style = TypeScale.caption,
+                                color = if (disabled) FieldTheme.textMuted else FieldTheme.accent,
+                            )
                         }
                     }
                 }

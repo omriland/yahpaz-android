@@ -32,7 +32,7 @@ private val ROLE_LABELS = mapOf(
     AppRole.SUPER_ADMIN to "מנהל־על",
     AppRole.ADMIN to "מנהל",
     AppRole.SHIFT_LEAD to "אחמ״ש",
-    AppRole.RESPONDER to "כונן",
+    AppRole.RESPONDER to "מתנדב",
 )
 
 /** Rank order matches the web: later entries win. */

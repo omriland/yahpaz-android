@@ -142,11 +142,11 @@ fun ShiftFormScreen(
             )
             editing && !loaded -> LoadingBlock("טוען משמרת…")
             ui.lookupsFailed && ui.assignableProfiles.isEmpty() -> EmptyState(
-                title = "טעינת רשימת הכוננים נכשלה. בדקו את החיבור ונסו שוב.",
+                title = "טעינת רשימת המתנדבים נכשלה. בדקו את החיבור ונסו שוב.",
                 actionTitle = "רענון",
                 onAction = { scope.launch { app.reloadLookups() } },
             )
-            ui.assignableProfiles.isEmpty() -> LoadingBlock("טוען כוננים…")
+            ui.assignableProfiles.isEmpty() -> LoadingBlock("טוען מתנדבים…")
             else -> {
                 ReturnDateField(
                     label = "תאריך",
@@ -183,7 +183,7 @@ fun ShiftFormScreen(
                         selectedId = personalVehicleId.orEmpty(),
                         onSelect = { personalVehicleId = it.ifEmpty { null } },
                         placeholder = if (responderIds.isEmpty()) {
-                            "יש לשבץ כוננים תחילה"
+                            "יש לשבץ מתנדבים תחילה"
                         } else {
                             "בחירת לוחית"
                         },
@@ -201,7 +201,7 @@ fun ShiftFormScreen(
                     caption = shiftCrewSummary(responderIds.size),
                     emptyHint = SHIFT_ASSIGN_EMPTY,
                     emptyRoster = "אין משתמשים פעילים לשיבוץ.",
-                    emptyQuery = "לא נמצאו כוננים לשיבוץ",
+                    emptyQuery = "לא נמצאו מתנדבים לשיבוץ",
                     error = errors.crew,
                     removeLabel = EVENT_ASSIGN_REMOVE,
                 )

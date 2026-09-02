@@ -210,8 +210,16 @@ class AppModel : ViewModel() {
         pagePath: String?,
         audioBytes: ByteArray?,
         audioMime: String?,
+        attachments: List<FeedbackAttachmentUpload> = emptyList(),
     ): String? {
-        val error = YahpazAPI.submitUserFeedback(kind, body, pagePath, audioBytes, audioMime)
+        val error = YahpazAPI.submitUserFeedback(
+            kind,
+            body,
+            pagePath,
+            audioBytes,
+            audioMime,
+            attachments,
+        )
         if (error == null) showToast(FEEDBACK_SENT, StampTone.DONE)
         return error
     }

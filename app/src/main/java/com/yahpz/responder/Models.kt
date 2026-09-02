@@ -147,6 +147,7 @@ data class EventListItem(
     @Serializable(with = EventStatusSerializer::class)
     val status: EventStatus,
     @SerialName("is_cancelled") val isCancelled: Boolean = false,
+    @SerialName("bus_lane") val busLane: Boolean = false,
     val origin: String? = null,
     @SerialName("shift_lead_id") val shiftLeadId: String? = null,
     @SerialName("shift_id") val shiftId: String? = null,
@@ -367,6 +368,20 @@ data class MyActiveEventPrefRow(
 )
 
 @Serializable
+data class UserFeedbackAttachmentJson(
+    val path: String,
+    val mime: String,
+    val size: Int,
+    val name: String,
+)
+
+data class FeedbackAttachmentUpload(
+    val name: String,
+    val mime: String,
+    val bytes: ByteArray,
+)
+
+@Serializable
 data class UserFeedbackInsert(
     val id: String,
     @SerialName("user_id") val userId: String,
@@ -377,6 +392,7 @@ data class UserFeedbackInsert(
     @SerialName("audio_storage_path") val audioStoragePath: String? = null,
     @SerialName("audio_mime_type") val audioMimeType: String? = null,
     @SerialName("audio_byte_size") val audioByteSize: Int? = null,
+    val attachments: List<UserFeedbackAttachmentJson>? = null,
 )
 
 @Serializable
@@ -1174,6 +1190,7 @@ data class EventInsert(
     val location: String? = null,
     val notes: String? = null,
     @SerialName("is_cancelled") val isCancelled: Boolean = false,
+    @SerialName("bus_lane") val busLane: Boolean = false,
     val status: String,
     @SerialName("shift_lead_id") val shiftLeadId: String,
     @SerialName("updated_at") val updatedAt: String,
@@ -1230,6 +1247,7 @@ data class EventFormDetail(
     val location: String? = null,
     val notes: String? = null,
     @SerialName("is_cancelled") val isCancelled: Boolean = false,
+    @SerialName("bus_lane") val busLane: Boolean = false,
     @Serializable(with = EventStatusSerializer::class)
     val status: EventStatus = EventStatus.DRAFT,
     val responders: List<EventFormResponderRow> = emptyList(),
@@ -1245,6 +1263,7 @@ data class EventFormDetail(
         notes = notes.orEmpty(),
         responders = responders.map { it.toDraft(vehicleOwnerIds.contains(it.responderId)) },
         isCancelled = isCancelled,
+        busLane = busLane,
     )
 }
 
@@ -1286,6 +1305,7 @@ data class EventUpdateWrite(
     val location: String? = null,
     val notes: String? = null,
     @SerialName("is_cancelled") val isCancelled: Boolean = false,
+    @SerialName("bus_lane") val busLane: Boolean = false,
     val status: String,
     @SerialName("updated_at") val updatedAt: String,
 )
@@ -1482,6 +1502,12 @@ data class ShiftListItem(
 
 @Serializable
 data class IdRow(val id: String)
+
+@Serializable
+data class EventOwnerRow(
+    val id: String,
+    @SerialName("shift_lead_id") val shiftLeadId: String? = null,
+)
 
 @Serializable
 data class TrackLoadResponse(

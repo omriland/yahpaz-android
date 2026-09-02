@@ -47,7 +47,7 @@ class RolesTest {
         assertEquals("מנהל", highestRoleLabel(listOf("responder", "admin")))
         assertEquals("מנהל־על", highestRoleLabel(listOf("admin", "super_admin")))
         assertNull(highestRoleLabel(emptyList()))
-        assertEquals(listOf("אחמ״ש", "כונן"), roleLabels(listOf("responder", "shift_lead")))
+        assertEquals(listOf("אחמ״ש", "מתנדב"), roleLabels(listOf("responder", "shift_lead")))
     }
 
     @Test

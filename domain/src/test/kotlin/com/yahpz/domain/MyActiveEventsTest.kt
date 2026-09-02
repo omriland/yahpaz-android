@@ -111,9 +111,56 @@ class MyActiveEventsTest {
     }
 
     @Test
-    fun `shift-lead can delete only when no responders are assigned`() {
-        assertTrue(canDeleteUnassignedEvent(canManageUnit = true, responderCount = 0))
-        assertFalse(canDeleteUnassignedEvent(canManageUnit = true, responderCount = 1))
-        assertFalse(canDeleteUnassignedEvent(canManageUnit = false, responderCount = 0))
+    fun `shift-lead can delete only their own unassigned event`() {
+        assertTrue(
+            canDeleteUnassignedEvent(
+                canManageUnit = true,
+                responderCount = 0,
+                viewerIsAdmin = false,
+                viewerId = "lead-a",
+                shiftLeadId = "lead-a",
+            ),
+        )
+        assertFalse(
+            canDeleteUnassignedEvent(
+                canManageUnit = true,
+                responderCount = 0,
+                viewerIsAdmin = false,
+                viewerId = "lead-a",
+                shiftLeadId = "lead-b",
+            ),
+        )
+        assertFalse(
+            canDeleteUnassignedEvent(
+                canManageUnit = true,
+                responderCount = 1,
+                viewerIsAdmin = false,
+                viewerId = "lead-a",
+                shiftLeadId = "lead-a",
+            ),
+        )
+        assertFalse(
+            canDeleteUnassignedEvent(
+                canManageUnit = false,
+                responderCount = 0,
+                viewerIsAdmin = false,
+                viewerId = "lead-a",
+                shiftLeadId = "lead-a",
+            ),
+        )
+    }
+
+    @Test
+    fun `admin can delete another lead's unassigned event`() {
+        assertTrue(
+            canDeleteUnassignedEvent(
+                canManageUnit = true,
+                responderCount = 0,
+                viewerIsAdmin = true,
+                viewerId = "admin",
+                shiftLeadId = "lead-b",
+            ),
+        )
+        assertEquals(EVENT_DELETE_OTHER_LEAD, "אין הרשאה למחוק אירוע שנוצר על ידי אחמ״ש אחר.")
     }
 }

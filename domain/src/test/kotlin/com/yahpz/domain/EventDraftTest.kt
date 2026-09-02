@@ -65,9 +65,9 @@ class EventDraftTest {
     fun `crewless events save as drafts`() {
         assertEquals(EventStatus.DRAFT, eventDraftStatus(0))
         assertEquals(EventStatus.IN_PROGRESS, eventDraftStatus(1))
-        assertEquals("טרם הוקצו כוננים · אירוע בהזנה", eventDraftSummary(0))
-        assertEquals("כונן אחד משובץ", eventDraftSummary(1))
-        assertEquals("3 כוננים משובצים", eventDraftSummary(3))
+        assertEquals("טרם הוקצו מתנדבים · אירוע בהזנה", eventDraftSummary(0))
+        assertEquals("מתנדב אחד משובץ", eventDraftSummary(1))
+        assertEquals("3 מתנדבים משובצים", eventDraftSummary(3))
     }
 
     @Test
@@ -100,6 +100,18 @@ class EventDraftTest {
         crew = toggleEventResponder(crew, "d")
         assertEquals(listOf("a", "b", "c", "d"), crew.map { it.responderId })
         assertEquals(listOf("a", "c", "d"), toggleEventResponder(crew, "b").map { it.responderId })
+    }
+
+    @Test
+    fun `create blocks the lead from assigning themselves`() {
+        val crew = listOf(EventResponderDraft("lead"), EventResponderDraft("r2"))
+        assertTrue(createIncludesSelfAssign("lead", crew))
+        assertFalse(createIncludesSelfAssign("lead", listOf(EventResponderDraft("r2"))))
+        assertTrue(isSelfAssignDisabledOnCreate(true, "me", "me"))
+        assertFalse(isSelfAssignDisabledOnCreate(false, "me", "me"))
+        assertFalse(isSelfAssignDisabledOnCreate(true, "me", "other"))
+        assertEquals("לא ניתן לשבץ את יוצר האירוע כמתנדב.", EVENT_SELF_ASSIGN_ON_CREATE_ERROR)
+        assertEquals("לא ניתן לשבץ", EVENT_SELF_ASSIGN_DISABLED_HINT)
     }
 
     @Test
@@ -139,7 +151,7 @@ class EventDraftTest {
         assertEquals("האירועים הפעילים שלי", MY_ACTIVE_EVENTS_TITLE)
         assertEquals("מתנדבים", EVENT_ASSIGN_OPEN)
         assertEquals("סגירת הקצאה", EVENT_ASSIGN_CLOSE)
-        assertEquals("הסרת כונן", EVENT_ASSIGN_REMOVE)
+        assertEquals("הסרת מתנדב", EVENT_ASSIGN_REMOVE)
         assertEquals("או״ק ניידת", EVENT_PATROL_CALLSIGN_LABEL)
         assertEquals("טעינת האירועים נכשלה. בדקו את החיבור ונסו שוב.", UNIT_EVENTS_LOAD_FAILED)
     }

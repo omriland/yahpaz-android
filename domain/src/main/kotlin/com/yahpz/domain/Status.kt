@@ -43,13 +43,13 @@ fun participationStamp(status: ParticipationStatus, isViewer: Boolean): StampDes
     if (status == ParticipationStatus.IN_PROGRESS && isViewer) {
         return StampDescriptor("טיוטה נשמרה", StampTone.DRAFT)
     }
-    return StampDescriptor(if (isViewer) "ממתין למילוי פרטים" else "ממתין לכונן", StampTone.PENDING)
+    return StampDescriptor(if (isViewer) "ממתין לתיעוד" else "ממתין למתנדב", StampTone.PENDING)
 }
 
 fun mineFillCtaLabel(status: ParticipationStatus): String? = when (status) {
     ParticipationStatus.DONE -> null
-    ParticipationStatus.IN_PROGRESS -> "המשך מילוי הפרטים"
-    ParticipationStatus.PENDING -> "השלמת הפרטים שלי"
+    ParticipationStatus.IN_PROGRESS -> "המשך התיעוד"
+    ParticipationStatus.PENDING -> "השלמת התיעוד שלי"
 }
 
 fun deriveEventStatusAfterParticipation(statuses: List<ParticipationStatus>): EventStatus {

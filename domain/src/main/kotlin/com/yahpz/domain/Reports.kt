@@ -61,7 +61,7 @@ val REPORT_SPECS: List<ReportSpec> = listOf(
         title = OPEN_DOC_TITLE,
         includes = "אירועים שהוזנו על ידי אחמ״ש ומתנדב טרם השלים את התיעוד שלהם",
         audience = ReportAudience.MANAGES_UNIT,
-        searchPlaceholder = "חיפוש לפי מתנדב, מספר אירוע או מיקום",
+        searchPlaceholder = "מתנדב, אירוע או מיקום",
         emptyTitle = OPEN_DOC_EMPTY_TITLE,
     ),
     ReportSpec(
@@ -69,7 +69,7 @@ val REPORT_SPECS: List<ReportSpec> = listOf(
         title = "אירועים לפי מתנדב",
         includes = "כל האירועים של כל מתנדב בטווח התאריכים שנבחר",
         audience = ReportAudience.MANAGES_UNIT,
-        searchPlaceholder = "חיפוש לפי מתנדב, מספר אירוע או מיקום",
+        searchPlaceholder = "מתנדב, אירוע או מיקום",
         emptyTitle = "אין אירועים בתקופה זו",
     ),
     ReportSpec(
@@ -77,7 +77,7 @@ val REPORT_SPECS: List<ReportSpec> = listOf(
         title = "חריגי ק״מ",
         includes = "אירועים עם $KM_EXCEPTION_THRESHOLD ק״מ ומעלה",
         audience = ReportAudience.MANAGES_UNIT,
-        searchPlaceholder = "חיפוש לפי כונן, מספר אירוע או מיקום",
+        searchPlaceholder = "מתנדב, אירוע או מיקום",
         emptyTitle = "אין חריגי ק״מ בתקופה זו",
     ),
     ReportSpec(
@@ -85,15 +85,15 @@ val REPORT_SPECS: List<ReportSpec> = listOf(
         title = "אירועים עם פערי דיווח ק״מ",
         includes = "אירועים בהם יש פער בין דיווח האחמ״ש לבין הק״מ שהזין המתנדב",
         audience = ReportAudience.ADMIN,
-        searchPlaceholder = "חיפוש לפי מתנדב, מספר אירוע או מיקום",
+        searchPlaceholder = "מתנדב, אירוע או מיקום",
         emptyTitle = "אין פערי דיווח בתקופה זו",
     ),
     ReportSpec(
         id = ReportKindId.DUPLICATE_EVENTS,
         title = "אירועים כפולים",
-        includes = "אירועים עם אותו הכונן, באותו מקום בחלון זמן של חצי שעה",
+        includes = "אירועים עם אותו המתנדב, באותו מקום בחלון זמן של חצי שעה",
         audience = ReportAudience.MANAGES_UNIT,
-        searchPlaceholder = "חיפוש לפי כונן, מספר אירוע או מיקום",
+        searchPlaceholder = "מתנדב, אירוע או מיקום",
         emptyTitle = "לא נמצאו אירועים כפולים",
         hasDateRange = false,
     ),
@@ -144,7 +144,7 @@ fun reportRowSummary(count: Int): String = when (count) {
 }
 
 /** `name · callsign`, dropping blanks, with a Hebrew fallback. */
-fun personDisplay(name: String?, callsign: String?, fallback: String = "כונן"): String =
+fun personDisplay(name: String?, callsign: String?, fallback: String = "מתנדב"): String =
     listOfNotNull(
         name?.trim()?.takeIf { it.isNotEmpty() },
         callsign?.trim()?.takeIf { it.isNotEmpty() },

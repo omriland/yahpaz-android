@@ -137,8 +137,15 @@ fun RootScreen(app: AppModel, ui: AppUiState) {
                 app.hideFeedbackUntilRefresh()
                 feedbackOpen = false
             },
-            onSubmit = { kind, body, audio, mime ->
-                app.submitUserFeedback(kind, body, feedbackPagePathForUi(ui), audio, mime)
+            onSubmit = { kind, body, audio, mime, attachments ->
+                app.submitUserFeedback(
+                    kind,
+                    body,
+                    feedbackPagePathForUi(ui),
+                    audio,
+                    mime,
+                    attachments,
+                )
             },
         )
     }

@@ -87,7 +87,7 @@ fun UnitShiftsScreen(app: AppModel, ui: AppUiState) {
             SearchField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = "חיפוש לפי תאריך, סוג משמרת או אחמ״ש",
+                placeholder = "תאריך, משמרת או אחמ״ש",
             )
             when {
                 ui.unitShiftsFailed -> EmptyState(
@@ -133,7 +133,7 @@ fun UnitShiftsScreen(app: AppModel, ui: AppUiState) {
                     LedgerRow("לוחית", formatPlate(shift.personalVehicle?.plateNumber.orEmpty()))
                 }
                 LedgerRow("אחמ״ש", shift.shiftLead?.display.orEmpty())
-                LedgerRow("כוננים", "${shift.responders.size}")
+                LedgerRow("מתנדבים", "${shift.responders.size}")
                 LedgerRow("אירועים", "${shift.bornEvents.size}")
                 if (shift.bornEvents.isNotEmpty()) {
                     Spacer(Modifier.height(8.dp))
@@ -210,7 +210,7 @@ private fun UnitShiftRow(shift: ShiftListItem, onOpen: () -> Unit) {
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            "${shift.responders.size} כוננים · ${shift.bornEvents.size} אירועים",
+            "${shift.responders.size} מתנדבים · ${shift.bornEvents.size} אירועים",
             style = TypeScale.caption,
             color = FieldTheme.textSecondary,
         )

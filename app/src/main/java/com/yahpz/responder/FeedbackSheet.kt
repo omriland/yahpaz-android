@@ -1,10 +1,14 @@
 package com.yahpz.responder
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.media.MediaRecorder
+import android.net.Uri
 import android.os.Build
+import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -17,6 +21,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Mic
@@ -44,6 +49,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.yahpz.domain.FEEDBACK_ATTACH_ADD
+import com.yahpz.domain.FEEDBACK_ATTACH_COUNT_ERROR
+import com.yahpz.domain.FEEDBACK_ATTACH_HINT
+import com.yahpz.domain.FEEDBACK_ATTACH_MAX
+import com.yahpz.domain.FEEDBACK_ATTACH_TYPE_ERROR
 import com.yahpz.domain.FEEDBACK_BODY_MAX
 import com.yahpz.domain.FEEDBACK_HIDE_UNTIL_REFRESH
 import com.yahpz.domain.FEEDBACK_KIND_BUG
@@ -51,11 +61,17 @@ import com.yahpz.domain.FEEDBACK_KIND_SUGGESTION
 import com.yahpz.domain.FEEDBACK_LABEL
 import com.yahpz.domain.FEEDBACK_MIC_ERROR
 import com.yahpz.domain.FEEDBACK_RECORD_MAX_SECONDS
+import com.yahpz.domain.FeedbackPickedMeta
+import com.yahpz.domain.addFeedbackAttachments
+import com.yahpz.domain.feedbackAttachmentError
+import com.yahpz.domain.feedbackAttachmentKind
 import com.yahpz.domain.feedbackSubmitError
 import com.yahpz.domain.formatRecordSeconds
 import com.yahpz.domain.shouldAutoStopRecording
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 @Composable
@@ -107,7 +123,13 @@ fun FeedbackSheet(
     pagePath: String,
     onDismiss: () -> Unit,
     onHideUntilRefresh: () -> Unit,
-    onSubmit: suspend (kind: String, body: String, audioBytes: ByteArray?, mime: String?) -> String?,
+    onSubmit: suspend (
+        kind: String,
+        body: String,
+        audioBytes: ByteArray?,
+        mime: String?,
+        attachments: List<FeedbackAttachmentUpload>,
+    ) -> String?,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -120,6 +142,7 @@ fun FeedbackSheet(
     var elapsed by remember { mutableIntStateOf(0) }
     var audioFile by remember { mutableStateOf<File?>(null) }
     var recorder by remember { mutableStateOf<MediaRecorder?>(null) }
+    var files by remember { mutableStateOf<List<FeedbackPickedUi>>(emptyList()) }
 
     fun releaseRecorder() {
         recorder?.runCatching {
@@ -176,6 +199,37 @@ fun FeedbackSheet(
         }
     }
 
+    val picker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(maxItems = FEEDBACK_ATTACH_MAX),
+    ) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        val next = files.toMutableList()
+        var nextError: String? = null
+        for (uri in uris) {
+            if (next.size >= FEEDBACK_ATTACH_MAX) {
+                nextError = FEEDBACK_ATTACH_COUNT_ERROR
+                break
+            }
+            val picked = readFeedbackPicked(context, uri)
+            val fileError = if (picked.size <= 0) {
+                if (feedbackAttachmentKind(picked.mime, picked.name) == null) {
+                    FEEDBACK_ATTACH_TYPE_ERROR
+                } else {
+                    null
+                }
+            } else {
+                feedbackAttachmentError(FeedbackPickedMeta(picked.name, picked.mime, picked.size))
+            }
+            if (fileError != null) {
+                nextError = fileError
+                continue
+            }
+            next += picked
+        }
+        files = next
+        error = nextError
+    }
+
     val permission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted ->
@@ -230,7 +284,7 @@ fun FeedbackSheet(
             }
             Text("הערה", style = TypeScale.label, color = FieldTheme.textMuted)
             Text(
-                "אפשר לכתוב, להקליט, או את שניהם.",
+                "אפשר לכתוב, להקליט, לצרף קבצים, או לשלב.",
                 style = TypeScale.caption,
                 color = FieldTheme.textMuted,
             )
@@ -306,6 +360,46 @@ fun FeedbackSheet(
                     Text("הקלטת הודעה", color = FieldTheme.accent)
                 }
             }
+            Text("קבצים", style = TypeScale.label, color = FieldTheme.textMuted)
+            Text(FEEDBACK_ATTACH_HINT, style = TypeScale.caption, color = FieldTheme.textMuted)
+            files.forEachIndexed { index, file ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        file.name,
+                        style = TypeScale.body,
+                        color = FieldTheme.textPrimary,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(
+                        onClick = {
+                            files = files.filterIndexed { itemIndex, _ -> itemIndex != index }
+                            error = null
+                        },
+                        enabled = !busy && !recording,
+                        modifier = Modifier.heightIn(min = 44.dp),
+                    ) {
+                        Icon(Icons.Outlined.Delete, contentDescription = "הסרת קובץ", tint = FieldTheme.alert)
+                    }
+                }
+            }
+            if (files.size < FEEDBACK_ATTACH_MAX) {
+                TextButton(
+                    onClick = {
+                        picker.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
+                        )
+                    },
+                    enabled = !busy && !recording,
+                    modifier = Modifier.heightIn(min = 44.dp),
+                ) {
+                    Icon(Icons.Outlined.AddPhotoAlternate, contentDescription = null, tint = FieldTheme.accent)
+                    Text(FEEDBACK_ATTACH_ADD, color = FieldTheme.accent)
+                }
+            }
             error?.let {
                 Text(it, style = TypeScale.caption, color = FieldTheme.alert)
             }
@@ -323,7 +417,28 @@ fun FeedbackSheet(
                     scope.launch {
                         busy = true
                         val bytes = audioFile?.takeIf { it.exists() }?.readBytes()
-                        val fail = onSubmit(kind!!, body, bytes, if (bytes != null) "audio/mp4" else null)
+                        val uploads = withContext(Dispatchers.IO) {
+                            files.mapNotNull { picked ->
+                                val fileBytes = readFeedbackBytes(context, picked.uri) ?: return@mapNotNull null
+                                FeedbackAttachmentUpload(picked.name, picked.mime, fileBytes)
+                            }
+                        }
+                        val check = addFeedbackAttachments(
+                            emptyList(),
+                            uploads.map { FeedbackPickedMeta(it.name, it.mime, it.bytes.size) },
+                        )
+                        if (check.error != null) {
+                            busy = false
+                            error = check.error
+                            return@launch
+                        }
+                        val fail = onSubmit(
+                            kind!!,
+                            body,
+                            bytes,
+                            if (bytes != null) "audio/mp4" else null,
+                            uploads,
+                        )
                         busy = false
                         if (fail != null) {
                             error = fail
@@ -372,3 +487,41 @@ private fun KindChip(label: String, selected: Boolean, onClick: () -> Unit) {
         )
     }
 }
+
+private data class FeedbackPickedUi(
+    val uri: Uri,
+    val name: String,
+    val mime: String,
+    val size: Int,
+)
+
+private fun readFeedbackPicked(context: Context, uri: Uri): FeedbackPickedUi {
+    val resolver = context.contentResolver
+    var name = uri.lastPathSegment ?: "קובץ"
+    var size = 0
+    resolver.query(
+        uri,
+        arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
+        null,
+        null,
+        null,
+    )?.use { cursor ->
+        if (cursor.moveToFirst()) {
+            val nameIdx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            val sizeIdx = cursor.getColumnIndex(OpenableColumns.SIZE)
+            if (nameIdx >= 0) name = cursor.getString(nameIdx) ?: name
+            if (sizeIdx >= 0 && !cursor.isNull(sizeIdx)) {
+                size = cursor.getLong(sizeIdx).toInt().coerceAtLeast(0)
+            }
+        }
+    }
+    return FeedbackPickedUi(
+        uri = uri,
+        name = name,
+        mime = resolver.getType(uri).orEmpty(),
+        size = size,
+    )
+}
+
+private fun readFeedbackBytes(context: Context, uri: Uri): ByteArray? =
+    context.contentResolver.openInputStream(uri)?.use { it.readBytes() }

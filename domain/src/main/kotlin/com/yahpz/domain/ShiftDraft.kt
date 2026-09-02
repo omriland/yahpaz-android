@@ -3,7 +3,7 @@ package com.yahpz.domain
 const val SHIFT_DRAFT_DATE_ERROR = "יש לבחור תאריך"
 const val SHIFT_DRAFT_KIND_ERROR = "יש לבחור שם משמרת"
 const val SHIFT_DRAFT_VEHICLE_ERROR = "יש לבחור סוג רכב"
-const val SHIFT_DRAFT_CREW_ERROR = "יש לשבץ בין כונן אחד לשלושה"
+const val SHIFT_DRAFT_CREW_ERROR = "יש לשבץ בין מתנדב אחד לשלושה"
 const val SHIFT_DRAFT_PLATE_ERROR = "יש לבחור לוחית לרכב פרטי"
 const val SHIFT_DRAFT_FORM_ERROR = "יש למלא תאריך, שם משמרת וסוג רכב לפני השמירה."
 const val SHIFT_DRAFT_SAVE_FAILED = "שמירת המשמרת נכשלה. בדקו את החיבור ונסו שוב."
@@ -11,9 +11,9 @@ const val SHIFT_DRAFT_SAVED = "המשמרת נשמרה."
 const val SHIFT_NEW_TITLE = "משמרת חדשה"
 const val SHIFT_EDIT_TITLE = "עריכת משמרת"
 const val SHIFT_SAVE_TITLE = "שמירה"
-const val SHIFT_ASSIGN_OPEN = "שיבוץ כוננים"
+const val SHIFT_ASSIGN_OPEN = "שיבוץ מתנדבים"
 const val SHIFT_ASSIGN_CLOSE = "סגירת שיבוץ"
-const val SHIFT_ASSIGN_EMPTY = "יש לשבץ כוננים למשמרת."
+const val SHIFT_ASSIGN_EMPTY = "יש לשבץ מתנדבים למשמרת."
 const val SHIFT_EDIT_LOAD_FAILED = "טעינת המשמרת נכשלה. בדקו את החיבור ונסו שוב."
 const val UNIT_SHIFTS_LOAD_FAILED = "טעינת המשמרות נכשלה. בדקו את החיבור ונסו שוב."
 
@@ -88,9 +88,9 @@ fun validateShiftDraft(draft: ShiftDraft): ShiftDraftErrors = ShiftDraftErrors(
 )
 
 fun shiftCrewSummary(count: Int): String = when (count) {
-    0 -> "טרם שובצו כוננים"
-    1 -> "כונן אחד משובץ"
-    else -> "$count כוננים משובצים"
+    0 -> "טרם שובצו מתנדבים"
+    1 -> "מתנדב אחד משובץ"
+    else -> "$count מתנדבים משובצים"
 }
 
 /** Selecting past the crew ceiling is ignored rather than silently dropping someone else. */

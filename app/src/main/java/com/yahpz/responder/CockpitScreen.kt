@@ -225,7 +225,7 @@ fun CockpitScreen(app: AppModel, ui: AppUiState, onBack: () -> Unit) {
                 )
                 LedgerRow("מיקום", cockpitReelPlace(current.road?.name, current.location).orEmpty())
                 LedgerRow("אחמ״ש", cockpitLeadDisplay(lead))
-                LedgerRow("כוננים", cockpitResponderSummary(input.responders))
+                LedgerRow("מתנדבים", cockpitResponderSummary(input.responders))
                 if (current.locationLat != null && current.locationLng != null) {
                     LedgerRow(
                         "קואורדינטות",

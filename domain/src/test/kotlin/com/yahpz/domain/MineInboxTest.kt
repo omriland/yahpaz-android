@@ -59,8 +59,8 @@ class MineInboxTest {
 
     @Test
     fun fillCtaLabels() {
-        assertEquals("השלמת הפרטים שלי", mineFillCtaLabel(ParticipationStatus.PENDING))
-        assertEquals("המשך מילוי הפרטים", mineFillCtaLabel(ParticipationStatus.IN_PROGRESS))
+        assertEquals("השלמת התיעוד שלי", mineFillCtaLabel(ParticipationStatus.PENDING))
+        assertEquals("המשך התיעוד", mineFillCtaLabel(ParticipationStatus.IN_PROGRESS))
         assertNull(mineFillCtaLabel(ParticipationStatus.DONE))
     }
 
@@ -68,7 +68,7 @@ class MineInboxTest {
     fun participationStampsForViewer() {
         assertEquals("הושלם", participationStamp(ParticipationStatus.DONE, true).label)
         assertEquals("טיוטה נשמרה", participationStamp(ParticipationStatus.IN_PROGRESS, true).label)
-        assertEquals("ממתין למילוי פרטים", participationStamp(ParticipationStatus.PENDING, true).label)
+        assertEquals("ממתין לתיעוד", participationStamp(ParticipationStatus.PENDING, true).label)
     }
 
     @Test

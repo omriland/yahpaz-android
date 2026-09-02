@@ -123,9 +123,9 @@ class CockpitTest {
         assertEquals("עכשיו", formatCockpitAge("2026-08-16T11:59:30.000Z", now))
         assertEquals("לפני דקה", formatCockpitAge("2026-08-16T11:59:00.000Z", now))
         assertEquals("לפני 15 דק׳", formatCockpitAge("2026-08-16T11:45:00.000Z", now))
-        assertEquals("אין כוננים משובצים", cockpitResponderSummary(emptyList()))
+        assertEquals("אין מתנדבים משובצים", cockpitResponderSummary(emptyList()))
         assertEquals(
-            "2 כוננים · 1 פעילים",
+            "2 מתנדבים · 1 פעילים",
             cockpitResponderSummary(
                 listOf(
                     CockpitResponderInput("a", endedAt = "2026-08-16T10:00:00.000Z"),
@@ -134,7 +134,7 @@ class CockpitTest {
             ),
         )
         assertEquals(
-            "1 כוננים · הסתיים",
+            "1 מתנדבים · הסתיים",
             cockpitResponderSummary(
                 listOf(CockpitResponderInput("a", endedAt = "2026-08-16T10:00:00.000Z")),
             ),

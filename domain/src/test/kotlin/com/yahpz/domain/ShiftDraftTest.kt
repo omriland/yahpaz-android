@@ -65,9 +65,9 @@ class ShiftDraftTest {
 
     @Test
     fun `crew summary counts in hebrew`() {
-        assertEquals("טרם שובצו כוננים", shiftCrewSummary(0))
-        assertEquals("כונן אחד משובץ", shiftCrewSummary(1))
-        assertEquals("2 כוננים משובצים", shiftCrewSummary(2))
+        assertEquals("טרם שובצו מתנדבים", shiftCrewSummary(0))
+        assertEquals("מתנדב אחד משובץ", shiftCrewSummary(1))
+        assertEquals("2 מתנדבים משובצים", shiftCrewSummary(2))
     }
 
     @Test
@@ -98,7 +98,7 @@ class ShiftDraftTest {
         assertEquals("משמרת חדשה", SHIFT_NEW_TITLE)
         assertEquals("עריכת משמרת", SHIFT_EDIT_TITLE)
         assertEquals("שמירה", SHIFT_SAVE_TITLE)
-        assertEquals("שיבוץ כוננים", SHIFT_ASSIGN_OPEN)
+        assertEquals("שיבוץ מתנדבים", SHIFT_ASSIGN_OPEN)
         assertEquals("סגירת שיבוץ", SHIFT_ASSIGN_CLOSE)
         assertEquals("טעינת המשמרות נכשלה. בדקו את החיבור ונסו שוב.", UNIT_SHIFTS_LOAD_FAILED)
         assertEquals("12-345-67 · מאזדה", crewVehicleLabel("1234567", "מאזדה"))

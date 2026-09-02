@@ -37,8 +37,10 @@ const val MY_ACTIVE_EVENT_DISMISSED = "הוסר מהאירועים הפעילי�
 const val NO_VEHICLE_KM_PLACEHOLDER = "מתנדב ללא רכב"
 const val EVENT_ASSIGN_OPEN = "מתנדבים"
 const val EVENT_ASSIGN_CLOSE = "סגירת הקצאה"
-const val EVENT_ASSIGN_REMOVE = "הסרת כונן"
-const val EVENT_ASSIGN_EMPTY = "בלי כונן משובץ האירוע נשאר בהזנה ואינו מוצג לכוננים."
+const val EVENT_ASSIGN_REMOVE = "הסרת מתנדב"
+const val EVENT_ASSIGN_EMPTY = "בלי מתנדב משובץ האירוע נשאר בהזנה ואינו מוצג למתנדבים."
+const val EVENT_SELF_ASSIGN_ON_CREATE_ERROR = "לא ניתן לשבץ את יוצר האירוע כמתנדב."
+const val EVENT_SELF_ASSIGN_DISABLED_HINT = "לא ניתן לשבץ"
 const val EVENT_EDIT_LOAD_FAILED = "טעינת האירוע נכשלה. בדקו את החיבור ונסו שוב."
 const val UNIT_EVENTS_LOAD_FAILED = "טעינת האירועים נכשלה. בדקו את החיבור ונסו שוב."
 
@@ -73,6 +75,7 @@ data class EventDraft(
     val notes: String = "",
     val responders: List<EventResponderDraft> = emptyList(),
     val isCancelled: Boolean = false,
+    val busLane: Boolean = false,
 ) {
     val responderIds: List<String> get() = responders.map { it.responderId }
 }
@@ -187,9 +190,9 @@ fun eventDraftStatus(responderCount: Int): EventStatus =
     if (responderCount == 0) EventStatus.DRAFT else EventStatus.IN_PROGRESS
 
 fun eventDraftSummary(responderCount: Int): String = when (responderCount) {
-    0 -> "טרם הוקצו כוננים · אירוע בהזנה"
-    1 -> "כונן אחד משובץ"
-    else -> "$responderCount כוננים משובצים"
+    0 -> "טרם הוקצו מתנדבים · אירוע בהזנה"
+    1 -> "מתנדב אחד משובץ"
+    else -> "$responderCount מתנדבים משובצים"
 }
 
 /** When entering the system שלוחה the web defaults כביש to the road containing 101. */
@@ -254,6 +257,12 @@ fun filterAssignableProfiles(profiles: List<AssignableProfile>, query: String): 
     if (trimmed.isEmpty()) return profiles
     return profiles.filter { fieldsMatchQuery(it.searchFields, trimmed) }
 }
+
+fun createIncludesSelfAssign(shiftLeadId: String, responders: List<EventResponderDraft>): Boolean =
+    responders.any { it.responderId == shiftLeadId }
+
+fun isSelfAssignDisabledOnCreate(isCreate: Boolean, currentUserId: String?, profileId: String): Boolean =
+    isCreate && !currentUserId.isNullOrEmpty() && profileId == currentUserId
 
 const val EVENT_CANCEL_ADMIN_ONLY = "רק מנהל יכול לבטל סימון בוטל."
 const val EVENT_CANCELLED_LABEL = "בוטל"

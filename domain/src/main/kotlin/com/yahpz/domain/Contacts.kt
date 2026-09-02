@@ -1,7 +1,7 @@
 package com.yahpz.domain
 
 const val CONTACTS_TITLE = "אנשי קשר"
-const val CONTACTS_SEARCH_PLACEHOLDER = "חיפוש לפי שם, או״ק, טלפון או דוא״ל"
+const val CONTACTS_SEARCH_PLACEHOLDER = "שם, או״ק, טלפון או דוא״ל"
 const val CONTACTS_EMPTY_TITLE = "אין אנשי קשר להצגה"
 const val CONTACTS_NO_RESULTS_TITLE = "לא נמצאו אנשי קשר תואמים"
 const val CONTACTS_FAILED_TITLE = "טעינת אנשי הקשר נכשלה. בדקו את החיבור ונסו שוב."

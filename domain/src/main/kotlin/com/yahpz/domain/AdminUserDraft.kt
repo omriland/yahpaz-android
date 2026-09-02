@@ -8,7 +8,7 @@ const val USERS_TITLE = "משתמשים"
 const val INVITE_TITLE = "משתמש חדש"
 const val USER_EDIT_TITLE = "עריכת משתמש"
 const val USER_SAVE_LABEL = "שמירת משתמש"
-const val USERS_SEARCH_PLACEHOLDER = "חיפוש לפי שם, או״ק, דוא״ל, סטטוס או זמינות"
+const val USERS_SEARCH_PLACEHOLDER = "שם, או״ק, דוא״ל או סטטוס"
 
 const val FIELD_FULL_NAME = "שם מלא"
 const val FIELD_EMAIL = "דוא״ל"

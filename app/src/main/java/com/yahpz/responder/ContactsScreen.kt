@@ -138,7 +138,7 @@ private fun ContactRow(contact: UnitContact, onCall: () -> Unit, onWhatsApp: () 
         ) {
             Column(Modifier.weight(1f)) {
                 Text(
-                    contact.fullName.ifEmpty { "כונן" },
+                    contact.fullName.ifEmpty { "מתנדב" },
                     style = TypeScale.section,
                     color = FieldTheme.textPrimary,
                 )

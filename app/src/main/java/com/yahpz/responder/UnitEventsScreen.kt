@@ -193,7 +193,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
             SearchField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = "חיפוש לפי מספר אירוע, כביש, מיקום או אחמ״ש",
+                placeholder = "אירוע, כביש, מיקום או אחמ״ש",
             )
             when {
                 ui.unitEventsFailed -> EmptyState(
@@ -431,17 +431,18 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                 LedgerRow("סוג אירוע", current.typeLabel)
                 LedgerRow("כביש", current.road?.name.orEmpty())
                 LedgerRow("מיקום", current.location.orEmpty())
+                LedgerRow("נת״צ", if (current.busLane) "כן" else "לא")
                 LedgerRow("סטטוס", stamp.label)
                 LedgerRow("אחמ״ש", current.shiftLead?.display.orEmpty())
-                Text("כוננים (${current.responders.size})", style = TypeScale.section, color = FieldTheme.textPrimary)
+                Text("מתנדבים (${current.responders.size})", style = TypeScale.section, color = FieldTheme.textPrimary)
                 if (current.responders.isEmpty()) {
                     Text(
-                        "טרם שובצו כוננים לאירוע",
+                        "טרם שובצו מתנדבים לאירוע",
                         style = TypeScale.caption,
                         color = FieldTheme.textMuted,
                     )
                 } else if (detailResponders == null) {
-                    LoadingBlock("טוען כוננים…")
+                    LoadingBlock("טוען מתנדבים…")
                 } else {
                     val loadedResponders = detailResponders.orEmpty()
                     loadedResponders.forEach { row ->
@@ -480,7 +481,13 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                         },
                     )
                 }
-                if (canDeleteUnassignedEvent(ui.canManageUnit, current.responders.size)) {
+                if (canDeleteUnassignedEvent(
+                        ui.canManageUnit,
+                        current.responders.size,
+                        ui.canAdmin,
+                        ui.userId,
+                        current.shiftLeadId,
+                    )) {
                     if (confirmDelete) {
                         Text(EVENT_DELETE_CONFIRM, style = TypeScale.body, color = FieldTheme.textSecondary)
                         GhostButton(
@@ -601,7 +608,7 @@ private fun UnitEventResponderRow(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    row.profile?.fullName?.trim().orEmpty().ifEmpty { "כונן" },
+                    row.profile?.fullName?.trim().orEmpty().ifEmpty { "מתנדב" },
                     style = TypeScale.body,
                     color = FieldTheme.textPrimary,
                 )
@@ -755,7 +762,7 @@ private fun UnitEventRow(
         if (event.responders.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
             Text(
-                "${event.responders.size} כוננים · $pending ממתינים לתיעוד",
+                "${event.responders.size} מתנדבים · $pending ממתינים לתיעוד",
                 style = TypeScale.caption,
                 color = FieldTheme.textSecondary,
             )

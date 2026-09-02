@@ -28,10 +28,11 @@ const val MY_ACTIVE_DRAG_TO_ACTIVE = "לחיצה ארוכה וגרירה לאי�
 const val MY_ACTIVE_DROP_TO_ADD = "שחררו כאן להוספה לפעילים"
 const val MY_ACTIVE_DRAG_TO_ADD = "גררו לכאן להוספה לפעילים"
 const val EVENT_DELETE_TITLE = "מחיקת אירוע"
-const val EVENT_DELETE_CONFIRM = "למחוק את האירוע? אין כוננים משובצים."
+const val EVENT_DELETE_CONFIRM = "למחוק את האירוע? אין מתנדבים משובצים."
 const val EVENT_DELETE_ACTION = "מחיקה"
 const val EVENT_DELETED = "האירוע נמחק."
 const val EVENT_DELETE_FAILED = "מחיקת האירוע נכשלה. בדקו את החיבור ונסו שוב."
+const val EVENT_DELETE_OTHER_LEAD = "אין הרשאה למחוק אירוע שנוצר על ידי אחמ״ש אחר."
 
 @Suppress("UNUSED_PARAMETER")
 fun canAddEventToMyActive(isCancelled: Boolean, status: EventStatus): Boolean = true
@@ -64,5 +65,14 @@ fun visibleMyActiveIds(
     return seen.toList()
 }
 
-fun canDeleteUnassignedEvent(canManageUnit: Boolean, responderCount: Int): Boolean =
-    canManageUnit && responderCount == 0
+fun canDeleteUnassignedEvent(
+    canManageUnit: Boolean,
+    responderCount: Int,
+    viewerIsAdmin: Boolean,
+    viewerId: String?,
+    shiftLeadId: String?,
+): Boolean {
+    if (!canManageUnit || responderCount != 0) return false
+    if (viewerIsAdmin) return true
+    return viewerId != null && viewerId == shiftLeadId
+}

@@ -128,7 +128,7 @@ fun MyShiftsScreen(app: AppModel, ui: AppUiState) {
                     LedgerRow("לוחית", formatPlate(shift.personalVehicle?.plateNumber.orEmpty()))
                 }
                 LedgerRow("אחמ״ש", shift.shiftLead?.display.orEmpty())
-                LedgerRow("כוננים", "${shift.responders.size}")
+                LedgerRow("מתנדבים", "${shift.responders.size}")
                 LedgerRow("אירועים", "${shift.bornEvents.size}")
                 TextButton(onClick = { selected = null }, modifier = Modifier.align(Alignment.End)) {
                     Text("סגירה", color = FieldTheme.accent)
@@ -173,7 +173,7 @@ private fun ShiftCard(
             Column(Modifier.weight(1f)) {
                 Text(shift.title, style = TypeScale.section, color = FieldTheme.textPrimary)
                 Text(
-                    "${shift.responders.size} כוננים · ${shift.bornEvents.size} אירועים",
+                    "${shift.responders.size} מתנדבים · ${shift.bornEvents.size} אירועים",
                     style = TypeScale.body,
                     color = FieldTheme.textSecondary,
                 )
