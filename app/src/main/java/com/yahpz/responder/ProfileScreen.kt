@@ -120,8 +120,8 @@ fun ProfileScreen(app: AppModel, ui: AppUiState) {
         if (ui.mustChangePassword) {
             FieldCard {
                 Text("יש לבחור סיסמה חדשה", style = TypeScale.section, color = FieldTheme.textPrimary)
-                FormField("סיסמה חדשה", password, { password = it }, password = true, keyboardType = KeyboardType.Password)
-                FormField("אימות סיסמה", confirm, { confirm = it }, password = true, keyboardType = KeyboardType.Password)
+                FormField("סיסמה חדשה", password, { password = it }, password = true, keyboardType = KeyboardType.Password, ltr = true)
+                FormField("אימות סיסמה", confirm, { confirm = it }, password = true, keyboardType = KeyboardType.Password, ltr = true)
                 error?.let { Text(it, style = TypeScale.caption, color = FieldTheme.alert) }
                 PrimaryButton(
                     title = "שמירת סיסמה",

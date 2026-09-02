@@ -55,6 +55,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.TextFieldValue
@@ -263,7 +264,16 @@ fun FormField(
                     }
                 },
                 visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
-                keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = imeAction),
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.None,
+                    autoCorrectEnabled = !password && keyboardType != KeyboardType.Email,
+                    keyboardType = if (password && keyboardType == KeyboardType.Text) {
+                        KeyboardType.Password
+                    } else {
+                        keyboardType
+                    },
+                    imeAction = imeAction,
+                ),
                 keyboardActions = KeyboardActions(
                     onDone = { dismissKeyboard() },
                     onGo = { dismissKeyboard() },

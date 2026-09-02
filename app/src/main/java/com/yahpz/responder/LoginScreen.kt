@@ -93,6 +93,7 @@ fun LoginScreen(
                             value = email,
                             onValueChange = onEmail,
                             keyboardType = androidx.compose.ui.text.input.KeyboardType.Email,
+                            ltr = true,
                             imeAction = if (mode == LoginMode.SIGNIN) {
                                 androidx.compose.ui.text.input.ImeAction.Next
                             } else {
@@ -107,6 +108,8 @@ fun LoginScreen(
                                 value = password,
                                 onValueChange = onPassword,
                                 password = true,
+                                keyboardType = androidx.compose.ui.text.input.KeyboardType.Password,
+                                ltr = true,
                                 imeAction = androidx.compose.ui.text.input.ImeAction.Go,
                                 onSubmit = onSubmit,
                             )

@@ -126,6 +126,8 @@ import com.yahpz.domain.isMissingFeedbackAttachmentsColumn
 import com.yahpz.domain.normalizeFeedbackAttachmentMime
 import com.yahpz.domain.normalizeFeedbackAudioMime
 import com.yahpz.domain.sanitizeFeedbackAttachmentName
+import com.yahpz.domain.normalizeLoginEmail
+import com.yahpz.domain.normalizeLoginSecret
 import com.yahpz.domain.EventMediaTakenWhen
 import com.yahpz.domain.needsBroadcastSubject
 import com.yahpz.domain.normalizeReturnDate
@@ -321,10 +323,12 @@ object YahpazAPI {
     }
 
     suspend fun signIn(email: String, password: String): String? {
+        val loginEmail = normalizeLoginEmail(email)
+        val loginPassword = normalizeLoginSecret(password)
         return try {
             client.auth.signInWith(Email) {
-                this.email = email
-                this.password = password
+                this.email = loginEmail
+                this.password = loginPassword
             }
             null
         } catch (error: Exception) {
@@ -406,7 +410,7 @@ object YahpazAPI {
 
     suspend fun requestPasswordReset(email: String): String? {
         return try {
-            client.auth.resetPasswordForEmail(email, AppConfig.passwordResetRedirect)
+            client.auth.resetPasswordForEmail(normalizeLoginEmail(email), AppConfig.passwordResetRedirect)
             null
         } catch (_: Exception) {
             "שליחת הקישור נכשלה. בדקו את החיבור ונסו שוב."

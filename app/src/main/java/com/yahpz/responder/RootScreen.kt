@@ -54,6 +54,8 @@ import androidx.compose.ui.unit.dp
 import com.yahpz.domain.MOBILE_MORE_LABEL
 import com.yahpz.domain.MobileNavEntry
 import com.yahpz.domain.canStartImpersonation
+import com.yahpz.domain.normalizeLoginEmail
+import com.yahpz.domain.normalizeLoginSecret
 import com.yahpz.domain.canStartRolePreview
 import com.yahpz.domain.defaultMobileView
 import com.yahpz.domain.mobileNavEntries
@@ -234,9 +236,9 @@ private fun LoginGate(app: AppModel, ui: AppUiState) {
         onEmail = { email = it },
         onPassword = { password = it },
         onSubmit = {
-            val trimmed = email.trim()
+            val trimmed = normalizeLoginEmail(email)
             if (mode == LoginMode.SIGNIN) {
-                app.submitSignIn(trimmed, password)
+                app.submitSignIn(trimmed, normalizeLoginSecret(password))
             } else {
                 scope.launch {
                     resetBusy = true
