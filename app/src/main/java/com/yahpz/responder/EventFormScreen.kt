@@ -245,9 +245,9 @@ fun EventFormScreen(
                     FormCheckbox(
                         label = EVENT_CANCELLED_LABEL,
                         checked = isCancelled,
-                        enabled = !isCancelled || ui.canAdmin,
+                        enabled = !isCancelled || ui.canManageUnit,
                         onCheckedChange = { next ->
-                            formError = canToggleEventCancelled(next, ui.canAdmin)
+                            formError = canToggleEventCancelled(next, ui.canManageUnit)
                             if (formError == null) isCancelled = next
                         },
                     )

@@ -268,7 +268,7 @@ fun createIncludesSelfAssign(shiftLeadId: String, responders: List<EventResponde
 fun isSelfAssignDisabledOnCreate(isCreate: Boolean, currentUserId: String?, profileId: String): Boolean =
     isCreate && !currentUserId.isNullOrEmpty() && profileId == currentUserId
 
-const val EVENT_CANCEL_ADMIN_ONLY = "רק מנהל יכול לבטל סימון בוטל."
+const val EVENT_CANCEL_ADMIN_ONLY = "רק מנהל או אחמ״ש יכולים לבטל סימון בוטל."
 const val EVENT_CANCELLED_LABEL = "בוטל"
 
 @Suppress("UNUSED_PARAMETER")
@@ -277,6 +277,6 @@ fun eventCancelToggleLabel(isCancelled: Boolean): String = EVENT_CANCELLED_LABEL
 fun eventCancelToast(isCancelled: Boolean): String =
     if (isCancelled) "האירוע סומן כבוטל." else "סימון הביטול הוסר."
 
-/** Clearing `is_cancelled` is admin-only, same rule as the web event form. */
-fun canToggleEventCancelled(next: Boolean, viewerIsAdmin: Boolean): String? =
-    if (!next && !viewerIsAdmin) EVENT_CANCEL_ADMIN_ONLY else null
+/** Clearing `is_cancelled` is allowed for admin, super_admin, and shift_lead. */
+fun canToggleEventCancelled(next: Boolean, canClearCancelled: Boolean): String? =
+    if (!next && !canClearCancelled) EVENT_CANCEL_ADMIN_ONLY else null

@@ -140,10 +140,10 @@ class EventDraftTest {
     }
 
     @Test
-    fun `clearing the cancelled flag is admin only`() {
-        assertNull(canToggleEventCancelled(next = true, viewerIsAdmin = false))
-        assertNull(canToggleEventCancelled(next = false, viewerIsAdmin = true))
-        assertEquals(EVENT_CANCEL_ADMIN_ONLY, canToggleEventCancelled(next = false, viewerIsAdmin = false))
+    fun `clearing the cancelled flag is allowed for unit managers`() {
+        assertNull(canToggleEventCancelled(next = true, canClearCancelled = false))
+        assertNull(canToggleEventCancelled(next = false, canClearCancelled = true))
+        assertEquals(EVENT_CANCEL_ADMIN_ONLY, canToggleEventCancelled(next = false, canClearCancelled = false))
     }
 
     @Test
@@ -153,6 +153,7 @@ class EventDraftTest {
         assertEquals("בוטל", eventCancelToggleLabel(isCancelled = true))
         assertEquals("האירוע סומן כבוטל.", eventCancelToast(isCancelled = true))
         assertEquals("סימון הביטול הוסר.", eventCancelToast(isCancelled = false))
+        assertEquals("רק מנהל או אחמ״ש יכולים לבטל סימון בוטל.", EVENT_CANCEL_ADMIN_ONLY)
     }
 
     @Test

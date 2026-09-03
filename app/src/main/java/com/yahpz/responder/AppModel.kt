@@ -748,7 +748,7 @@ class AppModel : ViewModel() {
             draft = draft,
             districts = _state.value.lookups.districts,
             vehicleKinds = _state.value.lookups.vehicleKinds,
-            viewerIsAdmin = _state.value.canAdmin,
+            viewerIsAdmin = _state.value.canManageUnit,
             previousIsCancelled = previousIsCancelled,
             allowPartial = allowPartial,
         )?.let { return it }
@@ -888,7 +888,7 @@ class AppModel : ViewModel() {
     }
 
     suspend fun setEventCancelled(eventId: String, isCancelled: Boolean): String? {
-        canToggleEventCancelled(isCancelled, _state.value.canAdmin)?.let { return it }
+        canToggleEventCancelled(isCancelled, _state.value.canManageUnit)?.let { return it }
         YahpazAPI.setEventCancelled(eventId, isCancelled)?.let { return it }
         reloadUnitEvents()
         showToast(eventCancelToast(isCancelled), StampTone.DONE)
