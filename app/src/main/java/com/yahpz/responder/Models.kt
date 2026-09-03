@@ -1250,6 +1250,10 @@ data class EventFormDetail(
     val notes: String? = null,
     @SerialName("is_cancelled") val isCancelled: Boolean = false,
     @SerialName("bus_lane") val busLane: Boolean = false,
+    @SerialName("shift_lead_id") val shiftLeadId: String? = null,
+    @SerialName("shift_lead")
+    @Serializable(with = OptionalPersonNameSerializer::class)
+    val shiftLead: PersonName? = null,
     @Serializable(with = EventStatusSerializer::class)
     val status: EventStatus = EventStatus.DRAFT,
     val responders: List<EventFormResponderRow> = emptyList(),

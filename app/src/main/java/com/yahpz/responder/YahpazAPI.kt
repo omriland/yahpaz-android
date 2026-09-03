@@ -1451,7 +1451,8 @@ object YahpazAPI {
             Columns.raw(
                 """
                 id, event_date, police_event_id, district_id, patrol_callsign, event_type_id, road_id,
-                location, notes, is_cancelled, bus_lane, status,
+                location, notes, is_cancelled, bus_lane, status, shift_lead_id,
+                shift_lead:profiles!events_shift_lead_id_fkey(full_name, callsign),
                 responders:event_responders(
                   id, responder_id, started_at, ended_at, total_km, emergency_means, status,
                   treated:event_treated_vehicles(vehicle_kind_id, quantity)

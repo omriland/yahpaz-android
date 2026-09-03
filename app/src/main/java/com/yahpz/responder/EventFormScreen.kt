@@ -46,7 +46,13 @@ import com.yahpz.domain.EVENT_NEW_TITLE
 import com.yahpz.domain.EVENT_PATROL_CALLSIGN_LABEL
 import com.yahpz.domain.EVENT_SAVE_DRAFT_TITLE
 import com.yahpz.domain.EVENT_SAVE_TITLE
+import com.yahpz.domain.FOREIGN_EVENT_EDIT_BODY
+import com.yahpz.domain.FOREIGN_EVENT_EDIT_CANCEL
+import com.yahpz.domain.FOREIGN_EVENT_EDIT_CONFIRM
 import com.yahpz.domain.EventDraft
+import com.yahpz.domain.foreignEventEditLeadName
+import com.yahpz.domain.foreignEventEditTitle
+import com.yahpz.domain.isForeignShiftLeadEvent
 import com.yahpz.domain.EventDraftErrors
 import com.yahpz.domain.EventResponderDraft
 import com.yahpz.domain.LookupOption
@@ -92,6 +98,9 @@ fun EventFormScreen(
     var previousIsCancelled by remember { mutableStateOf(false) }
     var loaded by remember { mutableStateOf(!editing) }
     var loadFailed by remember { mutableStateOf(false) }
+    var shiftLeadId by remember { mutableStateOf<String?>(null) }
+    var shiftLeadName by remember { mutableStateOf("") }
+    var foreignEditAcked by remember { mutableStateOf(false) }
     var errors by remember { mutableStateOf(EventDraftErrors()) }
     var formError by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
@@ -136,6 +145,12 @@ fun EventFormScreen(
             isCancelled = draft.isCancelled
             busLane = draft.busLane
             previousIsCancelled = draft.isCancelled
+            shiftLeadId = detail.shiftLeadId
+            shiftLeadName = foreignEventEditLeadName(
+                detail.shiftLead?.fullName,
+                detail.shiftLead?.callsign,
+            )
+            foreignEditAcked = false
             loaded = true
         } catch (_: Exception) {
             loadFailed = true
@@ -157,7 +172,15 @@ fun EventFormScreen(
         busLane = busLane,
     )
 
+    val foreignEditPending =
+        editing &&
+            loaded &&
+            !loadFailed &&
+            isForeignShiftLeadEvent(ui.userId, shiftLeadId) &&
+            !foreignEditAcked
+
     fun persist(allowPartial: Boolean) {
+        if (isForeignShiftLeadEvent(ui.userId, shiftLeadId) && !foreignEditAcked) return
         val current = draft()
         if (!editing && createIncludesSelfAssign(ui.userId.orEmpty(), current.responders)) {
             formError = EVENT_SELF_ASSIGN_ON_CREATE_ERROR
@@ -210,6 +233,7 @@ fun EventFormScreen(
                 onAction = onBack,
             )
             editing && !loaded -> LoadingBlock("טוען אירוע…")
+            foreignEditPending -> { /* confirm sheet below */ }
             ui.lookupsFailed && ui.lookups.isEmpty -> EmptyState(
                 title = "טעינת הרשימות נכשלה. בדקו את החיבור ונסו שוב.",
                 actionTitle = "רענון",
@@ -353,6 +377,29 @@ fun EventFormScreen(
             }
         }
         Spacer(Modifier.height(24.dp))
+    }
+
+    if (foreignEditPending) {
+        ModalBottomSheet(onDismissRequest = onBack) {
+            Column(
+                Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    foreignEventEditTitle(shiftLeadName),
+                    style = TypeScale.section,
+                    color = FieldTheme.textPrimary,
+                )
+                Text(FOREIGN_EVENT_EDIT_BODY, style = TypeScale.body, color = FieldTheme.textSecondary)
+                PrimaryButton(
+                    title = FOREIGN_EVENT_EDIT_CONFIRM,
+                    onClick = { foreignEditAcked = true },
+                )
+                TextButton(onClick = onBack, modifier = Modifier.align(Alignment.End)) {
+                    Text(FOREIGN_EVENT_EDIT_CANCEL, color = FieldTheme.accent)
+                }
+            }
+        }
     }
 
     if (detailResponder != null && detailProfile != null) {
