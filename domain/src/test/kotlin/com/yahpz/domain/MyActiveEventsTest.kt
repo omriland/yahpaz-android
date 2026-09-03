@@ -69,9 +69,21 @@ class MyActiveEventsTest {
 
     @Test
     fun `add and remove labels`() {
-        assertEquals("הוספה", MY_ACTIVE_ADD)
+        assertEquals("הוספה לפעילים", MY_ACTIVE_ADD)
         assertEquals("הסרה", MY_ACTIVE_REMOVE)
         assertEquals("אירוע בהזנה — לא ניתן להסיר", MY_ACTIVE_REMOVE_LOCKED)
+        assertEquals("הוספה לפעילים, או לחיצה ארוכה וגרירה", MY_ACTIVE_DRAG_TO_ACTIVE)
+    }
+
+    @Test
+    fun `auto active keeps open lead events until done or cancelled`() {
+        assertTrue(isAutoOnMyActive(isCancelled = false, status = EventStatus.DRAFT))
+        assertTrue(isAutoOnMyActive(isCancelled = false, status = EventStatus.IN_PROGRESS))
+        assertTrue(isAutoOnMyActive(isCancelled = false, status = EventStatus.PARTIAL))
+        assertFalse(isAutoOnMyActive(isCancelled = false, status = EventStatus.DONE))
+        assertFalse(isAutoOnMyActive(isCancelled = true, status = EventStatus.IN_PROGRESS))
+        assertFalse(isAutoOnMyActive(isCancelled = true, status = EventStatus.DRAFT))
+        assertFalse(isAutoOnMyActive(isCancelled = true, status = EventStatus.PARTIAL))
     }
 
     @Test

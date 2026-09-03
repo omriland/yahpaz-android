@@ -29,6 +29,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,7 +45,12 @@ import com.yahpz.domain.COCKPIT_NO_RESULTS
 import com.yahpz.domain.COCKPIT_OPEN_MAPS
 import com.yahpz.domain.COCKPIT_SEARCH_PLACEHOLDER
 import com.yahpz.domain.COCKPIT_TITLE
+import com.yahpz.domain.CockpitDeleteClick
+import com.yahpz.domain.CockpitDeleteViewer
 import com.yahpz.domain.StampTone
+import com.yahpz.domain.cockpitDeleteBlock
+import com.yahpz.domain.cockpitDeleteClick
+import com.yahpz.domain.cockpitDeleteHint
 import com.yahpz.domain.cockpitLeadDisplay
 import com.yahpz.domain.cockpitMapsOpenUris
 import com.yahpz.domain.cockpitOwnParticipation
@@ -59,12 +65,15 @@ import com.yahpz.domain.filterCockpitEventsByQuery
 import com.yahpz.domain.formatCockpitAge
 import com.yahpz.domain.formatCockpitClock
 import com.yahpz.domain.mineFillCtaLabel
+import com.yahpz.domain.shouldShowCockpitDelete
 import java.time.Instant
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CockpitScreen(app: AppModel, ui: AppUiState, onBack: () -> Unit) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var events by remember { mutableStateOf<List<CockpitEventListItem>?>(null) }
     var failed by remember { mutableStateOf(false) }
     var reloadKey by remember { mutableIntStateOf(0) }
@@ -175,7 +184,6 @@ fun CockpitScreen(app: AppModel, ui: AppUiState, onBack: () -> Unit) {
         val current = events.orEmpty().firstOrNull { it.id == opened.id } ?: opened
         val input = current.asInput
         val stamp = eventStamp(current.status)
-        val lead = cockpitReelLead(current.shiftLead?.fullName, current.shiftLead?.callsign)
         val mine = cockpitOwnParticipation(input.responders, ui.userId)
         val mapUris = cockpitMapsOpenUris(
             current.locationLat,
@@ -183,6 +191,15 @@ fun CockpitScreen(app: AppModel, ui: AppUiState, onBack: () -> Unit) {
             current.road?.name,
             current.location,
         )
+        val deleteViewer = CockpitDeleteViewer(userId = ui.userId, isAdmin = ui.canAdmin)
+        val deleteBlock = cockpitDeleteBlock(
+            current.responders.size,
+            current.shiftLeadId,
+            deleteViewer,
+        )
+        var confirmDelete by remember(current.id) { mutableStateOf(false) }
+        var deleting by remember(current.id) { mutableStateOf(false) }
+        var deleteHint by remember(current.id) { mutableStateOf<String?>(null) }
         ModalBottomSheet(onDismissRequest = {
             detail = null
             mapsError = null
@@ -224,7 +241,7 @@ fun CockpitScreen(app: AppModel, ui: AppUiState, onBack: () -> Unit) {
                     ).orEmpty(),
                 )
                 LedgerRow("מיקום", cockpitReelPlace(current.road?.name, current.location).orEmpty())
-                LedgerRow("אחמ״ש", cockpitLeadDisplay(lead))
+                EventLeadLedgerRows(current.shiftLead, current.secondaryLeads)
                 LedgerRow("מתנדבים", cockpitResponderSummary(input.responders))
                 if (current.locationLat != null && current.locationLng != null) {
                     LedgerRow(
@@ -270,6 +287,47 @@ fun CockpitScreen(app: AppModel, ui: AppUiState, onBack: () -> Unit) {
                         },
                     )
                 }
+                EventDeleteControls(
+                    visible = ui.canManageUnit && shouldShowCockpitDelete(deleteBlock),
+                    confirmArmed = confirmDelete,
+                    hint = deleteHint,
+                    deleting = deleting,
+                    onClick = {
+                        when (
+                            val result = cockpitDeleteClick(
+                                armed = confirmDelete,
+                                responderCount = current.responders.size,
+                                shiftLeadId = current.shiftLeadId,
+                                viewer = deleteViewer,
+                            )
+                        ) {
+                            is CockpitDeleteClick.Blocked -> {
+                                confirmDelete = false
+                                deleteHint = cockpitDeleteHint(result.block)
+                            }
+                            CockpitDeleteClick.Arm -> {
+                                confirmDelete = true
+                                deleteHint = cockpitDeleteHint(null)
+                            }
+                            CockpitDeleteClick.Delete -> {
+                                val id = current.id
+                                scope.launch {
+                                    deleting = true
+                                    val error = app.deleteUnitEvent(id)
+                                    deleting = false
+                                    if (error != null) {
+                                        deleteHint = error
+                                        confirmDelete = false
+                                        app.showToast(error, StampTone.PENDING)
+                                    } else {
+                                        detail = null
+                                        reloadKey += 1
+                                    }
+                                }
+                            }
+                        }
+                    },
+                )
                 TextButton(
                     onClick = {
                         detail = null
@@ -291,7 +349,12 @@ private fun CockpitEventRow(
     onOpen: () -> Unit,
 ) {
     val stamp = eventStamp(event.status)
-    val lead = cockpitReelLead(event.shiftLead?.fullName, event.shiftLead?.callsign)
+    val leadCaption = event.secondaryLeads.leadsCaptionWith(event.shiftLead)
+    val lead = if (event.secondaryLeads.isEmpty()) {
+        cockpitReelLead(event.shiftLead?.fullName, event.shiftLead?.callsign)
+    } else {
+        cockpitReelLead(leadCaption, "")
+    }
     FieldCard(
         modifier = Modifier
             .heightIn(min = 44.dp)

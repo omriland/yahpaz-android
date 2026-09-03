@@ -464,7 +464,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                 LedgerRow("מיקום", current.location.orEmpty())
                 LedgerRow("נת״צ", if (current.busLane) "כן" else "לא")
                 LedgerRow("סטטוס", stamp.label)
-                LedgerRow("אחמ״ש", current.shiftLead?.display.orEmpty())
+                EventLeadLedgerRows(current.shiftLead, current.secondaryLeads)
                 Text("מתנדבים (${current.responders.size})", style = TypeScale.section, color = FieldTheme.textPrimary)
                 if (current.responders.isEmpty()) {
                     Text(
@@ -765,7 +765,7 @@ private fun UnitEventRow(
                     style = TypeScale.caption,
                     color = FieldTheme.textMuted,
                 )
-                event.shiftLead?.display?.let { lead ->
+                event.leadsCaption().takeIf { it.isNotEmpty() }?.let { lead ->
                     Text("אחמ״ש: $lead", style = TypeScale.caption, color = FieldTheme.textMuted)
                 }
             }

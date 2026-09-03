@@ -16,6 +16,7 @@ import com.yahpz.domain.ClosedListMutationResult
 import com.yahpz.domain.COCKPIT_WINDOW_MS
 import com.yahpz.domain.EVENT_DELETE_FAILED
 import com.yahpz.domain.EVENT_DELETE_OTHER_LEAD
+import com.yahpz.domain.AUTO_MY_ACTIVE_STATUSES
 import com.yahpz.domain.MY_ACTIVE_PREF_FAILED
 import com.yahpz.domain.EVENT_DRAFT_DATE_ERROR
 import com.yahpz.domain.EVENT_DRAFT_FORM_ERROR
@@ -76,6 +77,9 @@ import com.yahpz.domain.buildKmDiscrepancyRows
 import com.yahpz.domain.buildKmExceptionRows
 import com.yahpz.domain.buildOpenDocRows
 import com.yahpz.domain.canToggleEventCancelled
+import com.yahpz.domain.createTimeCreatorSecondary
+import com.yahpz.domain.forPersistCompare
+import com.yahpz.domain.SecondaryLead
 import com.yahpz.domain.closedListMeta
 import com.yahpz.domain.closedListNameError
 import com.yahpz.domain.deriveEventStatusAfterParticipation
@@ -185,7 +189,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import java.time.Instant
-import java.time.temporal.ChronoUnit
 import java.time.LocalDate
 import java.time.ZoneId
 import java.util.UUID
@@ -213,12 +216,16 @@ internal fun edgeErrorMessage(raw: String?, fallback: String): String {
 }
 
 object YahpazAPI {
+    private const val EVENT_SECONDARY_LEADS_EMBED =
+        "secondary_leads:event_secondary_leads(user_id, locked, added_at, profile:profiles!event_secondary_leads_user_id_fkey(full_name, callsign))"
+
     private val eventListSelect = """
         id, event_date, police_event_id, location, status, is_cancelled, bus_lane, origin, shift_lead_id, shift_id,
         frozen_over_60km, frozen_suspicious_duplicate,
         event_type:event_types(name),
         road:roads(name),
         shift_lead:profiles!events_shift_lead_id_fkey(full_name, callsign),
+        $EVENT_SECONDARY_LEADS_EMBED,
         shift:shifts!events_shift_id_fkey(
           shift_date, shift_kind, vehicle_type,
           personal_vehicle:vehicles!shifts_personal_vehicle_id_fkey(plate_number)
@@ -239,7 +246,9 @@ object YahpazAPI {
         frozen_suspicious_duplicate,
         event_type:event_types(name),
         road:roads(name),
+        shift_lead_id,
         shift_lead:profiles!events_shift_lead_id_fkey(full_name, callsign),
+        $EVENT_SECONDARY_LEADS_EMBED,
         responders:event_responders(id, responder_id, status, ended_at)
     """.trimIndent()
 
@@ -248,6 +257,7 @@ object YahpazAPI {
         event_type:event_types(name),
         road:roads(name),
         shift_lead:profiles!events_shift_lead_id_fkey(full_name, callsign),
+        $EVENT_SECONDARY_LEADS_EMBED,
         responders:event_responders(
           id, responder_id, vehicle_plate, odometer_start, odometer_end, total_km,
           route, treatment_detail, treatment_notes, status, updated_at, ended_at,
@@ -494,34 +504,16 @@ object YahpazAPI {
             limit(limit.toLong())
         }.decodeList<EventListItem>()
 
-    suspend fun fetchMyActiveUnitEvents(now: Instant = Instant.now()): List<EventListItem> {
+    suspend fun fetchMyActiveUnitEvents(): List<EventListItem> {
         val userId = sessionUserId() ?: return emptyList()
-        val drafts = client.from("events").select(Columns.raw(eventListSelect)) {
+        return client.from("events").select(Columns.raw(eventListSelect)) {
             filter {
                 eq("shift_lead_id", userId)
                 eq("is_cancelled", false)
-                eq("status", EventStatus.DRAFT.raw)
+                isIn("status", AUTO_MY_ACTIVE_STATUSES.map { it.raw })
             }
             order("event_date", Order.DESCENDING)
         }.decodeList<EventListItem>()
-        val since = now.minus(2, ChronoUnit.HOURS).toString()
-        val recent = client.from("events").select(Columns.raw(eventListSelect)) {
-            filter {
-                eq("shift_lead_id", userId)
-                eq("is_cancelled", false)
-                gte("created_at", since)
-                isIn(
-                    "status",
-                    listOf(
-                        EventStatus.DRAFT.raw,
-                        EventStatus.IN_PROGRESS.raw,
-                        EventStatus.PARTIAL.raw,
-                    ),
-                )
-            }
-            order("event_date", Order.DESCENDING)
-        }.decodeList<EventListItem>()
-        return (drafts + recent).distinctBy { it.id }
     }
 
     suspend fun fetchMyActiveEventPrefs(): List<MyActiveEventPrefRow> {
@@ -1336,6 +1328,9 @@ object YahpazAPI {
             order("full_name", Order.ASCENDING)
         }.decodeList<AssignableProfileRow>().map { it.asProfile }
 
+    suspend fun fetchShiftLeadProfiles(): List<AssignableProfile> =
+        client.postgrest.rpc("list_shift_lead_profiles").decodeList<AssignableProfileRow>().map { it.asProfile }
+
     suspend fun fetchVehiclesForResponders(responderIds: List<String>): List<CrewVehicleRow> {
         if (responderIds.isEmpty()) return emptyList()
         return client.from("vehicles").select(Columns.raw("id, user_id, plate_number, model, archived")) {
@@ -1364,6 +1359,7 @@ object YahpazAPI {
             return EVENT_SELF_ASSIGN_ON_CREATE_ERROR
         }
         val eventDate = normalizeReturnDate(draft.eventDate) ?: return EVENT_DRAFT_DATE_ERROR
+        val mainLeadId = draft.shiftLeadId.ifBlank { userId }
         return try {
             val nextStatus = deriveEventStatusFromDraft(draft.responders)
             val inserted = client.from("events").insert(
@@ -1378,7 +1374,7 @@ object YahpazAPI {
                     notes = draft.notes.nilIfEmpty(),
                     busLane = draft.busLane,
                     status = nextStatus.raw,
-                    shiftLeadId = userId,
+                    shiftLeadId = mainLeadId,
                     updatedAt = Instant.now().toString(),
                 ),
             ) {
@@ -1391,7 +1387,12 @@ object YahpazAPI {
                 vehicleKinds = vehicleKinds,
                 isCancelled = draft.isCancelled,
             )?.let { return it }
-            null
+            syncEventSecondaryLeads(
+                eventId = inserted.id,
+                desired = draft.secondaryLeads,
+                creatorSecondary = createTimeCreatorSecondary(userId, mainLeadId),
+                mainLeadId = mainLeadId,
+            )
         } catch (_: Exception) {
             EVENT_DRAFT_SAVE_FAILED
         }
@@ -1453,6 +1454,7 @@ object YahpazAPI {
                 id, event_date, police_event_id, district_id, patrol_callsign, event_type_id, road_id,
                 location, notes, is_cancelled, bus_lane, status, shift_lead_id,
                 shift_lead:profiles!events_shift_lead_id_fkey(full_name, callsign),
+                $EVENT_SECONDARY_LEADS_EMBED,
                 responders:event_responders(
                   id, responder_id, started_at, ended_at, total_km, emergency_means, status,
                   treated:event_treated_vehicles(vehicle_kind_id, quantity)
@@ -1471,6 +1473,7 @@ object YahpazAPI {
         viewerIsAdmin: Boolean,
         previousIsCancelled: Boolean,
         allowPartial: Boolean = false,
+        previousDraft: EventDraft? = null,
     ): String? {
         val errors = if (allowPartial) {
             validateEventDraftPartial(draft)
@@ -1483,7 +1486,11 @@ object YahpazAPI {
         if (previousIsCancelled && !draft.isCancelled) {
             canToggleEventCancelled(false, viewerIsAdmin)?.let { return it }
         }
+        if (previousDraft != null && previousDraft.forPersistCompare() == draft.forPersistCompare()) {
+            return null
+        }
         val eventDate = normalizeReturnDate(draft.eventDate) ?: return EVENT_DRAFT_DATE_ERROR
+        val mainLeadId = draft.shiftLeadId.ifBlank { return "אין אחמ״ש ראשי." }
         return try {
             val nextStatus = deriveEventStatusFromDraft(draft.responders)
             val updated = client.from("events").update(
@@ -1499,6 +1506,7 @@ object YahpazAPI {
                     isCancelled = draft.isCancelled,
                     busLane = draft.busLane,
                     status = nextStatus.raw,
+                    shiftLeadId = mainLeadId,
                     updatedAt = Instant.now().toString(),
                 ),
             ) {
@@ -1512,10 +1520,75 @@ object YahpazAPI {
                 responders = draft.responders,
                 vehicleKinds = vehicleKinds,
                 isCancelled = draft.isCancelled,
+            )?.let { return it }
+            syncEventSecondaryLeads(
+                eventId = eventId,
+                desired = draft.secondaryLeads,
+                creatorSecondary = null,
+                mainLeadId = mainLeadId,
             )
         } catch (_: Exception) {
             EVENT_DRAFT_SAVE_FAILED
         }
+    }
+
+    private suspend fun syncEventSecondaryLeads(
+        eventId: String,
+        desired: List<SecondaryLead>,
+        creatorSecondary: SecondaryLead?,
+        mainLeadId: String,
+    ): String? {
+        val existing = client.from("event_secondary_leads").select(
+            Columns.raw(
+                "user_id, locked, added_at, profile:profiles!event_secondary_leads_user_id_fkey(full_name, callsign)",
+            ),
+        ) {
+            filter { eq("event_id", eventId) }
+            order("added_at", Order.ASCENDING)
+        }.decodeList<EventSecondaryLeadRow>()
+        val wanted = linkedMapOf<String, Boolean>()
+        for (row in desired) {
+            val id = row.userId.trim()
+            if (id.isNotEmpty() && id != mainLeadId) wanted[id] = row.locked
+        }
+        creatorSecondary?.userId?.trim()?.takeIf { it.isNotEmpty() && it != mainLeadId }?.let { id ->
+            wanted[id] = wanted[id] == true
+        }
+        for (row in existing) {
+            if (row.userId !in wanted && !row.locked) {
+                try {
+                    client.from("event_secondary_leads").delete {
+                        filter {
+                            eq("event_id", eventId)
+                            eq("user_id", row.userId)
+                            eq("locked", false)
+                        }
+                    }
+                } catch (_: Exception) {
+                    return EVENT_DRAFT_SAVE_FAILED
+                }
+            }
+        }
+        for ((userId, locked) in wanted) {
+            val found = existing.firstOrNull { it.userId == userId }
+            try {
+                if (found == null) {
+                    client.from("event_secondary_leads").insert(
+                        EventSecondaryLeadInsert(eventId = eventId, userId = userId, locked = locked),
+                    )
+                } else if (locked && !found.locked) {
+                    client.from("event_secondary_leads").update(EventSecondaryLeadLockWrite(locked = true)) {
+                        filter {
+                            eq("event_id", eventId)
+                            eq("user_id", userId)
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+                return EVENT_DRAFT_SAVE_FAILED
+            }
+        }
+        return null
     }
 
     private suspend fun syncEventResponders(
@@ -1904,7 +1977,8 @@ object YahpazAPI {
             isCancelled = event.isCancelled,
             roadName = event.road?.name,
             location = event.location,
-            shiftLeadName = event.shiftLead?.display,
+            shiftLeadName = event.secondaryLeads.leadsCaptionWith(event.shiftLead)
+                .ifEmpty { event.shiftLead?.display },
             totalKm = mine.totalKm,
             participationStatus = mine.status,
             updatedAt = mine.updatedAt,

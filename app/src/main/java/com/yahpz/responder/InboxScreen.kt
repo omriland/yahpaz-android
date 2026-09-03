@@ -192,7 +192,7 @@ fun InboxScreen(app: AppModel, ui: AppUiState) {
                 LedgerRow("סוג אירוע", event.typeLabel)
                 LedgerRow("כביש", event.road?.name.orEmpty())
                 LedgerRow("מיקום", event.location.orEmpty())
-                LedgerRow("אחמ״ש", event.shiftLead?.display.orEmpty())
+                EventLeadLedgerRows(event.shiftLead, event.secondaryLeads)
                 Text("מתנדבים (${event.responders.size})", style = TypeScale.section, color = FieldTheme.textPrimary)
                 event.responders.forEach { row ->
                     Row(

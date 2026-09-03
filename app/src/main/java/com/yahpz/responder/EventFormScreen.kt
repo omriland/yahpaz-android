@@ -34,6 +34,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.yahpz.domain.AssignableProfile
+import com.yahpz.domain.CockpitDeleteClick
+import com.yahpz.domain.CockpitDeleteViewer
 import com.yahpz.domain.EVENT_ASSIGN_CLOSE
 import com.yahpz.domain.EVENT_ASSIGN_EMPTY
 import com.yahpz.domain.EVENT_ASSIGN_OPEN
@@ -50,6 +52,11 @@ import com.yahpz.domain.FOREIGN_EVENT_EDIT_BODY
 import com.yahpz.domain.FOREIGN_EVENT_EDIT_CANCEL
 import com.yahpz.domain.FOREIGN_EVENT_EDIT_CONFIRM
 import com.yahpz.domain.EventDraft
+import com.yahpz.domain.SecondaryLead
+import com.yahpz.domain.canManageSecondaryLeads
+import com.yahpz.domain.cockpitDeleteBlock
+import com.yahpz.domain.cockpitDeleteClick
+import com.yahpz.domain.cockpitDeleteHint
 import com.yahpz.domain.foreignEventEditLeadName
 import com.yahpz.domain.foreignEventEditTitle
 import com.yahpz.domain.isForeignShiftLeadEvent
@@ -65,6 +72,7 @@ import com.yahpz.domain.eventDraftSummary
 import com.yahpz.domain.isSelfAssignDisabledOnCreate
 import com.yahpz.domain.israelToday
 import com.yahpz.domain.returnDateToInput
+import com.yahpz.domain.shouldShowCockpitDelete
 import com.yahpz.domain.toggleEventResponder
 import com.yahpz.domain.treatedQuantity
 import com.yahpz.domain.updateEventResponder
@@ -98,17 +106,32 @@ fun EventFormScreen(
     var previousIsCancelled by remember { mutableStateOf(false) }
     var loaded by remember { mutableStateOf(!editing) }
     var loadFailed by remember { mutableStateOf(false) }
-    var shiftLeadId by remember { mutableStateOf<String?>(null) }
-    var shiftLeadName by remember { mutableStateOf("") }
+    var shiftLeadId by remember { mutableStateOf(if (editing) "" else ui.userId.orEmpty()) }
+    var shiftLeadName by remember { mutableStateOf(if (editing) "" else ui.profile?.fullName.orEmpty()) }
+    var shiftLeadCallsign by remember { mutableStateOf(if (editing) "" else ui.profile?.callsign.orEmpty()) }
+    var secondaryLeads by remember { mutableStateOf(emptyList<SecondaryLead>()) }
+    var shiftLeadUsers by remember { mutableStateOf(emptyList<AssignableProfile>()) }
+    var persistedDraft by remember { mutableStateOf<EventDraft?>(null) }
     var foreignEditAcked by remember { mutableStateOf(false) }
     var errors by remember { mutableStateOf(EventDraftErrors()) }
     var formError by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
+    var confirmDelete by remember(eventId) { mutableStateOf(false) }
+    var deleting by remember(eventId) { mutableStateOf(false) }
+    var deleteHint by remember(eventId) { mutableStateOf<String?>(null) }
     var vehicleOwnerIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var detailResponderId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(ui.userId) {
         if (ui.lookups.isEmpty && !ui.lookupsLoading) app.reloadLookups()
+        if (!editing && shiftLeadId.isEmpty()) {
+            shiftLeadId = ui.userId.orEmpty()
+            shiftLeadName = ui.profile?.fullName.orEmpty()
+            shiftLeadCallsign = ui.profile?.callsign.orEmpty()
+        }
+        if (canManageSecondaryLeads(ui.roles)) {
+            shiftLeadUsers = runCatching { YahpazAPI.fetchShiftLeadProfiles() }.getOrDefault(emptyList())
+        }
     }
 
     LaunchedEffect(responders.map { it.responderId }.sorted().joinToString()) {
@@ -123,6 +146,11 @@ fun EventFormScreen(
         vehicleOwnerIds = owners
         val updated = responders.map { row -> row.copy(hasVehicle = owners.contains(row.responderId)) }
         if (updated != responders) responders = updated
+    }
+
+    LaunchedEffect(responders.size) {
+        confirmDelete = false
+        deleteHint = null
     }
 
     LaunchedEffect(eventId) {
@@ -145,10 +173,13 @@ fun EventFormScreen(
             isCancelled = draft.isCancelled
             busLane = draft.busLane
             previousIsCancelled = draft.isCancelled
-            shiftLeadId = detail.shiftLeadId
-            shiftLeadName = foreignEventEditLeadName(
-                detail.shiftLead?.fullName,
-                detail.shiftLead?.callsign,
+            shiftLeadId = detail.shiftLeadId.orEmpty()
+            shiftLeadName = detail.shiftLead?.fullName.orEmpty()
+            shiftLeadCallsign = detail.shiftLead?.callsign.orEmpty()
+            secondaryLeads = draft.secondaryLeads
+            persistedDraft = draft.copy(
+                shiftLeadId = detail.shiftLeadId.orEmpty(),
+                secondaryLeads = draft.secondaryLeads,
             )
             foreignEditAcked = false
             loaded = true
@@ -170,6 +201,8 @@ fun EventFormScreen(
         responders = responders,
         isCancelled = isCancelled,
         busLane = busLane,
+        shiftLeadId = shiftLeadId,
+        secondaryLeads = secondaryLeads,
     )
 
     val foreignEditPending =
@@ -180,6 +213,7 @@ fun EventFormScreen(
             !foreignEditAcked
 
     fun persist(allowPartial: Boolean) {
+        if (deleting || saving) return
         if (isForeignShiftLeadEvent(ui.userId, shiftLeadId) && !foreignEditAcked) return
         val current = draft()
         if (!editing && createIncludesSelfAssign(ui.userId.orEmpty(), current.responders)) {
@@ -205,11 +239,53 @@ fun EventFormScreen(
                     draft = current,
                     previousIsCancelled = previousIsCancelled,
                     allowPartial = allowPartial,
+                    previousDraft = persistedDraft,
                 )
             } else {
                 app.createUnitEvent(current, allowPartial = allowPartial)
             }
             saving = false
+        }
+    }
+
+    val deleteViewer = CockpitDeleteViewer(userId = ui.userId, isAdmin = ui.canAdmin)
+    val showEventDelete = editing && loaded && !loadFailed && ui.canManageUnit &&
+        shouldShowCockpitDelete(
+            cockpitDeleteBlock(responders.size, shiftLeadId, deleteViewer),
+        )
+
+    fun onDeletePressed() {
+        val id = eventId ?: return
+        if (saving || deleting) return
+        when (
+            val result = cockpitDeleteClick(
+                armed = confirmDelete,
+                responderCount = responders.size,
+                shiftLeadId = shiftLeadId,
+                viewer = deleteViewer,
+            )
+        ) {
+            is CockpitDeleteClick.Blocked -> {
+                confirmDelete = false
+                deleteHint = cockpitDeleteHint(result.block)
+            }
+            CockpitDeleteClick.Arm -> {
+                confirmDelete = true
+                deleteHint = cockpitDeleteHint(null)
+            }
+            CockpitDeleteClick.Delete -> {
+                scope.launch {
+                    deleting = true
+                    val error = app.deleteUnitEvent(id)
+                    deleting = false
+                    if (error != null) {
+                        formError = error
+                        confirmDelete = false
+                    } else {
+                        onBack()
+                    }
+                }
+            }
         }
     }
 
@@ -252,6 +328,22 @@ fun EventFormScreen(
                         },
                     )
                 }
+                EventShiftLeadsFields(
+                    roles = ui.roles,
+                    viewerId = ui.userId,
+                    eventExists = editing,
+                    shiftLeadId = shiftLeadId,
+                    shiftLeadName = shiftLeadName,
+                    shiftLeadCallsign = shiftLeadCallsign,
+                    secondaryLeads = secondaryLeads,
+                    shiftLeadUsers = shiftLeadUsers,
+                    onChange = { mainId, mainName, mainCallsign, secondaries ->
+                        shiftLeadId = mainId
+                        shiftLeadName = mainName
+                        shiftLeadCallsign = mainCallsign
+                        secondaryLeads = secondaries
+                    },
+                )
                 ReturnDateField(
                     label = "תאריך",
                     value = eventDate,
@@ -367,12 +459,20 @@ fun EventFormScreen(
                 PrimaryButton(
                     title = EVENT_SAVE_TITLE,
                     busy = saving,
+                    enabled = !deleting,
                     onClick = { persist(allowPartial = false) },
                 )
                 GhostButton(
                     title = EVENT_SAVE_DRAFT_TITLE,
-                    enabled = !saving,
+                    enabled = !saving && !deleting,
                     onClick = { persist(allowPartial = true) },
+                )
+                EventDeleteControls(
+                    visible = showEventDelete,
+                    confirmArmed = confirmDelete,
+                    hint = deleteHint,
+                    deleting = deleting,
+                    onClick = { onDeletePressed() },
                 )
             }
         }
@@ -386,7 +486,9 @@ fun EventFormScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
-                    foreignEventEditTitle(shiftLeadName),
+                    foreignEventEditTitle(
+                        foreignEventEditLeadName(shiftLeadName, shiftLeadCallsign),
+                    ),
                     style = TypeScale.section,
                     color = FieldTheme.textPrimary,
                 )

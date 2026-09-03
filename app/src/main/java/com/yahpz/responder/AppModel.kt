@@ -742,6 +742,7 @@ class AppModel : ViewModel() {
         previousIsCancelled: Boolean,
         allowPartial: Boolean = false,
         stayOnForm: Boolean = false,
+        previousDraft: EventDraft? = null,
     ): String? {
         YahpazAPI.updateUnitEvent(
             eventId = eventId,
@@ -751,6 +752,7 @@ class AppModel : ViewModel() {
             viewerIsAdmin = _state.value.canManageUnit,
             previousIsCancelled = previousIsCancelled,
             allowPartial = allowPartial,
+            previousDraft = previousDraft,
         )?.let { return it }
         reloadUnitEvents()
         viewModelScope.launch { reloadEvents() }

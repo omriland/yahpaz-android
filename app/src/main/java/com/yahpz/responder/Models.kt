@@ -33,6 +33,9 @@ import com.yahpz.domain.EventResponderDraft
 import com.yahpz.domain.EventStatus
 import com.yahpz.domain.EventsByResponderEventInput
 import com.yahpz.domain.EventsByResponderResponderInput
+import com.yahpz.domain.SecondaryLead
+import com.yahpz.domain.eventLeadsCaption
+import com.yahpz.domain.formatLeadsCaption
 import com.yahpz.domain.KmDiscrepancyEventInput
 import com.yahpz.domain.KmDiscrepancyResponderInput
 import com.yahpz.domain.KmExceptionEventInput
@@ -77,6 +80,28 @@ data class PersonName(
             }
         }
 }
+
+@Serializable
+data class EventSecondaryLeadRow(
+    @SerialName("user_id") val userId: String,
+    val locked: Boolean = false,
+    @SerialName("added_at") val addedAt: String? = null,
+    @Serializable(with = OptionalPersonNameSerializer::class)
+    val profile: PersonName? = null,
+) {
+    fun asDomain(): SecondaryLead = SecondaryLead(
+        userId = userId,
+        locked = locked,
+        fullName = profile?.fullName.orEmpty(),
+        callsign = profile?.callsign.orEmpty(),
+        addedAt = addedAt,
+    )
+
+    fun namePair(): Pair<String?, String?> = profile?.fullName to profile?.callsign
+}
+
+fun List<EventSecondaryLeadRow>.leadsCaptionWith(main: PersonName?): String =
+    formatLeadsCaption(main?.fullName, main?.callsign, map { it.namePair() })
 
 @Serializable
 data class PlateRef(
@@ -161,6 +186,8 @@ data class EventListItem(
     @SerialName("shift_lead")
     @Serializable(with = OptionalPersonNameSerializer::class)
     val shiftLead: PersonName? = null,
+    @SerialName("secondary_leads")
+    val secondaryLeads: List<EventSecondaryLeadRow> = emptyList(),
     @Serializable(with = OptionalShiftSummarySerializer::class)
     val shift: ShiftSummary? = null,
     val responders: List<ResponderSummary> = emptyList(),
@@ -207,7 +234,21 @@ data class EventListItem(
 
     /** Unit-wide lists also search by event type and the אחמ״ש who owns the event. */
     val unitSearchFields: List<String?>
-        get() = listOf(policeEventId, road?.name, location, eventType?.name, shiftLead?.display, formatDate(eventDate))
+        get() = listOf(
+            policeEventId,
+            road?.name,
+            location,
+            eventType?.name,
+            leadsCaption().ifEmpty { shiftLead?.display },
+            formatDate(eventDate),
+        )
+
+    fun leadsCaption(): String = eventLeadsCaption(
+        origin = origin,
+        mainFullName = shiftLead?.fullName,
+        mainCallsign = shiftLead?.callsign,
+        secondaries = secondaryLeads.map { it.namePair() },
+    )
 }
 
 @Serializable
@@ -252,6 +293,9 @@ data class CockpitEventListItem(
     @SerialName("shift_lead")
     @Serializable(with = OptionalPersonNameSerializer::class)
     val shiftLead: PersonName? = null,
+    @SerialName("secondary_leads")
+    val secondaryLeads: List<EventSecondaryLeadRow> = emptyList(),
+    @SerialName("shift_lead_id") val shiftLeadId: String? = null,
     val responders: List<CockpitResponderRow> = emptyList(),
 ) {
     val freeze: EventFreezeFlags
@@ -269,8 +313,13 @@ data class CockpitEventListItem(
             locationLng = locationLng,
             eventTypeName = eventType?.name,
             roadName = road?.name,
-            leadFullName = shiftLead?.fullName,
-            leadCallsign = shiftLead?.callsign,
+            leadFullName = if (secondaryLeads.isEmpty()) {
+                shiftLead?.fullName
+            } else {
+                secondaryLeads.leadsCaptionWith(shiftLead)
+            },
+            leadCallsign = if (secondaryLeads.isEmpty()) shiftLead?.callsign else "",
+            shiftLeadId = shiftLeadId,
             responders = responders.map { it.asInput },
         )
 }
@@ -471,6 +520,8 @@ data class FillEventRow(
     @SerialName("shift_lead")
     @Serializable(with = OptionalPersonNameSerializer::class)
     val shiftLead: PersonName? = null,
+    @SerialName("secondary_leads")
+    val secondaryLeads: List<EventSecondaryLeadRow> = emptyList(),
     val responders: List<FillAssignmentRow> = emptyList(),
 )
 
@@ -1199,6 +1250,18 @@ data class EventInsert(
 )
 
 @Serializable
+data class EventSecondaryLeadInsert(
+    @SerialName("event_id") val eventId: String,
+    @SerialName("user_id") val userId: String,
+    val locked: Boolean = false,
+)
+
+@Serializable
+data class EventSecondaryLeadLockWrite(
+    val locked: Boolean,
+)
+
+@Serializable
 data class EventResponderInsert(
     @SerialName("event_id") val eventId: String,
     @SerialName("responder_id") val responderId: String,
@@ -1254,6 +1317,8 @@ data class EventFormDetail(
     @SerialName("shift_lead")
     @Serializable(with = OptionalPersonNameSerializer::class)
     val shiftLead: PersonName? = null,
+    @SerialName("secondary_leads")
+    val secondaryLeads: List<EventSecondaryLeadRow> = emptyList(),
     @Serializable(with = EventStatusSerializer::class)
     val status: EventStatus = EventStatus.DRAFT,
     val responders: List<EventFormResponderRow> = emptyList(),
@@ -1270,6 +1335,8 @@ data class EventFormDetail(
         responders = responders.map { it.toDraft(vehicleOwnerIds.contains(it.responderId)) },
         isCancelled = isCancelled,
         busLane = busLane,
+        shiftLeadId = shiftLeadId.orEmpty(),
+        secondaryLeads = secondaryLeads.map { it.asDomain() },
     )
 }
 
@@ -1311,8 +1378,9 @@ data class EventUpdateWrite(
     val location: String? = null,
     val notes: String? = null,
     @SerialName("is_cancelled") val isCancelled: Boolean = false,
-    @SerialName("bus_lane") val busLane: Boolean = false,
+    @SerialName("bus_lane")     val busLane: Boolean = false,
     val status: String,
+    @SerialName("shift_lead_id") val shiftLeadId: String? = null,
     @SerialName("updated_at") val updatedAt: String,
 )
 

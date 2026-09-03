@@ -22,6 +22,21 @@ const val COCKPIT_OPEN_MAPS = "ניווט למיקום"
 const val COCKPIT_NO_LOCATION = "אין מיקום לפתיחה במפות"
 const val COCKPIT_MAPS_FAILED = "לא נמצאה אפליקציית מפות שתוכל לפתוח את המיקום."
 const val COCKPIT_NEW_EVENT_TITLE = "אירוע חדש"
+const val COCKPIT_DELETE_RESPONDERS = "יש מתנדבים משובצים. הסירו אותם תחילה."
+const val COCKPIT_DELETE_CONFIRM_AGAIN = "לחצו שוב למחיקה."
+
+enum class CockpitDeleteBlock { RESPONDERS, OTHER_LEAD }
+
+sealed class CockpitDeleteClick {
+    data class Blocked(val block: CockpitDeleteBlock) : CockpitDeleteClick()
+    data object Arm : CockpitDeleteClick()
+    data object Delete : CockpitDeleteClick()
+}
+
+data class CockpitDeleteViewer(
+    val userId: String?,
+    val isAdmin: Boolean,
+)
 
 private val OPEN_COCKPIT_STATUSES = setOf(EventStatus.IN_PROGRESS, EventStatus.PARTIAL)
 
@@ -43,6 +58,7 @@ data class CockpitEventInput(
     val roadName: String? = null,
     val leadFullName: String? = null,
     val leadCallsign: String? = null,
+    val shiftLeadId: String? = null,
     val responders: List<CockpitResponderInput> = emptyList(),
 )
 
@@ -225,6 +241,51 @@ fun cockpitOwnParticipation(
 ): ParticipationStatus? {
     if (userId.isNullOrBlank()) return null
     return responders.firstOrNull { it.responderId == userId }?.status
+}
+
+/** Blocked while responders remain, or when an אחמ״ש views another lead's event. */
+fun cockpitDeleteBlock(
+    responderCount: Int,
+    shiftLeadId: String?,
+    viewer: CockpitDeleteViewer?,
+): CockpitDeleteBlock? {
+    if (
+        viewer != null &&
+        !viewer.isAdmin &&
+        !viewer.userId.isNullOrBlank() &&
+        !shiftLeadId.isNullOrBlank() &&
+        shiftLeadId != viewer.userId
+    ) {
+        return CockpitDeleteBlock.OTHER_LEAD
+    }
+    if (responderCount > 0) return CockpitDeleteBlock.RESPONDERS
+    return null
+}
+
+fun canDeleteCockpitDraft(
+    responderCount: Int,
+    shiftLeadId: String?,
+    viewer: CockpitDeleteViewer?,
+): Boolean = cockpitDeleteBlock(responderCount, shiftLeadId, viewer) == null
+
+fun shouldShowCockpitDelete(block: CockpitDeleteBlock?): Boolean =
+    block != CockpitDeleteBlock.OTHER_LEAD
+
+fun cockpitDeleteHint(block: CockpitDeleteBlock?): String = when (block) {
+    CockpitDeleteBlock.RESPONDERS -> COCKPIT_DELETE_RESPONDERS
+    CockpitDeleteBlock.OTHER_LEAD -> EVENT_DELETE_OTHER_LEAD
+    null -> COCKPIT_DELETE_CONFIRM_AGAIN
+}
+
+fun cockpitDeleteClick(
+    armed: Boolean,
+    responderCount: Int,
+    shiftLeadId: String?,
+    viewer: CockpitDeleteViewer?,
+): CockpitDeleteClick {
+    val block = cockpitDeleteBlock(responderCount, shiftLeadId, viewer)
+    if (block != null) return CockpitDeleteClick.Blocked(block)
+    return if (armed) CockpitDeleteClick.Delete else CockpitDeleteClick.Arm
 }
 
 private fun normalizeInstant(raw: String): String {

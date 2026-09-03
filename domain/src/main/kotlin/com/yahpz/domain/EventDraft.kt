@@ -80,9 +80,17 @@ data class EventDraft(
     val responders: List<EventResponderDraft> = emptyList(),
     val isCancelled: Boolean = false,
     val busLane: Boolean = false,
+    val shiftLeadId: String = "",
+    val secondaryLeads: List<SecondaryLead> = emptyList(),
 ) {
     val responderIds: List<String> get() = responders.map { it.responderId }
 }
+
+/** Equality for confirm-without-change: ignore client-only flags that refresh after load. */
+fun EventDraft.forPersistCompare(): EventDraft = copy(
+    responders = responders.map { it.copy(hasVehicle = false) },
+    secondaryLeads = secondaryLeads.map { it.copy(addedAt = null) },
+)
 
 data class EventDraftErrors(
     val eventDate: String? = null,

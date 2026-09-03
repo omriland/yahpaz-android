@@ -20,13 +20,24 @@ fun prefsRestoringEvent(
 ): List<ActivePref> = prefs.filterNot { it.eventId == eventId } + previous
 
 const val MY_ACTIVE_EVENT_PINNED = "נוסף לאירועים הפעילים."
-const val MY_ACTIVE_ADD = "הוספה"
+const val MY_ACTIVE_ADD = "הוספה לפעילים"
 const val MY_ACTIVE_REMOVE = "הסרה"
 const val MY_ACTIVE_REMOVE_LOCKED = "אירוע בהזנה — לא ניתן להסיר"
 const val MY_ACTIVE_PREF_FAILED = "עדכון האירועים הפעילים נכשל. בדקו את החיבור ונסו שוב."
-const val MY_ACTIVE_DRAG_TO_ACTIVE = "לחיצה ארוכה וגרירה לאירועים הפעילים"
+const val MY_ACTIVE_DRAG_TO_ACTIVE = "הוספה לפעילים, או לחיצה ארוכה וגרירה"
 const val MY_ACTIVE_DROP_TO_ADD = "שחררו כאן להוספה לפעילים"
 const val MY_ACTIVE_DRAG_TO_ADD = "גררו לכאן להוספה לפעילים"
+
+/** Lead-owned events that stay on האירועים הפעילים שלי until done, cancelled, or הסרה. */
+val AUTO_MY_ACTIVE_STATUSES = setOf(
+    EventStatus.DRAFT,
+    EventStatus.IN_PROGRESS,
+    EventStatus.PARTIAL,
+)
+
+fun isAutoOnMyActive(isCancelled: Boolean, status: EventStatus): Boolean =
+    !isCancelled && status in AUTO_MY_ACTIVE_STATUSES
+
 const val EVENT_DELETE_TITLE = "מחיקת אירוע"
 const val EVENT_DELETE_CONFIRM = "למחוק את האירוע? אין מתנדבים משובצים."
 const val EVENT_DELETE_ACTION = "מחיקה"

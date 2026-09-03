@@ -64,6 +64,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import com.yahpz.domain.EVENT_DELETE_ACTION
+import com.yahpz.domain.EVENT_DELETE_TITLE
 import com.yahpz.domain.EventFreezeFlags
 import com.yahpz.domain.StampDescriptor
 import com.yahpz.domain.StampTone
@@ -184,6 +186,26 @@ fun GhostButton(
             color = color,
         )
     }
+}
+
+@Composable
+fun EventDeleteControls(
+    visible: Boolean,
+    confirmArmed: Boolean,
+    hint: String?,
+    deleting: Boolean,
+    onClick: () -> Unit,
+) {
+    if (!visible) return
+    hint?.let {
+        Text(it, style = TypeScale.caption, color = FieldTheme.alert)
+    }
+    GhostButton(
+        title = if (confirmArmed) EVENT_DELETE_ACTION else EVENT_DELETE_TITLE,
+        danger = true,
+        enabled = !deleting,
+        onClick = onClick,
+    )
 }
 
 @Composable

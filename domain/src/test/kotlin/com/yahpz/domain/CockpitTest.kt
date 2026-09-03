@@ -173,4 +173,33 @@ class CockpitTest {
         assertEquals(listOf("b"), filterCockpitEventsByQuery(rows, "כביש 4").map { it.id })
         assertTrue(filterCockpitEventsByQuery(rows, "אין").isEmpty())
     }
+
+    @Test
+    fun deleteBlocksOnlyWhileRespondersAreAllocated() {
+        val lead = CockpitDeleteViewer(userId = "lead-a", isAdmin = false)
+        assertTrue(canDeleteCockpitDraft(0, "lead-a", lead))
+        assertEquals(CockpitDeleteBlock.RESPONDERS, cockpitDeleteBlock(1, "lead-a", lead))
+        assertNull(cockpitDeleteBlock(0, "lead-a", lead))
+        assertEquals(COCKPIT_DELETE_RESPONDERS, cockpitDeleteHint(CockpitDeleteBlock.RESPONDERS))
+        assertEquals(COCKPIT_DELETE_CONFIRM_AGAIN, cockpitDeleteHint(null))
+        assertEquals(CockpitDeleteClick.Arm, cockpitDeleteClick(false, 0, "lead-a", lead))
+        assertEquals(CockpitDeleteClick.Delete, cockpitDeleteClick(true, 0, "lead-a", lead))
+        assertEquals(
+            CockpitDeleteClick.Blocked(CockpitDeleteBlock.RESPONDERS),
+            cockpitDeleteClick(false, 1, "lead-a", lead),
+        )
+    }
+
+    @Test
+    fun deleteBlocksShiftLeadFromAnotherLeadsEvent() {
+        val otherLead = CockpitDeleteViewer(userId = "lead-a", isAdmin = false)
+        assertEquals(CockpitDeleteBlock.OTHER_LEAD, cockpitDeleteBlock(0, "lead-b", otherLead))
+        assertFalse(canDeleteCockpitDraft(0, "lead-b", otherLead))
+        assertTrue(canDeleteCockpitDraft(0, "lead-a", otherLead))
+        assertTrue(canDeleteCockpitDraft(0, "lead-b", CockpitDeleteViewer("admin", isAdmin = true)))
+        assertFalse(shouldShowCockpitDelete(CockpitDeleteBlock.OTHER_LEAD))
+        assertTrue(shouldShowCockpitDelete(CockpitDeleteBlock.RESPONDERS))
+        assertTrue(shouldShowCockpitDelete(null))
+        assertEquals(EVENT_DELETE_OTHER_LEAD, cockpitDeleteHint(CockpitDeleteBlock.OTHER_LEAD))
+    }
 }
