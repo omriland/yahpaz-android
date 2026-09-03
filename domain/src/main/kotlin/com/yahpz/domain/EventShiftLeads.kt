@@ -121,6 +121,18 @@ fun formatLeadsCaption(
     return parts.joinToString(" · ")
 }
 
+/** Unit lists: main `שם · או״ק` only, plus ` +N` when secondaries exist. */
+fun formatListLeadCaption(
+    mainFullName: String?,
+    mainCallsign: String?,
+    secondaries: List<Pair<String?, String?>> = emptyList(),
+): String {
+    val main = formatLeadPerson(mainFullName, mainCallsign)
+    if (main.isEmpty()) return ""
+    val count = secondaries.size
+    return if (count > 0) "$main +$count" else main
+}
+
 fun SecondaryLead.namePair(): Pair<String?, String?> = fullName to callsign
 
 fun eventLeadsCaption(
@@ -130,5 +142,5 @@ fun eventLeadsCaption(
     secondaries: List<Pair<String?, String?>> = emptyList(),
 ): String {
     if (origin == "shift") return ""
-    return formatLeadsCaption(mainFullName, mainCallsign, secondaries)
+    return formatListLeadCaption(mainFullName, mainCallsign, secondaries)
 }

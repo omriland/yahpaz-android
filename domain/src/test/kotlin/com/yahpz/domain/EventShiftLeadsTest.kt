@@ -137,11 +137,15 @@ class EventShiftLeadsTest {
             formatLeadsCaption("דנה כהן", "D1", listOf("עמרי" to "Admin")),
         )
         assertEquals(
+            "דנה כהן · D1 +2",
+            formatListLeadCaption("דנה כהן", "D1", listOf("עמרי" to "Admin", "גיא" to "G1")),
+        )
+        assertEquals(
             "",
             eventLeadsCaption("shift", "דנה", "D1", listOf("עמרי" to "Admin")),
         )
         assertEquals(
-            "דנה · D1 · עמרי · Admin",
+            "דנה · D1 +1",
             eventLeadsCaption("manual", "דנה", "D1", listOf("עמרי" to "Admin")),
         )
     }

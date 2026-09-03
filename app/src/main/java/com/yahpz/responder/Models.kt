@@ -239,7 +239,11 @@ data class EventListItem(
             road?.name,
             location,
             eventType?.name,
-            leadsCaption().ifEmpty { shiftLead?.display },
+            formatLeadsCaption(
+                shiftLead?.fullName,
+                shiftLead?.callsign,
+                secondaryLeads.map { it.namePair() },
+            ).ifEmpty { shiftLead?.display },
             formatDate(eventDate),
         )
 
