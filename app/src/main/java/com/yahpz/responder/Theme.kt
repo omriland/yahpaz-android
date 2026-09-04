@@ -88,6 +88,7 @@ val StampTone.ink: Color
         StampTone.PARTIAL -> FieldTheme.partial
         StampTone.PENDING -> FieldTheme.pending
         StampTone.DRAFT -> FieldTheme.draft
+        StampTone.ALERT -> FieldTheme.alert
     }
 
 val StampTone.tint: Color
@@ -96,6 +97,7 @@ val StampTone.tint: Color
         StampTone.PARTIAL -> FieldTheme.partialTint
         StampTone.PENDING -> FieldTheme.accentSubtle
         StampTone.DRAFT -> FieldTheme.sunken
+        StampTone.ALERT -> FieldTheme.alertTint
     }
 
 @Composable

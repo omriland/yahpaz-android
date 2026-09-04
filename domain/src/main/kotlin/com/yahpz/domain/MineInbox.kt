@@ -35,6 +35,7 @@ data class MineListEvent(
     val id: String,
     val date: String,
     val participation: ParticipationStatus,
+    val totalKm: Double? = null,
 )
 
 data class MineListSections<T>(
@@ -53,7 +54,7 @@ fun partitionMineList(
     val logged = mutableListOf<MineListEvent>()
     var hasMoreLogged = false
     for (item in items) {
-        if (item.participation != ParticipationStatus.DONE) {
+        if (mineInboxIsOpen(item.participation, item.totalKm)) {
             pending += item
             continue
         }

@@ -24,10 +24,12 @@ enum class ParticipationStatus(val raw: String) {
 }
 
 enum class StampTone {
-    DONE, PARTIAL, PENDING, DRAFT
+    DONE, PARTIAL, PENDING, DRAFT, ALERT
 }
 
 data class StampDescriptor(val label: String, val tone: StampTone)
+
+const val MISSING_KM_STAMP_LABEL = "חסר ק״מ"
 
 fun eventStamp(status: EventStatus): StampDescriptor = when (status) {
     EventStatus.DRAFT -> StampDescriptor("אירוע בהזנה", StampTone.DRAFT)
@@ -35,6 +37,20 @@ fun eventStamp(status: EventStatus): StampDescriptor = when (status) {
     EventStatus.PARTIAL -> StampDescriptor("תועד חלקית", StampTone.PARTIAL)
     EventStatus.DONE -> StampDescriptor("הושלם", StampTone.DONE)
 }
+
+/**
+ * Viewer-relative documentation stamp for אחמ״ש lists.
+ * Does not change event/participation status — only the lead-facing label.
+ */
+fun reportingDocumentationStamp(status: EventStatus, missingKm: Boolean): StampDescriptor =
+    overlayMissingKmOnDoneStamp(eventStamp(status), missingKm)
+
+fun overlayMissingKmOnDoneStamp(stamp: StampDescriptor, missingKm: Boolean): StampDescriptor =
+    if (missingKm && stamp.tone == StampTone.DONE && stamp.label == "הושלם") {
+        StampDescriptor(MISSING_KM_STAMP_LABEL, StampTone.ALERT)
+    } else {
+        stamp
+    }
 
 fun cancelledStamp(): StampDescriptor = StampDescriptor("בוטל", StampTone.DRAFT)
 
@@ -44,6 +60,18 @@ fun participationStamp(status: ParticipationStatus, isViewer: Boolean): StampDes
         return StampDescriptor("טיוטה נשמרה", StampTone.DRAFT)
     }
     return StampDescriptor(if (isViewer) "ממתין לתיעוד" else "ממתין למתנדב", StampTone.PENDING)
+}
+
+/** Responder-facing: they finished; the lead has not entered KM yet. Stamp stays הושלם. */
+const val LEAD_KM_PENDING_NOTE = "אחמ״ש טרם הזין ק״מ"
+
+fun leadKmPendingNote(participation: ParticipationStatus?, totalKm: Double?): String? =
+    if (participation == ParticipationStatus.DONE && totalKm == null) LEAD_KM_PENDING_NOTE else null
+
+/** Mine inbox: fill still open, or fill done but lead KM is missing. */
+fun mineInboxIsOpen(participation: ParticipationStatus?, totalKm: Double?): Boolean {
+    if (participation != ParticipationStatus.DONE) return true
+    return totalKm == null
 }
 
 fun mineFillCtaLabel(status: ParticipationStatus): String? = when (status) {

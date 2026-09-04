@@ -80,6 +80,7 @@ fun CockpitScreen(app: AppModel, ui: AppUiState, onBack: () -> Unit) {
     var refreshing by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var detail by remember { mutableStateOf<CockpitEventListItem?>(null) }
+    var assignedEditBlocked by remember { mutableStateOf(false) }
     var mapsError by remember { mutableStateOf<String?>(null) }
     var now by remember { mutableStateOf(Instant.now()) }
 
@@ -281,9 +282,13 @@ fun CockpitScreen(app: AppModel, ui: AppUiState, onBack: () -> Unit) {
                     PrimaryButton(
                         title = "עריכה",
                         onClick = {
-                            val id = current.id
-                            detail = null
-                            app.openEditEvent(id)
+                            if (current.blocksAssignedVolunteerEdit(ui.userId)) {
+                                assignedEditBlocked = true
+                            } else {
+                                val id = current.id
+                                detail = null
+                                app.openEditEvent(id)
+                            }
                         },
                     )
                 }
@@ -339,6 +344,10 @@ fun CockpitScreen(app: AppModel, ui: AppUiState, onBack: () -> Unit) {
                 }
             }
         }
+    }
+
+    if (assignedEditBlocked) {
+        AssignedVolunteerEditBlockedSheet(onDismiss = { assignedEditBlocked = false })
     }
 }
 

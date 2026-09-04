@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import com.yahpz.domain.AssignableProfile
 import com.yahpz.domain.CockpitDeleteClick
 import com.yahpz.domain.CockpitDeleteViewer
+import com.yahpz.domain.ASSIGNED_VOLUNTEER_EVENT_EDIT_ERROR
 import com.yahpz.domain.EVENT_ASSIGN_CLOSE
 import com.yahpz.domain.EVENT_ASSIGN_EMPTY
 import com.yahpz.domain.EVENT_ASSIGN_OPEN
@@ -55,6 +56,7 @@ import com.yahpz.domain.FOREIGN_EVENT_EDIT_CANCEL
 import com.yahpz.domain.FOREIGN_EVENT_EDIT_CONFIRM
 import com.yahpz.domain.EventDraft
 import com.yahpz.domain.SecondaryLead
+import com.yahpz.domain.blocksAssignedVolunteerEdit
 import com.yahpz.domain.canManageSecondaryLeads
 import com.yahpz.domain.cockpitDeleteBlock
 import com.yahpz.domain.cockpitDeleteClick
@@ -120,6 +122,7 @@ fun EventFormScreen(
     var shiftLeadUsers by remember { mutableStateOf(emptyList<AssignableProfile>()) }
     var persistedDraft by remember { mutableStateOf<EventDraft?>(null) }
     var foreignEditAcked by remember { mutableStateOf(false) }
+    var assignedBlocked by remember { mutableStateOf(false) }
     var errors by remember { mutableStateOf(EventDraftErrors()) }
     var formError by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
@@ -164,6 +167,7 @@ fun EventFormScreen(
         if (eventId == null) return@LaunchedEffect
         loaded = false
         loadFailed = false
+        assignedBlocked = false
         try {
             val detail = YahpazAPI.fetchEventFormDetail(eventId)
             val vehicles = YahpazAPI.fetchVehiclesForResponders(detail.responders.map { it.responderId })
@@ -190,9 +194,11 @@ fun EventFormScreen(
                 secondaryLeads = draft.secondaryLeads,
             )
             foreignEditAcked = false
+            assignedBlocked = draft.blocksAssignedVolunteerEdit(ui.userId)
             loaded = true
         } catch (_: Exception) {
             loadFailed = true
+            assignedBlocked = false
             loaded = true
         }
     }
@@ -218,11 +224,16 @@ fun EventFormScreen(
         editing &&
             loaded &&
             !loadFailed &&
+            !assignedBlocked &&
             isForeignShiftLeadEvent(ui.userId, shiftLeadId) &&
             !foreignEditAcked
 
     fun persist(allowPartial: Boolean) {
         if (deleting || saving) return
+        if (assignedBlocked) {
+            formError = ASSIGNED_VOLUNTEER_EVENT_EDIT_ERROR
+            return
+        }
         if (isForeignShiftLeadEvent(ui.userId, shiftLeadId) && !foreignEditAcked) return
         val current = draft()
         if (!editing && createIncludesSelfAssign(ui.userId.orEmpty(), current.responders)) {
@@ -318,6 +329,11 @@ fun EventFormScreen(
                 onAction = onBack,
             )
             editing && !loaded -> LoadingBlock("טוען אירוע…")
+            assignedBlocked -> EmptyState(
+                title = ASSIGNED_VOLUNTEER_EVENT_EDIT_ERROR,
+                actionTitle = "חזרה",
+                onAction = onBack,
+            )
             foreignEditPending -> { /* confirm sheet below */ }
             ui.lookupsFailed && ui.lookups.isEmpty -> EmptyState(
                 title = "טעינת הרשימות נכשלה. בדקו את החיבור ונסו שוב.",

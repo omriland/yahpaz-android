@@ -75,12 +75,14 @@ import com.yahpz.domain.UNIT_EVENTS_LOAD_FAILED
 import com.yahpz.domain.canDeleteUnassignedEvent
 import com.yahpz.domain.canRemoveFromMyActive
 import com.yahpz.domain.cancelledStamp
-import com.yahpz.domain.eventStamp
+import com.yahpz.domain.eventHasMissingResponderKm
+import com.yahpz.domain.reportingDocumentationStamp
 import com.yahpz.domain.fieldsMatchQuery
 import com.yahpz.domain.formatDate
 import com.yahpz.domain.formatNumber
 import com.yahpz.domain.formatPlate
 import com.yahpz.domain.formatTime
+import com.yahpz.domain.leadKmPendingNote
 import com.yahpz.domain.mineFillCtaLabel
 import com.yahpz.domain.participationStamp
 import com.yahpz.domain.visibleMyActiveIds
@@ -105,6 +107,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
     val scope = rememberCoroutineScope()
     var query by remember { mutableStateOf("") }
     var detail by remember { mutableStateOf<EventListItem?>(null) }
+    var assignedEditBlocked by remember { mutableStateOf(false) }
     var refreshing by remember { mutableStateOf(false) }
     var draggingId by remember { mutableStateOf<String?>(null) }
     var dragSource by remember { mutableStateOf<ActiveDragSource?>(null) }
@@ -121,6 +124,15 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
 
     LaunchedEffect(ui.userId) {
         if (ui.userId != null && ui.unitEvents.isEmpty()) app.reloadUnitEvents()
+    }
+
+    fun tryOpenEdit(event: EventListItem): Boolean {
+        if (event.blocksAssignedVolunteerEdit(ui.userId)) {
+            assignedEditBlocked = true
+            return false
+        }
+        app.openEditEvent(event.id)
+        return true
     }
 
     var pendingBoardIds by remember { mutableStateOf(setOf<String>()) }
@@ -311,7 +323,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                                 boardActionEnabled = canRemove && event.id !in pendingBoardIds,
                                 boardActionHint = if (canRemove) null else MY_ACTIVE_REMOVE_LOCKED,
                                 onBoardAction = { dismissFromActive(event.id) },
-                                onOpen = { app.openEditEvent(event.id) },
+                                onOpen = { tryOpenEdit(event) },
                                 onDragStart = { startInRoot ->
                                     draggingId = event.id
                                     dragSource = ActiveDragSource.ACTIVE
@@ -476,7 +488,14 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
             ?: ui.myActivePinnedEvents.firstOrNull { it.id == event.id }
             ?: event
         val mine = ui.userId?.let { current.ownParticipation(it) }
-        val stamp = if (current.isCancelled) cancelledStamp() else eventStamp(current.status)
+        val stamp = if (current.isCancelled) {
+            cancelledStamp()
+        } else {
+            reportingDocumentationStamp(
+                current.status,
+                eventHasMissingResponderKm(current.asIncompleteSnapshot()),
+            )
+        }
         var expandedResponderIds by remember(current.id) { mutableStateOf(setOf<String>()) }
         var detailResponders by remember(current.id) { mutableStateOf<List<UnitEventDetailResponderRow>?>(null) }
         var confirmDelete by remember(current.id) { mutableStateOf(false) }
@@ -561,9 +580,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                     PrimaryButton(
                         title = EVENT_EDIT_TITLE,
                         onClick = {
-                            val id = current.id
-                            detail = null
-                            app.openEditEvent(id)
+                            if (tryOpenEdit(current)) detail = null
                         },
                     )
                 }
@@ -608,6 +625,10 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                 }
             }
         }
+    }
+
+    if (assignedEditBlocked) {
+        AssignedVolunteerEditBlockedSheet(onDismiss = { assignedEditBlocked = false })
     }
 }
 
@@ -737,7 +758,10 @@ private fun UnitEventResponderRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                StampChip(stamp)
+                StampWithNote(
+                    stamp,
+                    note = if (isViewer) leadKmPendingNote(row.status, row.totalKm) else null,
+                )
                 Icon(
                     imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
                     contentDescription = null,
@@ -818,7 +842,14 @@ private fun UnitEventRow(
     incompleteFields: List<String> = emptyList(),
     incompleteSpoken: String = "",
 ) {
-    val stamp = if (event.isCancelled) cancelledStamp() else eventStamp(event.status)
+    val stamp = if (event.isCancelled) {
+        cancelledStamp()
+    } else {
+        reportingDocumentationStamp(
+            event.status,
+            eventHasMissingResponderKm(event.asIncompleteSnapshot()),
+        )
+    }
     val incomplete = incompleteFields.isNotEmpty()
     val cardShape = RoundedCornerShape(8.dp)
     Row(

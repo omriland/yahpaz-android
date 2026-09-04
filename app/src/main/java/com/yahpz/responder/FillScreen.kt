@@ -78,6 +78,7 @@ import com.yahpz.domain.digitsOnly
 import com.yahpz.domain.formatDate
 import com.yahpz.domain.formatDateTime
 import com.yahpz.domain.lookupPlate
+import com.yahpz.domain.leadKmPendingNote
 import com.yahpz.domain.participationStamp
 import com.yahpz.domain.plateDigits
 import com.yahpz.domain.removeTreatedPlate
@@ -362,10 +363,19 @@ fun FillScreen(eventId: String, app: AppModel) {
                             )
                         }
                         if (readOnly) {
-                            StampChip(participationStamp(fill.participationStatus, true))
+                            StampWithNote(
+                                participationStamp(fill.participationStatus, true),
+                                note = leadKmPendingNote(fill.participationStatus, fill.totalKm),
+                            )
                             fill.updatedAt?.let {
                                 Text(
-                                    "הדיווח הושלם ב־${formatDateTime(it)}. רק אחמ״ש יכול לערוך לאחר סיום.",
+                                    buildString {
+                                        append("הדיווח הושלם ב־${formatDateTime(it)}. ")
+                                        leadKmPendingNote(fill.participationStatus, fill.totalKm)?.let { note ->
+                                            append("$note. ")
+                                        }
+                                        append("רק אחמ״ש יכול לערוך לאחר סיום.")
+                                    },
                                     style = TypeScale.caption,
                                     color = FieldTheme.textMuted,
                                 )

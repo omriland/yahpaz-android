@@ -29,6 +29,7 @@ import com.yahpz.domain.ContactSearchFields
 import com.yahpz.domain.DuplicateParticipation
 import com.yahpz.domain.EventDraft
 import com.yahpz.domain.EventFreezeFlags
+import com.yahpz.domain.isAssignedVolunteerEventEditBlocked
 import com.yahpz.domain.IncompleteEventSnapshot
 import com.yahpz.domain.IncompleteResponderSnapshot
 import com.yahpz.domain.EventResponderDraft
@@ -206,8 +207,18 @@ data class EventListItem(
     fun ownParticipation(userId: String): ParticipationStatus? =
         responders.firstOrNull { it.responderId == userId }?.status
 
+    fun ownTotalKm(userId: String): Double? =
+        responders.firstOrNull { it.responderId == userId }?.totalKm
+
     fun ownFillCompletableAt(userId: String): String? =
         responders.firstOrNull { it.responderId == userId }?.fillCompletableAt
+
+    fun blocksAssignedVolunteerEdit(viewerId: String?): Boolean =
+        isAssignedVolunteerEventEditBlocked(
+            viewerId,
+            responders.map { it.responderId },
+            secondaryLeads.map { it.userId },
+        )
 
     val freeze: EventFreezeFlags
         get() = EventFreezeFlags(frozenOver60km, frozenSuspiciousDuplicate)
@@ -352,6 +363,13 @@ data class CockpitEventListItem(
             leadCallsign = if (secondaryLeads.isEmpty()) shiftLead?.callsign else "",
             shiftLeadId = shiftLeadId,
             responders = responders.map { it.asInput },
+        )
+
+    fun blocksAssignedVolunteerEdit(viewerId: String?): Boolean =
+        isAssignedVolunteerEventEditBlocked(
+            viewerId,
+            responders.map { it.responderId },
+            secondaryLeads.map { it.userId },
         )
 }
 

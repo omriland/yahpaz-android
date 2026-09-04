@@ -22,7 +22,9 @@ import com.yahpz.domain.EVENT_DRAFT_DATE_ERROR
 import com.yahpz.domain.EVENT_DRAFT_FORM_ERROR
 import com.yahpz.domain.EVENT_DRAFT_SAVE_FAILED
 import com.yahpz.domain.EVENT_SELF_ASSIGN_ON_CREATE_ERROR
+import com.yahpz.domain.ASSIGNED_VOLUNTEER_EVENT_EDIT_ERROR
 import com.yahpz.domain.EventDraft
+import com.yahpz.domain.blocksAssignedVolunteerEdit
 import com.yahpz.domain.EventResponderDraft
 import com.yahpz.domain.EventStatus
 import com.yahpz.domain.FillMode
@@ -1544,6 +1546,10 @@ object YahpazAPI {
         }
         if (previousDraft != null && previousDraft.forPersistCompare() == draft.forPersistCompare()) {
             return null
+        }
+        val assignmentSource = previousDraft ?: draft
+        if (assignmentSource.blocksAssignedVolunteerEdit(sessionUserId())) {
+            return ASSIGNED_VOLUNTEER_EVENT_EDIT_ERROR
         }
         val eventDate = normalizeReturnDate(draft.eventDate) ?: return EVENT_DRAFT_DATE_ERROR
         val mainLeadId = draft.shiftLeadId.ifBlank { return "אין אחמ״ש ראשי." }

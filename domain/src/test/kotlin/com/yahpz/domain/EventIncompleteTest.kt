@@ -54,7 +54,9 @@ class EventIncompleteTest {
             setOf(IncompleteField.RESPONDER_KM),
             missingEventFields(event(responders = listOf(responder(totalKm = null)))),
         )
+        assertEquals(true, eventHasMissingResponderKm(event(responders = listOf(responder(totalKm = null)))))
         assertEquals(emptySet<IncompleteField>(), missingEventFields(event(responders = listOf(responder(totalKm = 0.0)))))
+        assertEquals(false, eventHasMissingResponderKm(event(responders = listOf(responder(totalKm = 0.0)))))
         assertEquals(
             setOf(IncompleteField.RESPONDER_KM),
             missingEventFields(event(responders = listOf(responder(), responder(totalKm = null)))),

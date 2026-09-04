@@ -82,6 +82,9 @@ fun incompleteNoticeLabel(fields: Set<IncompleteField>): String =
 fun isEventIncomplete(event: IncompleteEventSnapshot): Boolean =
     missingEventFields(event).isNotEmpty()
 
+fun eventHasMissingResponderKm(event: IncompleteEventSnapshot): Boolean =
+    IncompleteField.RESPONDER_KM in missingEventFields(event)
+
 fun <T> partitionIncompleteEvents(
     events: List<T>,
     snapshot: (T) -> IncompleteEventSnapshot,

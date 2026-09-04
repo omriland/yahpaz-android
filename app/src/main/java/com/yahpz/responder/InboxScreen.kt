@@ -61,7 +61,9 @@ import com.yahpz.domain.formatDate
 import com.yahpz.domain.isMineFillOverdue
 import com.yahpz.domain.israelToday
 import com.yahpz.domain.mineEventMatchesQuery
+import com.yahpz.domain.leadKmPendingNote
 import com.yahpz.domain.mineFillCtaLabel
+import com.yahpz.domain.mineInboxIsOpen
 import com.yahpz.domain.mineLoggedNoResultsTitle
 import com.yahpz.domain.minePendingTabLabel
 import com.yahpz.domain.openMineSummary
@@ -92,7 +94,7 @@ fun InboxScreen(app: AppModel, ui: AppUiState) {
 
     val pending = ui.events.filter { event ->
         val userId = ui.userId ?: return@filter false
-        event.ownParticipation(userId) != ParticipationStatus.DONE
+        mineInboxIsOpen(event.ownParticipation(userId), event.ownTotalKm(userId))
     }.sortedByDescending { it.eventDate }
 
     val loggedWindow = if (ui.userId == null) {
@@ -100,7 +102,12 @@ fun InboxScreen(app: AppModel, ui: AppUiState) {
     } else {
         partitionMineList(
             ui.events.map {
-                MineListEvent(it.id, it.eventDate, it.ownParticipation(ui.userId) ?: ParticipationStatus.PENDING)
+                MineListEvent(
+                    it.id,
+                    it.eventDate,
+                    it.ownParticipation(ui.userId) ?: ParticipationStatus.PENDING,
+                    it.ownTotalKm(ui.userId),
+                )
             },
             israelToday(),
             windowsLoaded,
@@ -160,6 +167,7 @@ fun InboxScreen(app: AppModel, ui: AppUiState) {
                     query = loggedQuery,
                     onQuery = { loggedQuery = it },
                     items = filteredLogged,
+                    userId = ui.userId,
                     hasMore = loggedWindow.hasMoreLogged,
                     onOpen = { detail = it },
                     onMore = { windowsLoaded += 1 },
@@ -205,7 +213,14 @@ fun InboxScreen(app: AppModel, ui: AppUiState) {
                             style = TypeScale.body,
                             color = FieldTheme.textPrimary,
                         )
-                        StampChip(participationStamp(row.status, row.responderId == ui.userId))
+                        StampWithNote(
+                            participationStamp(row.status, row.responderId == ui.userId),
+                            note = if (row.responderId == ui.userId) {
+                                leadKmPendingNote(row.status, row.totalKm)
+                            } else {
+                                null
+                            },
+                        )
                     }
                 }
                 mineFillCtaLabel(mine)?.let { label ->
@@ -287,6 +302,7 @@ private fun LoggedList(
     query: String,
     onQuery: (String) -> Unit,
     items: List<EventListItem>,
+    userId: String?,
     hasMore: Boolean,
     onOpen: (EventListItem) -> Unit,
     onMore: () -> Unit,
@@ -373,7 +389,12 @@ private fun LoggedList(
                                 )
                             }
                         }
-                        StampChip(participationStamp(ParticipationStatus.DONE, true))
+                        StampWithNote(
+                            participationStamp(ParticipationStatus.DONE, true),
+                            note = userId?.let {
+                                leadKmPendingNote(ParticipationStatus.DONE, event.ownTotalKm(it))
+                            },
+                        )
                     }
                 }
                 if (hasMore) {
@@ -476,7 +497,10 @@ private fun EventCard(
                         color = FieldTheme.textMuted,
                     )
                 }
-                StampChip(stamp)
+                StampWithNote(
+                    stamp,
+                    note = userId?.let { leadKmPendingNote(mine, event.ownTotalKm(it)) },
+                )
             }
             mineFillCtaLabel(mine)?.let { label ->
                 Spacer(Modifier.height(12.dp))

@@ -47,7 +47,7 @@ class MineInboxTest {
         val sections = partitionMineList(
             listOf(
                 MineListEvent("a", "2026-08-17", ParticipationStatus.PENDING),
-                MineListEvent("b", "2026-08-16", ParticipationStatus.DONE),
+                MineListEvent("b", "2026-08-16", ParticipationStatus.DONE, 12.0),
                 MineListEvent("c", "2026-08-10", ParticipationStatus.IN_PROGRESS),
             ),
             "2026-08-17",
@@ -55,6 +55,20 @@ class MineInboxTest {
         )
         assertEquals(listOf("a", "c"), sections.pending.map { it.id })
         assertEquals(listOf("b"), sections.logged.map { it.id })
+    }
+
+    @Test
+    fun partitionKeepsDoneWithoutKmInPending() {
+        val sections = partitionMineList(
+            listOf(
+                MineListEvent("done-km", "2026-08-17", ParticipationStatus.DONE, 12.0),
+                MineListEvent("done-no-km", "2026-08-16", ParticipationStatus.DONE, null),
+            ),
+            "2026-08-17",
+            1,
+        )
+        assertEquals(listOf("done-no-km"), sections.pending.map { it.id })
+        assertEquals(listOf("done-km"), sections.logged.map { it.id })
     }
 
     @Test

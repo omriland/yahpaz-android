@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -36,6 +37,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -72,6 +74,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import com.yahpz.domain.ASSIGNED_VOLUNTEER_EVENT_EDIT_CLOSE
+import com.yahpz.domain.ASSIGNED_VOLUNTEER_EVENT_EDIT_ERROR
 import com.yahpz.domain.EVENT_DELETE_ACTION
 import com.yahpz.domain.EVENT_DELETE_TITLE
 import com.yahpz.domain.EventFreezeFlags
@@ -100,6 +104,24 @@ fun StampChip(stamp: StampDescriptor, modifier: Modifier = Modifier) {
             .border(1.dp, stamp.tone.ink.copy(alpha = 0.25f), RoundedCornerShape(3.dp))
             .padding(horizontal = 8.dp, vertical = 4.dp),
     )
+}
+
+@Composable
+fun StampWithNote(stamp: StampDescriptor, note: String? = null, modifier: Modifier = Modifier) {
+    if (note.isNullOrBlank()) {
+        StampChip(stamp, modifier)
+        return
+    }
+    Column(modifier = modifier, horizontalAlignment = Alignment.End) {
+        StampChip(stamp)
+        Text(
+            text = note,
+            style = TypeScale.caption,
+            color = FieldTheme.alert,
+            textAlign = TextAlign.End,
+            modifier = Modifier.padding(top = 2.dp).widthIn(max = 176.dp),
+        )
+    }
 }
 
 @Composable
@@ -612,6 +634,25 @@ fun EmptyState(
         }
         if (actionTitle != null && onAction != null) {
             GhostButton(title = actionTitle, onClick = onAction, modifier = Modifier.width(240.dp))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AssignedVolunteerEditBlockedSheet(onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                ASSIGNED_VOLUNTEER_EVENT_EDIT_ERROR,
+                style = TypeScale.body,
+                color = FieldTheme.textPrimary,
+                textAlign = TextAlign.Start,
+            )
+            PrimaryButton(title = ASSIGNED_VOLUNTEER_EVENT_EDIT_CLOSE, onClick = onDismiss)
         }
     }
 }
