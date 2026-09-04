@@ -85,6 +85,9 @@ import com.yahpz.domain.closedListNameError
 import com.yahpz.domain.deriveEventStatusAfterParticipation
 import com.yahpz.domain.duplicateEventsReportRows
 import com.yahpz.domain.createIncludesSelfAssign
+import com.yahpz.domain.digitsOnly
+import com.yahpz.domain.ownResumableEventId
+import com.yahpz.domain.SameDayPoliceEventRow
 import com.yahpz.domain.deriveEventStatusFromDraft
 import com.yahpz.domain.eventDraftStatus
 import com.yahpz.domain.eventsByResponderReportRows
@@ -1395,8 +1398,58 @@ object YahpazAPI {
                 mainLeadId = mainLeadId,
             )
         } catch (_: Exception) {
-            EVENT_DRAFT_SAVE_FAILED
+            recoverOwnCreatedEvent(
+                draft = draft,
+                eventDate = eventDate,
+                mainLeadId = mainLeadId,
+                districts = districts,
+                vehicleKinds = vehicleKinds,
+                allowPartial = allowPartial,
+            ) ?: EVENT_DRAFT_SAVE_FAILED
         }
+    }
+
+    private suspend fun recoverOwnCreatedEvent(
+        draft: EventDraft,
+        eventDate: String,
+        mainLeadId: String,
+        districts: List<LookupOption>,
+        vehicleKinds: List<LookupOption>,
+        allowPartial: Boolean,
+    ): String? {
+        val policeId = digitsOnly(draft.policeEventId)
+        if (policeId.isEmpty()) return null
+        val existing = runCatching {
+            client.from("events").select(Columns.raw("id, shift_lead_id, is_cancelled, police_event_id")) {
+                filter {
+                    eq("event_date", eventDate)
+                    eq("shift_lead_id", mainLeadId)
+                    eq("is_cancelled", false)
+                }
+            }.decodeList<SameDayPoliceEventApiRow>().filter {
+                digitsOnly(it.policeEventId.orEmpty()) == policeId
+            }
+        }.getOrDefault(emptyList())
+        val recovered = ownResumableEventId(
+            currentEventId = null,
+            viewerLeadId = mainLeadId,
+            existing = existing.map {
+                SameDayPoliceEventRow(
+                    id = it.id,
+                    shiftLeadId = it.shiftLeadId,
+                    isCancelled = it.isCancelled,
+                )
+            },
+        ) ?: return null
+        return updateUnitEvent(
+            eventId = recovered,
+            draft = draft,
+            districts = districts,
+            vehicleKinds = vehicleKinds,
+            viewerIsAdmin = false,
+            previousIsCancelled = false,
+            allowPartial = allowPartial,
+        )
     }
 
     suspend fun createUnitShift(draft: ShiftDraft): String? {

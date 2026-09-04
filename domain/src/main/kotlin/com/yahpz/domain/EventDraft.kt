@@ -288,3 +288,20 @@ fun eventCancelToast(isCancelled: Boolean): String =
 /** Clearing `is_cancelled` is allowed for admin, super_admin, and shift_lead. */
 fun canToggleEventCancelled(next: Boolean, canClearCancelled: Boolean): String? =
     if (!next && !canClearCancelled) EVENT_CANCEL_ADMIN_ONLY else null
+
+data class SameDayPoliceEventRow(
+    val id: String,
+    val shiftLeadId: String? = null,
+    val isCancelled: Boolean = false,
+)
+
+/** Own same-day מספר אירוע after a create whose response never came back. */
+fun ownResumableEventId(
+    currentEventId: String?,
+    viewerLeadId: String,
+    existing: List<SameDayPoliceEventRow>,
+): String? {
+    if (!currentEventId.isNullOrBlank()) return null
+    val mine = existing.filter { !it.isCancelled && it.shiftLeadId == viewerLeadId }
+    return mine.singleOrNull()?.id
+}

@@ -1609,6 +1609,14 @@ data class ShiftListItem(
 data class IdRow(val id: String)
 
 @Serializable
+data class SameDayPoliceEventApiRow(
+    val id: String,
+    @SerialName("shift_lead_id") val shiftLeadId: String? = null,
+    @SerialName("is_cancelled") val isCancelled: Boolean = false,
+    @SerialName("police_event_id") val policeEventId: String? = null,
+)
+
+@Serializable
 data class EventOwnerRow(
     val id: String,
     @SerialName("shift_lead_id") val shiftLeadId: String? = null,

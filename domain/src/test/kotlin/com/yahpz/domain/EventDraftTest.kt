@@ -191,6 +191,25 @@ class EventDraftTest {
     }
 
     @Test
+    fun `own same-day police id is resumed when create has no id yet`() {
+        val mine = SameDayPoliceEventRow(id = "evt-mine", shiftLeadId = "lead-1")
+        assertEquals(
+            "evt-mine",
+            ownResumableEventId(currentEventId = null, viewerLeadId = "lead-1", existing = listOf(mine)),
+        )
+        assertNull(
+            ownResumableEventId(
+                currentEventId = null,
+                viewerLeadId = "lead-1",
+                existing = listOf(mine.copy(shiftLeadId = "other")),
+            ),
+        )
+        assertNull(
+            ownResumableEventId(currentEventId = "evt-mine", viewerLeadId = "lead-1", existing = listOf(mine)),
+        )
+    }
+
+    @Test
     fun `fill ready notify still fires when an existing assignment first gets km`() {
         assertEquals(
             listOf("a"),
