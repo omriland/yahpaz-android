@@ -7,14 +7,19 @@ import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -38,13 +43,18 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.yahpz.domain.EVENT_DELETE_ACTION
@@ -74,7 +84,13 @@ import com.yahpz.domain.formatTime
 import com.yahpz.domain.mineFillCtaLabel
 import com.yahpz.domain.participationStamp
 import com.yahpz.domain.visibleMyActiveIds
+import com.yahpz.domain.INCOMPLETE_EVENTS_HEADING
+import com.yahpz.domain.INCOMPLETE_NOTICE_MARK
 import com.yahpz.domain.SHOW_OTHERS_CREATED_EVENTS_LABEL
+import com.yahpz.domain.incompleteFieldLabels
+import com.yahpz.domain.incompleteNoticeLabel
+import com.yahpz.domain.missingEventFields
+import com.yahpz.domain.partitionIncompleteEvents
 import com.yahpz.domain.shouldFilterUnitEventsToOwnCreated
 import kotlinx.coroutines.launch
 
@@ -143,6 +159,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
             .filter { fieldsMatchQuery(it.unitSearchFields, trimmed) }
     }.filter { it.id !in activeVisibleIds }
         .sortedByDescending { it.eventDate }
+    val (incompleteEvents, restEvents) = partitionIncompleteEvents(events) { it.asIncompleteSnapshot() }
 
     fun dismissFromActive(eventId: String) {
         if (eventId in pendingBoardIds) return
@@ -361,15 +378,53 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                                 style = TypeScale.caption,
                                 color = FieldTheme.textMuted,
                             )
-                            events.forEach { event ->
-                                DraggableActiveEventRow(
+                            if (incompleteEvents.isNotEmpty()) {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(
+                                        INCOMPLETE_EVENTS_HEADING,
+                                        style = TypeScale.label,
+                                        color = FieldTheme.textSecondary,
+                                    )
+                                    incompleteEvents.forEach { event ->
+                                        CatalogEventRow(
+                                            event = event,
+                                            draggingId = draggingId,
+                                            dragOffset = dragOffset,
+                                            pendingBoardIds = pendingBoardIds,
+                                            onAddToActive = { addToActive(event.id) },
+                                            onOpen = { detail = event },
+                                            onDragStart = { startInRoot ->
+                                                draggingId = event.id
+                                                dragSource = ActiveDragSource.CATALOG
+                                                dragOffset = Offset.Zero
+                                                fingerInRoot = startInRoot
+                                            },
+                                            onDrag = { amount ->
+                                                dragOffset += amount
+                                                fingerInRoot += amount
+                                            },
+                                            onDragEnd = {
+                                                if (overActiveDrop) addToActive(event.id)
+                                                draggingId = null
+                                                dragSource = null
+                                                dragOffset = Offset.Zero
+                                            },
+                                            onDragCancel = {
+                                                draggingId = null
+                                                dragSource = null
+                                                dragOffset = Offset.Zero
+                                            },
+                                        )
+                                    }
+                                }
+                            }
+                            restEvents.forEach { event ->
+                                CatalogEventRow(
                                     event = event,
-                                    dragging = draggingId == event.id,
-                                    dragOffset = if (draggingId == event.id) dragOffset else Offset.Zero,
-                                    boardActionTitle = MY_ACTIVE_ADD,
-                                    boardActionEnabled = event.id !in pendingBoardIds,
-                                    boardActionHint = null,
-                                    onBoardAction = { addToActive(event.id) },
+                                    draggingId = draggingId,
+                                    dragOffset = dragOffset,
+                                    pendingBoardIds = pendingBoardIds,
+                                    onAddToActive = { addToActive(event.id) },
                                     onOpen = { detail = event },
                                     onDragStart = { startInRoot ->
                                         draggingId = event.id
@@ -557,6 +612,35 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
 }
 
 @Composable
+private fun CatalogEventRow(
+    event: EventListItem,
+    draggingId: String?,
+    dragOffset: Offset,
+    pendingBoardIds: Set<String>,
+    onAddToActive: () -> Unit,
+    onOpen: () -> Unit,
+    onDragStart: (startInRoot: Offset) -> Unit,
+    onDrag: (amount: Offset) -> Unit,
+    onDragEnd: () -> Unit,
+    onDragCancel: () -> Unit,
+) {
+    DraggableActiveEventRow(
+        event = event,
+        dragging = draggingId == event.id,
+        dragOffset = if (draggingId == event.id) dragOffset else Offset.Zero,
+        boardActionTitle = MY_ACTIVE_ADD,
+        boardActionEnabled = event.id !in pendingBoardIds,
+        boardActionHint = null,
+        onBoardAction = onAddToActive,
+        onOpen = onOpen,
+        onDragStart = onDragStart,
+        onDrag = onDrag,
+        onDragEnd = onDragEnd,
+        onDragCancel = onDragCancel,
+    )
+}
+
+@Composable
 private fun DraggableActiveEventRow(
     event: EventListItem,
     dragging: Boolean,
@@ -611,6 +695,8 @@ private fun DraggableActiveEventRow(
             boardActionHint = boardActionHint,
             onBoardAction = onBoardAction,
             onOpen = onOpen,
+            incompleteFields = incompleteFieldLabels(missingEventFields(event.asIncompleteSnapshot())),
+            incompleteSpoken = incompleteNoticeLabel(missingEventFields(event.asIncompleteSnapshot())),
         )
     }
 }
@@ -729,74 +815,145 @@ private fun UnitEventRow(
     boardActionHint: String? = null,
     onBoardAction: (() -> Unit)? = null,
     onOpen: () -> Unit,
+    incompleteFields: List<String> = emptyList(),
+    incompleteSpoken: String = "",
 ) {
     val stamp = if (event.isCancelled) cancelledStamp() else eventStamp(event.status)
-    FieldCard(
+    val incomplete = incompleteFields.isNotEmpty()
+    val cardShape = RoundedCornerShape(8.dp)
+    Row(
         modifier = Modifier
+            .fillMaxWidth()
             .heightIn(min = 44.dp)
+            .height(IntrinsicSize.Min)
+            .clip(cardShape)
+            .background(FieldTheme.raised)
+            .border(1.dp, FieldTheme.hairline, cardShape)
             .clickable(enabled = enabled, onClick = onOpen),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    if (event.freeze.isFrozen) {
-                        FrozenEventMark(event.freeze)
-                    }
-                    Text(
-                        event.typeLabel.ifEmpty { "אירוע" },
-                        style = TypeScale.section,
-                        color = FieldTheme.textPrimary,
-                    )
-                }
-                Text(
-                    listOfNotNull(
-                        formatDate(event.eventDate),
-                        event.policeEventId?.takeIf { it.isNotEmpty() },
-                        event.road?.name?.takeIf { it.isNotEmpty() },
-                        event.location?.takeIf { it.isNotEmpty() },
-                    ).joinToString(" · "),
-                    style = TypeScale.caption,
-                    color = FieldTheme.textMuted,
-                )
-                event.leadsCaption().takeIf { it.isNotEmpty() }?.let { lead ->
-                    Text("אחמ״ש: $lead", style = TypeScale.caption, color = FieldTheme.textMuted)
-                }
-            }
-            Column(horizontalAlignment = Alignment.End) {
-                StampChip(stamp)
-                if (boardActionTitle != null && onBoardAction != null) {
-                    TextButton(
-                        onClick = onBoardAction,
-                        enabled = boardActionEnabled,
-                        modifier = Modifier.heightIn(min = 44.dp),
+        if (incomplete) {
+            Box(
+                Modifier
+                    .width(3.dp)
+                    .fillMaxHeight()
+                    .background(FieldTheme.alert),
+            )
+        }
+        Column(Modifier.weight(1f).padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
+                        if (event.freeze.isFrozen) {
+                            FrozenEventMark(event.freeze)
+                        }
                         Text(
-                            boardActionTitle,
-                            style = TypeScale.bodyStrong,
-                            color = if (boardActionEnabled) FieldTheme.accent else FieldTheme.textMuted,
+                            event.typeLabel.ifEmpty { "אירוע" },
+                            style = TypeScale.section,
+                            color = FieldTheme.textPrimary,
                         )
                     }
-                    boardActionHint?.let { hint ->
-                        Text(hint, style = TypeScale.caption, color = FieldTheme.textMuted)
+                    Text(
+                        listOfNotNull(
+                            formatDate(event.eventDate),
+                            event.policeEventId?.takeIf { it.isNotEmpty() },
+                            event.road?.name?.takeIf { it.isNotEmpty() },
+                            event.location?.takeIf { it.isNotEmpty() },
+                        ).joinToString(" · "),
+                        style = TypeScale.caption,
+                        color = FieldTheme.textMuted,
+                    )
+                    event.leadsCaption().takeIf { it.isNotEmpty() }?.let { lead ->
+                        Text("אחמ״ש: $lead", style = TypeScale.caption, color = FieldTheme.textMuted)
+                    }
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    StampChip(stamp)
+                    if (boardActionTitle != null && onBoardAction != null) {
+                        TextButton(
+                            onClick = onBoardAction,
+                            enabled = boardActionEnabled,
+                            modifier = Modifier.heightIn(min = 44.dp),
+                        ) {
+                            Text(
+                                boardActionTitle,
+                                style = TypeScale.bodyStrong,
+                                color = if (boardActionEnabled) FieldTheme.accent else FieldTheme.textMuted,
+                            )
+                        }
+                        boardActionHint?.let { hint ->
+                            Text(hint, style = TypeScale.caption, color = FieldTheme.textMuted)
+                        }
                     }
                 }
             }
+            val pending = event.responders.count { it.status != ParticipationStatus.DONE }
+            if (event.responders.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "${event.responders.size} מתנדבים · $pending ממתינים לתיעוד",
+                    style = TypeScale.caption,
+                    color = FieldTheme.textSecondary,
+                )
+            }
+            if (incomplete) {
+                IncompleteFieldsNotice(fields = incompleteFields, spoken = incompleteSpoken)
+            }
         }
-        val pending = event.responders.count { it.status != ParticipationStatus.DONE }
-        if (event.responders.isNotEmpty()) {
-            Spacer(Modifier.height(8.dp))
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun IncompleteFieldsNotice(fields: List<String>, spoken: String) {
+    if (fields.isEmpty()) return
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp)
+            .semantics { contentDescription = spoken },
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(FieldTheme.hairline),
+        )
+        FlowRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             Text(
-                "${event.responders.size} מתנדבים · $pending ממתינים לתיעוד",
-                style = TypeScale.caption,
-                color = FieldTheme.textSecondary,
+                INCOMPLETE_NOTICE_MARK,
+                style = TypeScale.label,
+                color = FieldTheme.partialOnTint,
             )
+            fields.forEach { label ->
+                Text(
+                    label,
+                    style = TypeScale.caption,
+                    color = FieldTheme.textPrimary,
+                    modifier = Modifier.drawBehind {
+                        val stroke = 1.5.dp.toPx()
+                        drawLine(
+                            color = FieldTheme.partial,
+                            start = Offset(0f, size.height),
+                            end = Offset(size.width, size.height),
+                            strokeWidth = stroke,
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 3.dp.toPx())),
+                        )
+                    },
+                )
+            }
         }
     }
 }

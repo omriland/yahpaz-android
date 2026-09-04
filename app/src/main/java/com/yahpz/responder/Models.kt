@@ -29,6 +29,8 @@ import com.yahpz.domain.ContactSearchFields
 import com.yahpz.domain.DuplicateParticipation
 import com.yahpz.domain.EventDraft
 import com.yahpz.domain.EventFreezeFlags
+import com.yahpz.domain.IncompleteEventSnapshot
+import com.yahpz.domain.IncompleteResponderSnapshot
 import com.yahpz.domain.EventResponderDraft
 import com.yahpz.domain.EventStatus
 import com.yahpz.domain.EventsByResponderEventInput
@@ -125,6 +127,11 @@ data class ResponderSummary(
     @Serializable(with = ParticipationStatusSerializer::class)
     val status: ParticipationStatus,
     @SerialName("fill_completable_at") val fillCompletableAt: String? = null,
+    @SerialName("total_km")
+    @Serializable(with = OptionalDoubleSerializer::class)
+    val totalKm: Double? = null,
+    @SerialName("started_at") val startedAt: String? = null,
+    @SerialName("ended_at") val endedAt: String? = null,
     @Serializable(with = OptionalPersonNameSerializer::class)
     val profile: PersonName? = null,
 )
@@ -168,6 +175,7 @@ data class EventListItem(
     val id: String,
     @SerialName("event_date") val eventDate: String,
     @SerialName("police_event_id") val policeEventId: String? = null,
+    @SerialName("patrol_callsign") val patrolCallsign: String? = null,
     val location: String? = null,
     @Serializable(with = EventStatusSerializer::class)
     val status: EventStatus,
@@ -178,6 +186,9 @@ data class EventListItem(
     @SerialName("shift_id") val shiftId: String? = null,
     @SerialName("frozen_over_60km") val frozenOver60km: Boolean = false,
     @SerialName("frozen_suspicious_duplicate") val frozenSuspiciousDuplicate: Boolean = false,
+    @SerialName("district")
+    @Serializable(with = OptionalNamedSerializer::class)
+    val district: Named? = null,
     @SerialName("event_type")
     @Serializable(with = OptionalNamedSerializer::class)
     val eventType: Named? = null,
@@ -252,6 +263,22 @@ data class EventListItem(
         mainFullName = shiftLead?.fullName,
         mainCallsign = shiftLead?.callsign,
         secondaries = secondaryLeads.map { it.namePair() },
+    )
+
+    fun asIncompleteSnapshot(): IncompleteEventSnapshot = IncompleteEventSnapshot(
+        policeEventId = policeEventId,
+        patrolCallsign = patrolCallsign,
+        hasDistrict = district != null,
+        hasEventType = eventType != null,
+        hasRoad = road != null,
+        location = location,
+        responders = responders.map { row ->
+            IncompleteResponderSnapshot(
+                totalKm = row.totalKm,
+                startedAt = row.startedAt,
+                endedAt = row.endedAt,
+            )
+        },
     )
 }
 

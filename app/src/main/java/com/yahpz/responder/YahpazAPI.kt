@@ -220,8 +220,9 @@ object YahpazAPI {
         "secondary_leads:event_secondary_leads(user_id, locked, added_at, profile:profiles!event_secondary_leads_user_id_fkey(full_name, callsign))"
 
     private val eventListSelect = """
-        id, event_date, police_event_id, location, status, is_cancelled, bus_lane, origin, shift_lead_id, shift_id,
+        id, event_date, police_event_id, patrol_callsign, location, status, is_cancelled, bus_lane, origin, shift_lead_id, shift_id,
         frozen_over_60km, frozen_suspicious_duplicate,
+        district:districts(name),
         event_type:event_types(name),
         road:roads(name),
         shift_lead:profiles!events_shift_lead_id_fkey(full_name, callsign),
@@ -230,7 +231,7 @@ object YahpazAPI {
           shift_date, shift_kind, vehicle_type,
           personal_vehicle:vehicles!shifts_personal_vehicle_id_fkey(plate_number)
         ),
-        responders:event_responders(id, responder_id, status, fill_completable_at, profile:profiles(full_name, callsign))
+        responders:event_responders(id, responder_id, status, fill_completable_at, total_km, started_at, ended_at, profile:profiles(full_name, callsign))
     """.trimIndent()
 
     private val cockpitSelect = """

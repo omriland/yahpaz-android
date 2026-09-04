@@ -28,6 +28,7 @@ object FieldTheme {
     val alert = Color(0xFFB3382F)
     val alertTint = Color(0xFFF9E9E7)
     val partial = Color(0xFFB07C24)
+    val partialOnTint = Color(0xFF7A5410)
     val partialTint = Color(0xFFF7EEDC)
     val pending = Color(0xFF1D4E89)
     val draft = Color(0xFF5B6F86)
