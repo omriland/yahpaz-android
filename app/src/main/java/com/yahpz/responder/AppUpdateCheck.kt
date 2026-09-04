@@ -1,6 +1,7 @@
 package com.yahpz.responder
 
 import com.yahpz.domain.needsForceUpdate
+import com.yahpz.domain.needsOptionalUpdate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -22,20 +23,59 @@ data class ForceUpdateRequired(
     val apkUrl: String,
 )
 
+data class OptionalUpdateAvailable(
+    val messageHe: String,
+    val apkUrl: String,
+    val latestVersionCode: Int,
+    val latestVersionName: String,
+)
+
+data class SideloadUpdateCheck(
+    val force: ForceUpdateRequired? = null,
+    val optional: OptionalUpdateAvailable? = null,
+)
+
 private val versionJson = Json { ignoreUnknownKeys = true }
 
 const val DEFAULT_FORCE_UPDATE_MESSAGE =
     "יש גרסה חדשה של האפליקציה. יש להוריד ולהתקין כדי להמשיך."
 
-suspend fun checkForceUpdate(currentVersionCode: Int): ForceUpdateRequired? =
+const val DEFAULT_OPTIONAL_UPDATE_MESSAGE =
+    "יש עדכון לאבן דרך. אפשר להתקין עכשיו בלי לפתוח את החנות."
+
+suspend fun checkSideloadUpdates(currentVersionCode: Int): SideloadUpdateCheck =
     withContext(Dispatchers.IO) {
-        val manifest = fetchPreferredAppVersionManifest() ?: return@withContext null
-        if (!needsForceUpdate(currentVersionCode, manifest.minVersionCode)) return@withContext null
-        ForceUpdateRequired(
-            messageHe = manifest.messageHe,
-            apkUrl = manifest.apkUrl.ifBlank { AppConfig.defaultApkUrl },
-        )
+        val manifest = fetchPreferredAppVersionManifest() ?: return@withContext SideloadUpdateCheck()
+        val apkUrl = manifest.apkUrl.ifBlank { AppConfig.defaultApkUrl }
+        if (needsForceUpdate(currentVersionCode, manifest.minVersionCode)) {
+            return@withContext SideloadUpdateCheck(
+                force = ForceUpdateRequired(
+                    messageHe = manifest.messageHe.ifBlank { DEFAULT_FORCE_UPDATE_MESSAGE },
+                    apkUrl = apkUrl,
+                ),
+            )
+        }
+        if (needsOptionalUpdate(currentVersionCode, manifest.minVersionCode, manifest.latestVersionCode)) {
+            val named = manifest.latestVersionName.trim()
+            val message = if (named.isEmpty()) {
+                DEFAULT_OPTIONAL_UPDATE_MESSAGE
+            } else {
+                "יש עדכון לאבן דרך ($named). אפשר להתקין עכשיו בלי לפתוח את החנות."
+            }
+            return@withContext SideloadUpdateCheck(
+                optional = OptionalUpdateAvailable(
+                    messageHe = message,
+                    apkUrl = apkUrl,
+                    latestVersionCode = manifest.latestVersionCode,
+                    latestVersionName = named,
+                ),
+            )
+        }
+        SideloadUpdateCheck()
     }
+
+suspend fun checkForceUpdate(currentVersionCode: Int): ForceUpdateRequired? =
+    checkSideloadUpdates(currentVersionCode).force
 
 /** Prefer the feed with the highest minVersionCode among reachable URLs. */
 internal fun fetchPreferredAppVersionManifest(

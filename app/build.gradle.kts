@@ -21,8 +21,8 @@ android {
         applicationId = "com.yahpz.responder"
         minSdk = 26
         targetSdk = 35
-        versionCode = 35
-        versionName = "0.3.24"
+        versionCode = 36
+        versionName = "0.3.25"
     }
 
     androidResources {
@@ -100,4 +100,5 @@ dependencies {
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
     implementation(libs.mlkit.text.recognition)
+    implementation(libs.play.app.update.ktx)
 }

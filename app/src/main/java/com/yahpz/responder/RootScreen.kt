@@ -1,7 +1,5 @@
 package com.yahpz.responder
 
-import android.content.Intent
-import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
@@ -33,6 +31,7 @@ import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -41,6 +40,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -66,6 +66,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun RootScreen(app: AppModel, ui: AppUiState) {
     var feedbackOpen by remember { mutableStateOf(false) }
+    val context = LocalContext.current
     val trackBlocking = ui.trackToken != null && ui.fillEventId == null && !ui.mustChangePassword
     val showFeedbackFab = ui.isSignedIn &&
         ui.forceUpdate == null &&
@@ -151,6 +152,16 @@ fun RootScreen(app: AppModel, ui: AppUiState) {
             },
         )
     }
+    val optionalUpdate = ui.optionalUpdate
+    if (optionalUpdate != null && ui.forceUpdate == null && !ui.privacyOpen) {
+        OptionalUpdateSheet(
+            update = optionalUpdate,
+            onLater = {
+                OptionalUpdatePrefs.skip(context, optionalUpdate.latestVersionCode)
+                app.dismissOptionalUpdate()
+            },
+        )
+    }
     }
 }
 
@@ -180,7 +191,6 @@ private fun Booting() {
 
 @Composable
 private fun ForceUpdateScreen(update: ForceUpdateRequired) {
-    val context = LocalContext.current
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -206,15 +216,107 @@ private fun ForceUpdateScreen(update: ForceUpdateRequired) {
             } else {
                 Spacer(Modifier.height(24.dp))
             }
-            PrimaryButton(
-                title = "הורדה והתקנה",
-                onClick = {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(update.apkUrl))
-                    context.startActivity(intent)
-                },
+            InAppUpdateActions(
+                apkUrl = update.apkUrl,
+                updateTitle = "הורדה והתקנה",
                 command = true,
             )
         }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun OptionalUpdateSheet(
+    update: OptionalUpdateAvailable,
+    onLater: () -> Unit,
+) {
+    var busy by remember { mutableStateOf(false) }
+    ModalBottomSheet(onDismissRequest = { if (!busy) onLater() }) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("גרסה חדשה", style = TypeScale.title, color = FieldTheme.textPrimary)
+            Text(
+                text = update.messageHe.ifBlank { DEFAULT_OPTIONAL_UPDATE_MESSAGE },
+                style = TypeScale.body,
+                color = FieldTheme.textSecondary,
+            )
+            InAppUpdateActions(
+                apkUrl = update.apkUrl,
+                updateTitle = "עדכון",
+                laterTitle = "אחר כך",
+                onLater = onLater,
+                onBusyChange = { busy = it },
+            )
+        }
+    }
+}
+
+/** Downloads and installs the APK in-process. Do not open the APK URL in a browser. */
+@Composable
+private fun InAppUpdateActions(
+    apkUrl: String,
+    updateTitle: String,
+    laterTitle: String? = null,
+    onLater: (() -> Unit)? = null,
+    command: Boolean = false,
+    onBusyChange: (Boolean) -> Unit = {},
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var busy by remember { mutableStateOf(false) }
+    var progress by remember { mutableFloatStateOf(0f) }
+    var errorHe by remember { mutableStateOf<String?>(null) }
+
+    fun setBusy(value: Boolean) {
+        busy = value
+        onBusyChange(value)
+    }
+
+    if (busy) {
+        val percent = (progress * 100).toInt()
+        Text(
+            text = if (percent > 0) "מוריד עדכון… $percent%" else "מוריד עדכון…",
+            style = TypeScale.caption,
+            color = if (command) CommandTheme.textSecondary else FieldTheme.textSecondary,
+        )
+        LinearProgressIndicator(
+            progress = { progress },
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+    errorHe?.let {
+        Text(it, style = TypeScale.caption, color = FieldTheme.alert)
+    }
+    PrimaryButton(
+        title = updateTitle,
+        busy = busy,
+        enabled = !busy,
+        command = command,
+        onClick = {
+            errorHe = null
+            progress = 0f
+            setBusy(true)
+            scope.launch {
+                val result = SideloadApkInstaller.downloadAndInstall(context, apkUrl) { progress = it }
+                setBusy(false)
+                result.onFailure { error ->
+                    errorHe = if (error is NeedsUnknownSourcesException) {
+                        "אשרו התקנה מאבן דרך בהגדרות, ואז לחצו עדכון שוב."
+                    } else {
+                        "ההורדה נכשלה. נסו שוב."
+                    }
+                }
+            }
+        },
+    )
+    if (laterTitle != null && onLater != null) {
+        GhostButton(title = laterTitle, onClick = onLater, enabled = !busy)
     }
 }
 

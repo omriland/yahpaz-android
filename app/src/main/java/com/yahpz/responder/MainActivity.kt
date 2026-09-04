@@ -16,11 +16,15 @@ import androidx.compose.ui.unit.LayoutDirection
 
 class MainActivity : ComponentActivity() {
     private val app: AppModel by viewModels()
+    private val playUpdate by lazy { PlayFlexibleUpdate(this) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        app.bootstrap()
+        app.bootstrap(
+            installedFromPlay = PlayInstallSource.installedFromPlay(this),
+            skippedOptionalVersionCode = OptionalUpdatePrefs.skippedLatestVersionCode(this),
+        )
         intent?.dataString?.let(app::applyIncomingUrl)
         setContent {
             val ui by app.state.collectAsState()
@@ -45,6 +49,12 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         app.onForeground()
+        playUpdate.startIfAvailable()
+    }
+
+    override fun onStop() {
+        playUpdate.stop()
+        super.onStop()
     }
 
     override fun onNewIntent(intent: Intent) {

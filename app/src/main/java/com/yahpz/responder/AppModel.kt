@@ -83,6 +83,7 @@ fun appTabForMobileView(view: String): AppTab = when (view) {
 data class AppUiState(
     val booting: Boolean = true,
     val forceUpdate: ForceUpdateRequired? = null,
+    val optionalUpdate: OptionalUpdateAvailable? = null,
     val userId: String? = null,
     val profile: ProfileRecord? = null,
     val actualRoles: List<String> = emptyList(),
@@ -161,14 +162,23 @@ class AppModel : ViewModel() {
     private var toastJob: Job? = null
     private var lastAndroidReportAtMs: Long? = null
 
-    fun bootstrap() {
+    fun bootstrap(
+        installedFromPlay: Boolean = false,
+        skippedOptionalVersionCode: Int = 0,
+    ) {
         viewModelScope.launch {
             _state.update { it.copy(booting = true) }
-            val forceUpdate = checkForceUpdate(BuildConfig.VERSION_CODE)
-            if (forceUpdate != null) {
-                _state.update { it.copy(forceUpdate = forceUpdate, booting = false) }
-                reportAndroidSessionIfDue()
-                return@launch
+            var optionalUpdate: OptionalUpdateAvailable? = null
+            if (!installedFromPlay) {
+                val check = checkSideloadUpdates(BuildConfig.VERSION_CODE)
+                if (check.force != null) {
+                    _state.update { it.copy(forceUpdate = check.force, booting = false) }
+                    reportAndroidSessionIfDue()
+                    return@launch
+                }
+                optionalUpdate = check.optional?.takeIf {
+                    it.latestVersionCode != skippedOptionalVersionCode
+                }
             }
             val id = YahpazAPI.sessionUserId()
             if (id != null) {
@@ -176,8 +186,18 @@ class AppModel : ViewModel() {
             } else {
                 _state.update { it.copy(userId = null, profile = null) }
             }
-            _state.update { it.copy(forceUpdate = null, booting = false) }
+            _state.update {
+                it.copy(
+                    forceUpdate = null,
+                    optionalUpdate = optionalUpdate,
+                    booting = false,
+                )
+            }
         }
+    }
+
+    fun dismissOptionalUpdate() {
+        _state.update { it.copy(optionalUpdate = null) }
     }
 
     fun onForeground() {
