@@ -106,6 +106,7 @@ fun FillMediaTab(
     canWrite: Boolean,
     leftoverError: String?,
     modifier: Modifier = Modifier,
+    dropUnfinishedTick: Int = 0,
     onUnfinishedChange: (Int) -> Unit,
     onToast: (String, StampTone) -> Unit,
 ) {
@@ -138,6 +139,11 @@ fun FillMediaTab(
     }
     LaunchedEffect(drafts) {
         onUnfinishedChange(drafts.count { it.takenWhen == null })
+    }
+    LaunchedEffect(dropUnfinishedTick) {
+        if (dropUnfinishedTick <= 0) return@LaunchedEffect
+        val last = drafts.lastOrNull { it.takenWhen == null && !it.uploading } ?: return@LaunchedEffect
+        drafts = drafts.filterNot { it.key == last.key }
     }
 
     val picker = rememberLauncherForActivityResult(

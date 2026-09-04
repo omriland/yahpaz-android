@@ -13,6 +13,7 @@ class YahpazApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         ViewAsStore.init(this)
+        FillDraftStore.init(this)
     }
 }
 

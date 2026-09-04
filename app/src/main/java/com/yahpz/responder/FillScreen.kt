@@ -32,13 +32,16 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,6 +49,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -56,11 +62,16 @@ import com.yahpz.domain.EVENT_MEDIA_DOCS_TAB_LABEL
 import com.yahpz.domain.EVENT_MEDIA_TAB_LABEL
 import com.yahpz.domain.CommitTreatedPlateResult
 import com.yahpz.domain.EventStatus
+import com.yahpz.domain.FillBackAction
 import com.yahpz.domain.FillMode
 import com.yahpz.domain.ParticipationStatus
 import com.yahpz.domain.ResponderFillDraft
 import com.yahpz.domain.ResponderFillErrors
 import com.yahpz.domain.TreatedPlate
+import com.yahpz.domain.decideFillBack
+import com.yahpz.domain.fillDraftSavedLabel
+import com.yahpz.domain.shouldKeepLiveFormBoot
+import com.yahpz.domain.shouldPreferStashedFillDraft
 import com.yahpz.domain.applyTreatedPlateLookup
 import com.yahpz.domain.commitTreatedPlate
 import com.yahpz.domain.digitsOnly
@@ -74,10 +85,14 @@ import com.yahpz.domain.setTreatedPlateLeftWhere
 import com.yahpz.domain.treatedPlateCaption
 import com.yahpz.domain.validateResponderFillDraft
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private enum class FillPane { DOCS, MEDIA }
+
+/** Long enough to not thrash on every keystroke, short enough to survive a kill. */
+private const val FILL_STASH_DEBOUNCE_MS = 600L
 
 @Composable
 fun FillScreen(eventId: String, app: AppModel) {
@@ -94,7 +109,10 @@ fun FillScreen(eventId: String, app: AppModel) {
     var plateLookupGeneration by remember { mutableIntStateOf(0) }
     var pane by remember { mutableStateOf(FillPane.DOCS) }
     var unfinishedMediaDrafts by remember { mutableIntStateOf(0) }
+    var dropUnfinishedTick by remember { mutableIntStateOf(0) }
     var plateScanOpen by remember { mutableStateOf(false) }
+    var localSavedAt by remember { mutableLongStateOf(0L) }
+    var restoredFromDevice by remember { mutableStateOf(false) }
 
     fun commitPendingPlate(pendingOverride: String? = null) {
         when (
@@ -127,22 +145,108 @@ fun FillScreen(eventId: String, app: AppModel) {
         }
     }
 
+    val latestDraft by rememberUpdatedState(draft)
+    val latestContext by rememberUpdatedState(context)
+
+    fun isReadOnly(fill: FillContext): Boolean =
+        fill.participationStatus == ParticipationStatus.DONE ||
+            fill.eventStatus == EventStatus.DONE || fill.isCancelled
+
+    fun persistLocalDraft() {
+        val fill = latestContext ?: return
+        if (isReadOnly(fill)) return
+        val now = System.currentTimeMillis()
+        FillDraftStore.stash(fill.assignmentId, latestDraft, now)
+        localSavedAt = now
+    }
+
+    fun leaveFill() {
+        persistLocalDraft()
+        app.closeFill()
+    }
+
+    fun onFillBack() {
+        when (decideFillBack(pane == FillPane.MEDIA, unfinishedMediaDrafts)) {
+            FillBackAction.DROP_UNFINISHED_PHOTO -> dropUnfinishedTick += 1
+            FillBackAction.SHOW_DOCS -> pane = FillPane.DOCS
+            FillBackAction.LEAVE -> leaveFill()
+        }
+    }
+
     suspend fun load() {
         loading = true
         failed = false
+        restoredFromDevice = false
         try {
             val next = YahpazAPI.fetchFillContext(eventId)
             context = next
-            if (next == null) failed = true else draft = next.draft
+            if (next == null) {
+                failed = true
+            } else {
+                val now = System.currentTimeMillis()
+                val live = FillDraftStore.live(next.assignmentId)
+                val stashed = FillDraftStore.read(next.assignmentId, now)
+                when {
+                    live != null && live != next.draft -> {
+                        draft = live
+                        restoredFromDevice = true
+                        localSavedAt = stashed?.savedAt ?: now
+                    }
+                    shouldPreferStashedFillDraft(
+                        stashed = stashed?.draft,
+                        savedAt = stashed?.savedAt,
+                        server = next.draft,
+                        now = now,
+                    ) -> {
+                        draft = stashed!!.draft
+                        restoredFromDevice = true
+                        localSavedAt = stashed.savedAt
+                    }
+                    else -> {
+                        draft = next.draft
+                        localSavedAt = stashed?.savedAt ?: 0L
+                    }
+                }
+            }
         } catch (_: Exception) {
             failed = true
         }
         loading = false
     }
 
-    LaunchedEffect(eventId) { load() }
+    LaunchedEffect(eventId) {
+        if (
+            shouldKeepLiveFormBoot(
+                loadState = if (context != null && context?.eventId == eventId && !failed) "ready" else "loading",
+                hasTypedDraft = context != null && context?.eventId == eventId,
+            )
+        ) {
+            return@LaunchedEffect
+        }
+        load()
+    }
 
-    BackHandler { app.closeFill() }
+    LaunchedEffect(draft, context?.assignmentId) {
+        val fill = context ?: return@LaunchedEffect
+        if (isReadOnly(fill)) return@LaunchedEffect
+        FillDraftStore.rememberLive(fill.assignmentId, draft)
+        delay(FILL_STASH_DEBOUNCE_MS)
+        persistLocalDraft()
+    }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, context?.assignmentId) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) persistLocalDraft()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            persistLocalDraft()
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    BackHandler { onFillBack() }
 
     Column(
         modifier = Modifier
@@ -157,12 +261,26 @@ fun FillScreen(eventId: String, app: AppModel) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             TextButton(
-                onClick = { app.closeFill() },
+                onClick = { onFillBack() },
                 modifier = Modifier.heightIn(min = 44.dp),
             ) {
                 Text("חזרה", color = FieldTheme.accent, style = TypeScale.body)
             }
-            Text("השלמת התיעוד שלי", style = TypeScale.section, color = FieldTheme.textPrimary)
+            Column(modifier = Modifier.weight(1f)) {
+                Text("השלמת התיעוד שלי", style = TypeScale.section, color = FieldTheme.textPrimary)
+                val fill = context
+                if (fill != null && !isReadOnly(fill)) {
+                    Text(
+                        if (localSavedAt > 0L) {
+                            "נשמר במכשיר ${fillDraftSavedLabel(localSavedAt)}"
+                        } else {
+                            "הפרטים נשמרים במכשיר עד לשליחה."
+                        },
+                        style = TypeScale.caption,
+                        color = FieldTheme.textMuted,
+                    )
+                }
+            }
         }
         when {
             loading -> Column(
@@ -220,6 +338,17 @@ fun FillScreen(eventId: String, app: AppModel) {
                             LedgerRow("כביש", fill.roadName.orEmpty())
                             LedgerRow("מיקום", fill.location.orEmpty())
                             LedgerRow("אחמ״ש", fill.shiftLeadName.orEmpty())
+                        }
+                        if (restoredFromDevice && !readOnly) {
+                            Text(
+                                "שוחזרו פרטים שנשמרו במכשיר ולא נשלחו. בדקו אותם ולחצו על סיום דיווח.",
+                                style = TypeScale.body,
+                                color = FieldTheme.textPrimary,
+                                modifier = Modifier
+                                    .background(FieldTheme.accentSubtle, RoundedCornerShape(4.dp))
+                                    .padding(12.dp)
+                                    .fillMaxWidth(),
+                            )
                         }
                         if (fill.isCancelled) {
                             Text(
@@ -293,6 +422,7 @@ fun FillScreen(eventId: String, app: AppModel) {
                             canWrite = mediaWritable,
                             leftoverError = errors.eventMedia,
                             modifier = if (pane == FillPane.MEDIA) Modifier.fillMaxSize() else Modifier.size(0.dp),
+                            dropUnfinishedTick = dropUnfinishedTick,
                             onUnfinishedChange = { unfinishedMediaDrafts = it },
                             onToast = { text, tone -> app.showToast(text, tone) },
                         )
@@ -323,6 +453,7 @@ fun FillScreen(eventId: String, app: AppModel) {
                                         if (error == errors.eventMedia) pane = FillPane.MEDIA
                                         app.showToast(error, com.yahpz.domain.StampTone.PENDING)
                                     } else {
+                                        FillDraftStore.clear(fill.assignmentId)
                                         app.showToast("הדיווח הושלם")
                                         app.reloadEvents()
                                         app.closeFill()
