@@ -93,6 +93,7 @@ import com.yahpz.domain.eventDraftStatus
 import com.yahpz.domain.eventsByResponderReportRows
 import com.yahpz.domain.isOvernightEnd
 import com.yahpz.domain.leadKmForSave
+import com.yahpz.domain.stationForSave
 import com.yahpz.domain.FillReadyNextRow
 import com.yahpz.domain.FillReadyPreviousRow
 import com.yahpz.domain.fillReadyNotifyIds
@@ -1375,6 +1376,7 @@ object YahpazAPI {
                     eventTypeId = draft.eventTypeId.nilIfEmpty(),
                     roadId = draft.roadId.nilIfEmpty(),
                     location = draft.location.nilIfEmpty(),
+                    station = stationForSave(districts, draft.districtId, draft.station),
                     notes = draft.notes.nilIfEmpty(),
                     busLane = draft.busLane,
                     status = nextStatus.raw,
@@ -1506,7 +1508,7 @@ object YahpazAPI {
             Columns.raw(
                 """
                 id, event_date, police_event_id, district_id, patrol_callsign, event_type_id, road_id,
-                location, notes, is_cancelled, bus_lane, status, shift_lead_id,
+                location, station, notes, is_cancelled, bus_lane, status, shift_lead_id,
                 shift_lead:profiles!events_shift_lead_id_fkey(full_name, callsign),
                 $EVENT_SECONDARY_LEADS_EMBED,
                 responders:event_responders(
@@ -1556,6 +1558,7 @@ object YahpazAPI {
                     eventTypeId = draft.eventTypeId.nilIfEmpty(),
                     roadId = draft.roadId.nilIfEmpty(),
                     location = draft.location.nilIfEmpty(),
+                    station = stationForSave(districts, draft.districtId, draft.station),
                     notes = draft.notes.nilIfEmpty(),
                     isCancelled = draft.isCancelled,
                     busLane = draft.busLane,

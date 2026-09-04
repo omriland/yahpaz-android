@@ -27,14 +27,20 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AcUnit
+import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -49,6 +55,8 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -71,6 +79,9 @@ import com.yahpz.domain.StampDescriptor
 import com.yahpz.domain.StampTone
 import com.yahpz.domain.applyReturnDateKeystroke
 import com.yahpz.domain.applyTimeKeystroke
+import com.yahpz.domain.isoDateToUtcMillis
+import com.yahpz.domain.shouldAdvanceAfterTimeEntry
+import com.yahpz.domain.utcMillisToReturnDateInput
 
 private val fieldShape = RoundedCornerShape(4.dp)
 private val cardShape = RoundedCornerShape(8.dp)
@@ -326,18 +337,21 @@ fun FormField(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReturnDateField(
     label: String,
     value: String,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
+    showCalendar: Boolean = false,
 ) {
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     var field by remember {
         mutableStateOf(TextFieldValue(value, TextRange(value.length)))
     }
+    var showPicker by remember { mutableStateOf(false) }
     LaunchedEffect(value) {
         if (value != field.text) {
             field = TextFieldValue(value, TextRange(value.length))
@@ -360,6 +374,19 @@ fun ReturnDateField(
                 ),
                 placeholder = {
                     Text("30/12/2026", style = TypeScale.numeric, color = FieldTheme.textMuted)
+                },
+                trailingIcon = if (showCalendar) {
+                    {
+                        IconButton(onClick = { showPicker = true }) {
+                            Icon(
+                                imageVector = Icons.Outlined.CalendarMonth,
+                                contentDescription = "בחירת תאריך",
+                                tint = FieldTheme.accent,
+                            )
+                        }
+                    }
+                } else {
+                    null
                 },
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Number,
@@ -388,6 +415,33 @@ fun ReturnDateField(
             )
         }
     }
+    if (showPicker) {
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = isoDateToUtcMillis(value),
+        )
+        DatePickerDialog(
+            onDismissRequest = { showPicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let { millis ->
+                            onValueChange(utcMillisToReturnDateInput(millis))
+                        }
+                        showPicker = false
+                    },
+                ) {
+                    Text("אישור", color = FieldTheme.accent)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPicker = false }) {
+                    Text("ביטול", color = FieldTheme.accent)
+                }
+            },
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
 }
 
 @Composable
@@ -397,6 +451,9 @@ fun TimeField(
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
     placeholder: String = "08:00",
+    imeAction: ImeAction = ImeAction.Done,
+    focusRequester: FocusRequester? = null,
+    onFourDigitsComplete: (() -> Unit)? = null,
 ) {
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
@@ -415,8 +472,10 @@ fun TimeField(
                 value = field,
                 onValueChange = { incoming ->
                     val formatted = applyTimeKeystroke(field.text, incoming.text)
+                    val advance = shouldAdvanceAfterTimeEntry(field.text, formatted)
                     field = TextFieldValue(formatted, TextRange(formatted.length))
                     onValueChange(formatted)
+                    if (advance) onFourDigitsComplete?.invoke()
                 },
                 singleLine = true,
                 textStyle = TypeScale.numeric.copy(
@@ -428,12 +487,15 @@ fun TimeField(
                 },
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Number,
-                    imeAction = ImeAction.Done,
+                    imeAction = imeAction,
                 ),
                 keyboardActions = KeyboardActions(
                     onDone = {
                         focusManager.clearFocus()
                         keyboard?.hide()
+                    },
+                    onNext = {
+                        onFourDigitsComplete?.invoke()
                     },
                 ),
                 colors = TextFieldDefaults.colors(
@@ -449,6 +511,7 @@ fun TimeField(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(FormControlHeight)
+                    .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
                     .border(1.dp, FieldTheme.strong, fieldShape),
             )
         }

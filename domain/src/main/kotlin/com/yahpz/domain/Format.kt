@@ -91,6 +91,10 @@ fun applyTimeKeystroke(previous: String, incoming: String): String {
     return formatTimeInput(nextDigits)
 }
 
+/** True when typing just completed a 4-digit clock (not when editing an already-full field). */
+fun shouldAdvanceAfterTimeEntry(previous: String, next: String): Boolean =
+    digitsOnly(previous).length < 4 && digitsOnly(next).length == 4
+
 fun firstName(fullName: String): String = fullName.split(" ").firstOrNull() ?: fullName
 
 /** Grouped decimal like the web `Intl.NumberFormat('he-IL')`: whole numbers lose the fraction. */

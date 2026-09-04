@@ -121,3 +121,17 @@ fun isValidReturnDate(availableFrom: String, today: String): Boolean {
 }
 
 fun tomorrowJerusalem(today: String = israelToday()): String = addCalendarDays(today, 1)
+
+fun isoDateToUtcMillis(raw: String): Long? {
+    val iso = normalizeReturnDate(raw) ?: return null
+    val date = java.time.LocalDate.parse(iso)
+    return date.atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli()
+}
+
+fun utcMillisToReturnDateInput(millis: Long): String {
+    val iso = java.time.Instant.ofEpochMilli(millis)
+        .atZone(java.time.ZoneOffset.UTC)
+        .toLocalDate()
+        .toString()
+    return returnDateToInput(iso)
+}

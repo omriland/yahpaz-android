@@ -36,6 +36,8 @@ const val EVENT_SAVE_TITLE = "שמירת אירוע"
 const val EVENT_SAVE_DRAFT_TITLE = "שמירת טיוטה"
 const val EVENT_DRAFT_PARTIAL_SAVED = "הטיוטה נשמרה."
 const val EVENT_PATROL_CALLSIGN_LABEL = "או״ק ניידת"
+const val EVENT_STATION_LABEL = "תחנה"
+const val STATION_MAX_LENGTH = 80
 const val MY_ACTIVE_EVENTS_TITLE = "האירועים הפעילים שלי"
 const val MY_ACTIVE_EVENT_DISMISSED = "הוסר מהאירועים הפעילים."
 const val NO_VEHICLE_KM_PLACEHOLDER = "מתנדב ללא רכב"
@@ -76,6 +78,7 @@ data class EventDraft(
     val roadId: String = "",
     val districtId: String = "",
     val location: String = "",
+    val station: String = "",
     val notes: String = "",
     val responders: List<EventResponderDraft> = emptyList(),
     val isCancelled: Boolean = false,
@@ -113,6 +116,23 @@ fun districtNeedsLocation(districts: List<LookupOption>, districtId: String): Bo
     if (districtId.isEmpty()) return false
     return districts.firstOrNull { it.id == districtId }?.code == SYSTEM_DISTRICT_CODE
 }
+
+/** Optional תחנה name — same system שלוחה as mandatory מיקום. */
+fun districtNeedsStation(districts: List<LookupOption>, districtId: String): Boolean =
+    districtNeedsLocation(districts, districtId)
+
+fun stationForSave(districts: List<LookupOption>, districtId: String, station: String): String? {
+    if (!districtNeedsStation(districts, districtId)) return null
+    val trimmed = station.trim()
+    if (trimmed.isEmpty()) return null
+    return trimmed.take(STATION_MAX_LENGTH)
+}
+
+fun stationAfterDistrictChange(
+    districts: List<LookupOption>,
+    nextDistrictId: String,
+    currentStation: String,
+): String = if (districtNeedsStation(districts, nextDistrictId)) currentStation else ""
 
 /** Draft save: date only, matching web `allowPartial`. */
 fun validateEventDraftPartial(draft: EventDraft): EventDraftErrors =

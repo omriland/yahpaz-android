@@ -21,8 +21,8 @@ android {
         applicationId = "com.yahpz.responder"
         minSdk = 26
         targetSdk = 35
-        versionCode = 33
-        versionName = "0.3.22"
+        versionCode = 34
+        versionName = "0.3.23"
     }
 
     androidResources {

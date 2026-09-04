@@ -134,4 +134,23 @@ class AvailabilityAndFormatTest {
         assertEquals("0", applyTimeKeystroke("08", "0"))
         assertEquals("08:3", applyTimeKeystroke("08:", "08:3"))
     }
+
+    @Test
+    fun timeFieldAdvancesOnlyWhenFourDigitsComplete() {
+        assertTrue(shouldAdvanceAfterTimeEntry("08:3", "08:30"))
+        assertTrue(shouldAdvanceAfterTimeEntry("", "08:30"))
+        assertFalse(shouldAdvanceAfterTimeEntry("08:30", "08:31"))
+        assertFalse(shouldAdvanceAfterTimeEntry("08:30", "08:3"))
+        assertFalse(shouldAdvanceAfterTimeEntry("08", "08:3"))
+    }
+
+    @Test
+    fun calendarMillisRoundTripToReturnDateInput() {
+        val millis = isoDateToUtcMillis("30/12/2026")
+        assertTrue(millis != null)
+        assertEquals("30/12/2026", utcMillisToReturnDateInput(millis!!))
+        assertEquals(isoDateToUtcMillis("2026-12-30"), millis)
+        assertNull(isoDateToUtcMillis("32/13/2026"))
+        assertNull(isoDateToUtcMillis("3012"))
+    }
 }

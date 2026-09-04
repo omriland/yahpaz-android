@@ -30,6 +30,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -64,7 +66,11 @@ import com.yahpz.domain.EventDraftErrors
 import com.yahpz.domain.EventResponderDraft
 import com.yahpz.domain.LookupOption
 import com.yahpz.domain.NO_VEHICLE_KM_PLACEHOLDER
+import com.yahpz.domain.EVENT_STATION_LABEL
+import com.yahpz.domain.STATION_MAX_LENGTH
 import com.yahpz.domain.applyDistrictRoadDefault
+import com.yahpz.domain.districtNeedsStation
+import com.yahpz.domain.stationAfterDistrictChange
 import com.yahpz.domain.bumpTreatedVehicle
 import com.yahpz.domain.canToggleEventCancelled
 import com.yahpz.domain.createIncludesSelfAssign
@@ -99,6 +105,7 @@ fun EventFormScreen(
     var roadId by remember { mutableStateOf("") }
     var districtId by remember { mutableStateOf("") }
     var location by remember { mutableStateOf("") }
+    var station by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
     var responders by remember { mutableStateOf(emptyList<EventResponderDraft>()) }
     var isCancelled by remember { mutableStateOf(false) }
@@ -168,6 +175,7 @@ fun EventFormScreen(
             roadId = draft.roadId
             districtId = draft.districtId
             location = draft.location
+            station = draft.station
             notes = draft.notes
             responders = draft.responders
             isCancelled = draft.isCancelled
@@ -197,6 +205,7 @@ fun EventFormScreen(
         roadId = roadId,
         districtId = districtId,
         location = location,
+        station = station,
         notes = notes,
         responders = responders,
         isCancelled = isCancelled,
@@ -348,6 +357,7 @@ fun EventFormScreen(
                     label = "תאריך",
                     value = eventDate,
                     onValueChange = { eventDate = it },
+                    showCalendar = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 errors.eventDate?.let { Text(it, style = TypeScale.caption, color = FieldTheme.alert) }
@@ -394,12 +404,21 @@ fun EventFormScreen(
                                 roads = ui.lookups.roads,
                                 currentRoadId = roadId,
                             )
+                            station = stationAfterDistrictChange(ui.lookups.districts, next, station)
                             districtId = next
                         },
                         placeholder = "בחירת שלוחה",
                         searchPlaceholder = "חיפוש שלוחה",
                         allowClear = true,
                         modifier = Modifier.weight(1f),
+                    )
+                }
+                if (districtNeedsStation(ui.lookups.districts, districtId)) {
+                    FormField(
+                        label = EVENT_STATION_LABEL,
+                        value = station,
+                        onValueChange = { station = it.take(STATION_MAX_LENGTH) },
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
                 FormFieldRow {
@@ -531,6 +550,7 @@ private fun EventResponderDetailSheet(
     onDismiss: () -> Unit,
     onChange: (EventResponderDraft) -> Unit,
 ) {
+    val endTimeFocus = remember { FocusRequester() }
     Column(
         Modifier
             .padding(horizontal = 16.dp)
@@ -545,6 +565,8 @@ private fun EventResponderDetailSheet(
                 value = responder.startTime,
                 onValueChange = { onChange(responder.copy(startTime = it)) },
                 placeholder = "08:00",
+                imeAction = ImeAction.Next,
+                onFourDigitsComplete = { endTimeFocus.requestFocus() },
                 modifier = Modifier.weight(1f),
             )
             TimeField(
@@ -552,6 +574,7 @@ private fun EventResponderDetailSheet(
                 value = responder.endTime,
                 onValueChange = { onChange(responder.copy(endTime = it)) },
                 placeholder = "09:30",
+                focusRequester = endTimeFocus,
                 modifier = Modifier.weight(1f),
             )
         }

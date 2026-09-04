@@ -219,4 +219,15 @@ class EventDraftTest {
             ),
         )
     }
+
+    @Test
+    fun `תחנה saves only on the system שלוחה`() {
+        assertEquals("איילון", stationForSave(districts, "d-system", "  איילון  "))
+        assertNull(stationForSave(districts, "d-system", "   "))
+        assertNull(stationForSave(districts, "d-north", "איילון"))
+        assertEquals("", stationAfterDistrictChange(districts, "d-north", "איילון"))
+        assertEquals("איילון", stationAfterDistrictChange(districts, "d-system", "איילון"))
+        val long = "א".repeat(STATION_MAX_LENGTH + 10)
+        assertEquals(STATION_MAX_LENGTH, stationForSave(districts, "d-system", long)?.length)
+    }
 }
