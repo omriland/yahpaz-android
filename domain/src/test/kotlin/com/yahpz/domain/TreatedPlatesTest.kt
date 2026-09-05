@@ -133,7 +133,7 @@ class TreatedPlatesTest {
     fun hebrewErrorStringsMatchWeb() {
         assertEquals("יש להזין 7 או 8 ספרות.", TREATED_PLATE_LENGTH_ERROR)
         assertEquals("מספר זה כבר נוסף.", TREATED_PLATE_DUPLICATE_ERROR)
-        assertEquals("השלימו או מחקו את המספר בתחתית.", TREATED_PLATE_LEFTOVER_ERROR)
+        assertEquals("יש ללחוץ הוספה לשמירת המספר", TREATED_PLATE_LEFTOVER_ERROR)
         assertTrue(true)
     }
 }

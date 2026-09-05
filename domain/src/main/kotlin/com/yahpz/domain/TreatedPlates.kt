@@ -11,7 +11,7 @@ data class TreatedPlate(
 
 const val TREATED_PLATE_LENGTH_ERROR = "יש להזין 7 או 8 ספרות."
 const val TREATED_PLATE_DUPLICATE_ERROR = "מספר זה כבר נוסף."
-const val TREATED_PLATE_LEFTOVER_ERROR = "השלימו או מחקו את המספר בתחתית."
+const val TREATED_PLATE_LEFTOVER_ERROR = "יש ללחוץ הוספה לשמירת המספר"
 
 sealed class CommitTreatedPlateResult {
     data class Ok(val plate: TreatedPlate, val plates: List<TreatedPlate>) : CommitTreatedPlateResult()

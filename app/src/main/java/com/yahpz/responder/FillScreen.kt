@@ -459,9 +459,12 @@ fun FillScreen(eventId: String, app: AppModel) {
                                     val error = YahpazAPI.saveFill(fill, draft, true, unfinishedMediaDrafts)
                                     completing = false
                                     if (error != null) {
-                                        formError = error
                                         if (error == errors.eventMedia) pane = FillPane.MEDIA
-                                        app.showToast(error, com.yahpz.domain.StampTone.PENDING)
+                                        // Field-level leftover plate copy already sits under the LP input.
+                                        if (error != errors.treatedPlates) {
+                                            formError = error
+                                            app.showToast(error, com.yahpz.domain.StampTone.PENDING)
+                                        }
                                     } else {
                                         FillDraftStore.clear(fill.assignmentId)
                                         app.showToast("הדיווח הושלם")
