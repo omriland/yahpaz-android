@@ -2,7 +2,7 @@ package com.yahpz.domain
 
 /**
  * Port of web `mobileNav.ts`. Same ranks, same overflow rule, same Hebrew labels.
- * Native skips `map` (Google Maps JS) and desktop-only `cockpit`.
+ * Native skips desktop-only `cockpit`.
  */
 
 const val MOBILE_MORE_LABEL = "עוד"
@@ -11,7 +11,7 @@ const val MOBILE_MORE_LABEL = "עוד"
 private val MOBILE_TAB_PRIMARY = listOf("events", "mine", "users", "my_shifts")
 
 /** Reachable on mobile, but not every-session. Overflow into עוד. */
-private val MOBILE_TAB_SECONDARY = listOf("shifts", "contacts", "reports")
+private val MOBILE_TAB_SECONDARY = listOf("shifts", "contacts", "map", "reports")
 
 /** Five is the hard limit; the last slot is reserved for עוד when anything overflows. */
 private const val MOBILE_TAB_MAX = 4
@@ -47,7 +47,7 @@ fun splitMobileNav(entries: List<MobileNavEntry>): SplitMobileNav {
 
 /**
  * Destinations a signed-in user can open on the phone.
- * Matches web `App.tsx` entries for mobile, minus מפה and הקוקפיט.
+ * Matches web `App.tsx` entries for mobile, minus הקוקפיט.
  */
 fun mobileNavEntries(roles: List<String>): List<MobileNavEntry> {
     val list = mutableListOf<MobileNavEntry>()
@@ -60,6 +60,7 @@ fun mobileNavEntries(roles: List<String>): List<MobileNavEntry> {
         list += MobileNavEntry("my_shifts", "המשמרות שלי")
     }
     list += MobileNavEntry("contacts", "אנשי קשר")
+    list += MobileNavEntry("map", "מפה")
     if (manages) {
         list += MobileNavEntry("events", "אירועים")
         list += MobileNavEntry("shifts", "משמרות")

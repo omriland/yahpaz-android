@@ -62,7 +62,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-enum class AppTab { INBOX, SHIFTS, CONTACTS, UNIT_EVENTS, UNIT_SHIFTS, TOOLS, REPORTS, PROFILE }
+enum class AppTab { INBOX, SHIFTS, CONTACTS, MAP, UNIT_EVENTS, UNIT_SHIFTS, TOOLS, REPORTS, PROFILE }
 
 enum class ToolsDestination {
     HUB, REPORT_CATALOG, REPORT, ADMIN_USERS, NEW_EVENT, EDIT_EVENT, NEW_SHIFT, EDIT_SHIFT, BROADCAST, FUEL_QUARTER, CLOSED_LISTS, COCKPIT
@@ -72,6 +72,7 @@ fun appTabForMobileView(view: String): AppTab = when (view) {
     "mine" -> AppTab.INBOX
     "my_shifts" -> AppTab.SHIFTS
     "contacts" -> AppTab.CONTACTS
+    "map" -> AppTab.MAP
     "events" -> AppTab.UNIT_EVENTS
     "shifts" -> AppTab.UNIT_SHIFTS
     "users" -> AppTab.TOOLS

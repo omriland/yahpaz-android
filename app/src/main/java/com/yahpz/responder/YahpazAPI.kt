@@ -1,8 +1,18 @@
 package com.yahpz.responder
 
 import com.yahpz.domain.AssignableProfile
+import com.yahpz.domain.AddressKind
 import com.yahpz.domain.AvailabilityStatus
 import com.yahpz.domain.AvailabilityWrite
+import com.yahpz.domain.LiveMapPin
+import com.yahpz.domain.MapPin
+import com.yahpz.domain.UnitMapPinRow
+import com.yahpz.domain.VolunteerStatus
+import com.yahpz.domain.liveEventLine
+import com.yahpz.domain.livePinLabel
+import com.yahpz.domain.livePinTooltip
+import com.yahpz.domain.mapPinsFromUnitRows
+import com.yahpz.domain.formatTime
 import com.yahpz.domain.BROADCAST_SEND_FAILED
 import com.yahpz.domain.BroadcastCandidate
 import com.yahpz.domain.BroadcastDraft
@@ -501,6 +511,75 @@ object YahpazAPI {
 
     suspend fun fetchUnitContacts(): List<UnitContact> =
         client.postgrest.rpc("list_unit_contacts").decodeList<UnitContact>()
+
+    suspend fun fetchUnitMapPins(): List<MapPin> {
+        val rows = client.postgrest.rpc("list_unit_map_pins").decodeList<UnitMapPinRowDto>()
+        return mapPinsFromUnitRows(
+            rows.map { row ->
+                UnitMapPinRow(
+                    userId = row.userId,
+                    fullName = row.fullName,
+                    callsign = row.callsign,
+                    kind = AddressKind.fromRaw(row.kind),
+                    label = row.label,
+                    formattedAddress = row.formattedAddress,
+                    lat = row.lat,
+                    lng = row.lng,
+                    volunteerStatus = VolunteerStatus.fromRaw(row.volunteerStatus),
+                    availability = AvailabilityStatus.fromRaw(row.availability),
+                    availableFrom = row.availableFrom,
+                )
+            },
+        )
+    }
+
+    suspend fun fetchLiveMapPins(): List<LiveMapPin> {
+        val rows = client.from("event_responder_live_locations").select(
+            Columns.raw(
+                """
+                event_responder_id,
+                lat,
+                lng,
+                recorded_at,
+                assignment:event_responders!inner (
+                  ended_at,
+                  responder:profiles!event_responders_responder_id_fkey (full_name, callsign),
+                  event:events!event_responders_event_id_fkey (
+                    location,
+                    event_type:event_types(name),
+                    road:roads(name)
+                  )
+                )
+                """.trimIndent(),
+            ),
+        ).decodeList<LiveLocationRowDto>()
+        return rows.mapNotNull { row ->
+            val assignment = row.assignment ?: return@mapNotNull null
+            if (!assignment.endedAt.isNullOrBlank()) return@mapNotNull null
+            val person = assignment.responder
+            val event = assignment.event
+            val eventLine = liveEventLine(
+                eventType = event?.eventType?.name,
+                road = event?.road?.name,
+                location = event?.location,
+            )
+            val clock = runCatching {
+                java.time.Instant.parse(row.recordedAt)
+                    .atZone(java.time.ZoneId.of("Asia/Jerusalem"))
+                    .toLocalTime()
+                    .toString()
+                    .take(5)
+            }.getOrElse { formatTime(row.recordedAt).orEmpty() }
+            LiveMapPin(
+                assignmentId = row.eventResponderId,
+                lat = row.lat,
+                lng = row.lng,
+                label = livePinLabel(person?.callsign, person?.fullName ?: "מתנדב"),
+                tooltip = livePinTooltip(eventLine, clock),
+                recordedAt = row.recordedAt,
+            )
+        }
+    }
 
     suspend fun fetchUnitEvents(limit: Int = 80, shiftLeadId: String? = null): List<EventListItem> =
         client.from("events").select(Columns.raw(eventListSelect)) {
@@ -2564,3 +2643,52 @@ private data class EventStatusHolder(
 )
 
 private object OptionalEventHolderSerializer : OneOrNullSerializer<EventStatusHolder>(EventStatusHolder.serializer())
+
+@Serializable
+private data class UnitMapPinRowDto(
+    @SerialName("user_id") val userId: String,
+    @SerialName("full_name") val fullName: String = "",
+    val callsign: String = "",
+    val kind: String = "other",
+    val label: String? = null,
+    @SerialName("formatted_address") val formattedAddress: String = "",
+    val lat: Double = 0.0,
+    val lng: Double = 0.0,
+    @SerialName("volunteer_status") val volunteerStatus: String? = null,
+    val availability: String? = null,
+    @SerialName("available_from") val availableFrom: String? = null,
+)
+
+@Serializable
+private data class LiveLocationRowDto(
+    @SerialName("event_responder_id") val eventResponderId: String,
+    val lat: Double,
+    val lng: Double,
+    @SerialName("recorded_at") val recordedAt: String,
+    val assignment: LiveAssignmentEmbedDto? = null,
+)
+
+@Serializable
+private data class LiveAssignmentEmbedDto(
+    @SerialName("ended_at") val endedAt: String? = null,
+    val responder: LivePersonEmbedDto? = null,
+    val event: LiveEventEmbedDto? = null,
+)
+
+@Serializable
+private data class LivePersonEmbedDto(
+    @SerialName("full_name") val fullName: String? = null,
+    val callsign: String? = null,
+)
+
+@Serializable
+private data class LiveEventEmbedDto(
+    val location: String? = null,
+    @SerialName("event_type") val eventType: NamedEmbedDto? = null,
+    val road: NamedEmbedDto? = null,
+)
+
+@Serializable
+private data class NamedEmbedDto(
+    val name: String? = null,
+)

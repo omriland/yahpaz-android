@@ -103,6 +103,7 @@ fun feedbackPagePathForUi(ui: AppUiState): String {
         AppTab.INBOX -> "inbox"
         AppTab.SHIFTS -> "my_shifts"
         AppTab.CONTACTS -> "contacts"
+        AppTab.MAP -> "map"
         AppTab.UNIT_EVENTS -> "events"
         AppTab.UNIT_SHIFTS -> "shifts"
         AppTab.TOOLS -> "users"

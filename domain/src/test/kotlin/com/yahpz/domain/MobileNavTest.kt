@@ -53,18 +53,37 @@ class MobileNavTest {
     }
 
     @Test
-    fun `mobileNavEntries uses web labels and skips map and cockpit`() {
+    fun `mobileNavEntries uses web labels including map and skips cockpit`() {
         val lead = mobileNavEntries(listOf("shift_lead", "responder"))
         assertEquals(
-            listOf("mine", "my_shifts", "contacts", "events", "shifts", "reports", "profile"),
+            listOf("mine", "my_shifts", "contacts", "map", "events", "shifts", "reports", "profile"),
             lead.map { it.view },
         )
         assertEquals("אירועים", lead.first { it.view == "events" }.label)
-        assertTrue(lead.none { it.view == "map" || it.view == "cockpit" })
+        assertEquals("מפה", lead.first { it.view == "map" }.label)
+        assertTrue(lead.none { it.view == "cockpit" })
 
         val admin = mobileNavEntries(listOf("admin"))
         assertEquals("ניהול", admin.first { it.view == "users" }.label)
         assertTrue(admin.none { it.view == "reports" })
+        assertTrue(admin.any { it.view == "map" })
+    }
+
+    @Test
+    fun `map sits after contacts in secondary overflow for leads`() {
+        val split = splitMobileNav(
+            listOf(
+                MobileNavEntry("contacts", "אנשי קשר"),
+                MobileNavEntry("map", "מפה"),
+                MobileNavEntry("reports", "דוחות"),
+                MobileNavEntry("shifts", "משמרות"),
+                MobileNavEntry("events", "אירועים"),
+                MobileNavEntry("my_shifts", "המשמרות שלי"),
+                MobileNavEntry("mine", "האירועים שלי"),
+            ),
+        )
+        assertEquals(listOf("events", "mine", "my_shifts"), views(split.tabs))
+        assertEquals(listOf("shifts", "contacts", "map", "reports"), views(split.more))
     }
 
     @Test

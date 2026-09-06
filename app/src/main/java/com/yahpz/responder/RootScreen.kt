@@ -25,6 +25,7 @@ import androidx.compose.material.icons.outlined.AdminPanelSettings
 import androidx.compose.material.icons.outlined.Assessment
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Contacts
+import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Schedule
@@ -367,6 +368,7 @@ private fun iconForView(view: String): ImageVector = when (view) {
     "mine" -> Icons.AutoMirrored.Outlined.ListAlt
     "my_shifts" -> Icons.Outlined.CalendarMonth
     "contacts" -> Icons.Outlined.Contacts
+    "map" -> Icons.Outlined.Map
     "events" -> Icons.AutoMirrored.Outlined.EventNote
     "shifts" -> Icons.Outlined.Schedule
     "reports" -> Icons.Outlined.Assessment
@@ -608,6 +610,7 @@ private fun TabBody(app: AppModel, ui: AppUiState, tab: AppTab) {
         AppTab.INBOX -> InboxScreen(app, ui)
         AppTab.SHIFTS -> MyShiftsScreen(app, ui)
         AppTab.CONTACTS -> ContactsScreen(app, ui)
+        AppTab.MAP -> MapScreen(app, ui)
         AppTab.UNIT_EVENTS -> UnitEventsScreen(app, ui)
         AppTab.UNIT_SHIFTS -> UnitShiftsScreen(app, ui)
         AppTab.TOOLS -> AdminShell(app, ui)
