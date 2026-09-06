@@ -79,7 +79,7 @@ import com.yahpz.domain.formatDate
 import com.yahpz.domain.formatDateTime
 import com.yahpz.domain.lookupPlate
 import com.yahpz.domain.leadKmPendingNote
-import com.yahpz.domain.participationStamp
+import com.yahpz.domain.mineParticipationStamp
 import com.yahpz.domain.plateDigits
 import com.yahpz.domain.removeTreatedPlate
 import com.yahpz.domain.setTreatedPlateLeftWhere
@@ -364,7 +364,7 @@ fun FillScreen(eventId: String, app: AppModel) {
                         }
                         if (readOnly) {
                             StampWithNote(
-                                participationStamp(fill.participationStatus, true),
+                                mineParticipationStamp(fill.participationStatus, fill.totalKm),
                                 note = leadKmPendingNote(fill.participationStatus, fill.totalKm),
                             )
                             fill.updatedAt?.let {

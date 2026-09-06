@@ -84,6 +84,7 @@ import com.yahpz.domain.formatPlate
 import com.yahpz.domain.formatTime
 import com.yahpz.domain.leadKmPendingNote
 import com.yahpz.domain.mineFillCtaLabel
+import com.yahpz.domain.mineParticipationStamp
 import com.yahpz.domain.participationStamp
 import com.yahpz.domain.visibleMyActiveIds
 import com.yahpz.domain.INCOMPLETE_EVENTS_HEADING
@@ -731,7 +732,11 @@ private fun UnitEventResponderRow(
     expanded: Boolean,
     onToggle: () -> Unit,
 ) {
-    val stamp = participationStamp(row.status, isViewer)
+    val stamp = if (isViewer) {
+        mineParticipationStamp(row.status, row.totalKm)
+    } else {
+        participationStamp(row.status, false)
+    }
     FieldCard(
         modifier = Modifier
             .fillMaxWidth()

@@ -41,11 +41,19 @@ class StatusTest {
     }
 
     @Test
-    fun `completed fill with no lead KM keeps הושלם and notes the lead`() {
+    fun `completed fill with no lead KM shows סיימת לתעד and notes the lead`() {
         assertEquals(LEAD_KM_PENDING_NOTE, leadKmPendingNote(ParticipationStatus.DONE, null))
         assertEquals(null, leadKmPendingNote(ParticipationStatus.DONE, 0.0))
         assertEquals(null, leadKmPendingNote(ParticipationStatus.IN_PROGRESS, null))
         assertEquals(true, mineInboxIsOpen(ParticipationStatus.DONE, null))
         assertEquals(false, mineInboxIsOpen(ParticipationStatus.DONE, 12.0))
+        assertEquals(
+            StampDescriptor(FILL_DONE_AWAITING_KM_LABEL, StampTone.DONE),
+            mineParticipationStamp(ParticipationStatus.DONE, null),
+        )
+        assertEquals(
+            StampDescriptor("הושלם", StampTone.DONE),
+            mineParticipationStamp(ParticipationStatus.DONE, 12.0),
+        )
     }
 }

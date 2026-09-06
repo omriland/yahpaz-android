@@ -65,6 +65,7 @@ import com.yahpz.domain.leadKmPendingNote
 import com.yahpz.domain.mineFillCtaLabel
 import com.yahpz.domain.mineInboxIsOpen
 import com.yahpz.domain.mineLoggedNoResultsTitle
+import com.yahpz.domain.mineParticipationStamp
 import com.yahpz.domain.minePendingTabLabel
 import com.yahpz.domain.openMineSummary
 import com.yahpz.domain.participationStamp
@@ -214,7 +215,11 @@ fun InboxScreen(app: AppModel, ui: AppUiState) {
                             color = FieldTheme.textPrimary,
                         )
                         StampWithNote(
-                            participationStamp(row.status, row.responderId == ui.userId),
+                            if (row.responderId == ui.userId) {
+                                mineParticipationStamp(row.status, row.totalKm)
+                            } else {
+                                participationStamp(row.status, false)
+                            },
                             note = if (row.responderId == ui.userId) {
                                 leadKmPendingNote(row.status, row.totalKm)
                             } else {
@@ -389,11 +394,10 @@ private fun LoggedList(
                                 )
                             }
                         }
+                        val ownKm = userId?.let { event.ownTotalKm(it) }
                         StampWithNote(
-                            participationStamp(ParticipationStatus.DONE, true),
-                            note = userId?.let {
-                                leadKmPendingNote(ParticipationStatus.DONE, event.ownTotalKm(it))
-                            },
+                            mineParticipationStamp(ParticipationStatus.DONE, ownKm),
+                            note = leadKmPendingNote(ParticipationStatus.DONE, ownKm),
                         )
                     }
                 }
@@ -437,7 +441,8 @@ private fun EventCard(
     onFill: (String) -> Unit,
 ) {
     val mine = userId?.let { event.ownParticipation(it) } ?: ParticipationStatus.PENDING
-    val stamp = if (event.isCancelled) cancelledStamp() else participationStamp(mine, true)
+    val ownKm = userId?.let { event.ownTotalKm(it) }
+    val stamp = if (event.isCancelled) cancelledStamp() else mineParticipationStamp(mine, ownKm)
     val overdue = isMineFillOverdue(
         isCancelled = event.isCancelled,
         participationStatus = mine,

@@ -62,11 +62,23 @@ fun participationStamp(status: ParticipationStatus, isViewer: Boolean): StampDes
     return StampDescriptor(if (isViewer) "ממתין לתיעוד" else "ממתין למתנדב", StampTone.PENDING)
 }
 
-/** Responder-facing: they finished; the lead has not entered KM yet. Stamp stays הושלם. */
+/** Responder finished fill; lead KM still missing. Replaces הושלם on their own stamp. */
+const val FILL_DONE_AWAITING_KM_LABEL = "סיימת לתעד"
+
+/** Responder-facing: they finished; the lead has not entered KM yet. */
 const val LEAD_KM_PENDING_NOTE = "אחמ״ש טרם הזין ק״מ"
 
 fun leadKmPendingNote(participation: ParticipationStatus?, totalKm: Double?): String? =
     if (participation == ParticipationStatus.DONE && totalKm == null) LEAD_KM_PENDING_NOTE else null
+
+/** Own-row stamp for mine inbox / fill / detail: סיימת לתעד when lead KM is still null. */
+fun mineParticipationStamp(status: ParticipationStatus?, totalKm: Double?): StampDescriptor {
+    val resolved = status ?: ParticipationStatus.PENDING
+    if (resolved == ParticipationStatus.DONE && totalKm == null) {
+        return StampDescriptor(FILL_DONE_AWAITING_KM_LABEL, StampTone.DONE)
+    }
+    return participationStamp(resolved, true)
+}
 
 /** Mine inbox: fill still open, or fill done but lead KM is missing. */
 fun mineInboxIsOpen(participation: ParticipationStatus?, totalKm: Double?): Boolean {
