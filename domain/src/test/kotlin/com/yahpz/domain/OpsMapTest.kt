@@ -119,4 +119,12 @@ class OpsMapTest {
         assertTrue(chrome.tooltip.contains("לא זמין"))
         assertNull(mapAvailabilityHoverLabel(AvailabilityStatus.AVAILABLE, null, "2026-09-06"))
     }
+
+    @Test
+    fun responderPinLabelAndZoomGate() {
+        assertEquals("336 · עמרי", mapResponderPinLabel("336", "עמרי"))
+        assertEquals("336", mapResponderPinLabel("336", "  "))
+        assertFalse(shouldShowMapPinLabels(11.9f))
+        assertTrue(shouldShowMapPinLabels(12f))
+    }
 }

@@ -41,12 +41,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.google.android.gms.maps.CameraUpdateFactory
-import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.LatLngBounds
@@ -94,12 +94,14 @@ import com.yahpz.domain.formatMapDistanceKm
 import com.yahpz.domain.freshLivePins
 import com.yahpz.domain.managesUnit
 import com.yahpz.domain.mapBoundsForRadiusKm
+import com.yahpz.domain.mapResponderPinLabel
 import com.yahpz.domain.mapUserPinChrome
 import com.yahpz.domain.milePostTooltip
 import com.yahpz.domain.milePostsInView
 import com.yahpz.domain.nearbyResponders
 import com.yahpz.domain.padBbox
 import com.yahpz.domain.pointInBbox
+import com.yahpz.domain.shouldShowMapPinLabels
 import com.yahpz.domain.shouldShowMilePosts
 import com.yahpz.domain.zoomAfterCatalogClusterClick
 import com.yahpz.domain.LatLngBbox
@@ -345,19 +347,26 @@ fun MapScreen(app: AppModel, ui: AppUiState) {
 
                         PoliceGeoJsonEffect(enabled = layers.policeStations)
 
+                        val showLabels = shouldShowMapPinLabels(zoom)
                         catalogPoints.forEach { pin ->
                             val chrome = mapUserPinChrome(pin)
-                            val hue = when {
-                                chrome.unavailable -> BitmapDescriptorFactory.HUE_AZURE
-                                chrome.tone == MapUserPinTone.PHONE -> BitmapDescriptorFactory.HUE_GREEN
-                                else -> BitmapDescriptorFactory.HUE_BLUE
+                            val fill = when {
+                                chrome.unavailable -> FieldTheme.draft
+                                chrome.tone == MapUserPinTone.PHONE -> FieldTheme.done
+                                else -> FieldTheme.accent
                             }
                             val key = "${pin.userId}:${pin.kind}:${pin.lat}:${pin.lng}"
+                            val label = if (showLabels) {
+                                mapResponderPinLabel(pin.callsign, pin.fullName)
+                            } else {
+                                null
+                            }
                             Marker(
                                 state = MarkerState(position = LatLng(pin.lat, pin.lng)),
                                 title = pin.label,
                                 snippet = chrome.tooltip,
-                                icon = BitmapDescriptorFactory.defaultMarker(hue),
+                                icon = MapPinBitmaps.disc(context, fill = fill, label = label),
+                                anchor = Offset(0.5f, MapPinBitmaps.anchorVForLabeled(label != null)),
                                 zIndex = if (focusedPinKey == key) 2f else 1f,
                             )
                         }
@@ -365,7 +374,8 @@ fun MapScreen(app: AppModel, ui: AppUiState) {
                             Marker(
                                 state = MarkerState(position = LatLng(cluster.lat, cluster.lng)),
                                 title = cluster.count.toString(),
-                                icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_ORANGE),
+                                icon = MapPinBitmaps.cluster(context, cluster.count),
+                                anchor = Offset(0.5f, 0.5f),
                                 onClick = {
                                     scope.launch {
                                         cameraPositionState.animate(
@@ -383,26 +393,45 @@ fun MapScreen(app: AppModel, ui: AppUiState) {
                             Marker(
                                 state = MarkerState(position = origin),
                                 title = "חיפוש",
-                                icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_VIOLET),
+                                icon = MapPinBitmaps.disc(
+                                    context,
+                                    fill = Color(0xFF7B5EA7),
+                                    label = if (showLabels) "חיפוש" else null,
+                                ),
+                                anchor = Offset(0.5f, MapPinBitmaps.anchorVForLabeled(showLabels)),
                                 zIndex = 3f,
                             )
                         }
                         if (showMiles) {
                             mileInView.forEach { post ->
+                                val kmLabel = if (zoom >= 15f) post.km.toString() else null
                                 Marker(
                                     state = MarkerState(position = LatLng(post.lat, post.lng)),
                                     title = milePostTooltip(post),
-                                    icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_YELLOW),
+                                    icon = MapPinBitmaps.disc(
+                                        context,
+                                        fill = FieldTheme.partial,
+                                        stroke = FieldTheme.raised,
+                                        label = kmLabel,
+                                        labelColor = FieldTheme.textPrimary,
+                                    ),
+                                    anchor = Offset(0.5f, MapPinBitmaps.anchorVForLabeled(kmLabel != null)),
                                     zIndex = 0.5f,
                                 )
                             }
                         }
                         liveFresh.forEach { pin ->
+                            val liveLabel = if (showLabels) pin.label else null
                             Marker(
                                 state = MarkerState(position = LatLng(pin.lat, pin.lng)),
                                 title = pin.label,
                                 snippet = pin.tooltip,
-                                icon = BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN),
+                                icon = MapPinBitmaps.disc(
+                                    context,
+                                    fill = FieldTheme.done,
+                                    label = liveLabel,
+                                ),
+                                anchor = Offset(0.5f, MapPinBitmaps.anchorVForLabeled(liveLabel != null)),
                                 zIndex = 4f,
                             )
                         }

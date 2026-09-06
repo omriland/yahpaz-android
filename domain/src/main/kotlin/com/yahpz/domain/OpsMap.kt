@@ -62,6 +62,23 @@ data class MapPin(
 fun mapPinLabel(callsign: String, kind: AddressKind, customLabel: String? = null): String =
     "${callsign} · ${addressKindLabel(kind, customLabel)}"
 
+/** Visible map chrome: אבן דרך (או״ק) + responder name. */
+fun mapResponderPinLabel(callsign: String, fullName: String): String {
+    val cs = callsign.trim()
+    val name = fullName.trim()
+    return when {
+        cs.isNotEmpty() && name.isNotEmpty() -> "$cs · $name"
+        cs.isNotEmpty() -> cs
+        name.isNotEmpty() -> name
+        else -> "מתנדב"
+    }
+}
+
+/** Show name/או״ק chips once pins are unclustered and readable. */
+const val MAP_PIN_LABEL_MIN_ZOOM = 12f
+
+fun shouldShowMapPinLabels(zoom: Float): Boolean = zoom >= MAP_PIN_LABEL_MIN_ZOOM
+
 fun isMapVisibleVolunteerStatus(status: VolunteerStatus): Boolean =
     status != VolunteerStatus.ADMINISTRATION &&
         status != VolunteerStatus.BASIC_TRAINING &&
