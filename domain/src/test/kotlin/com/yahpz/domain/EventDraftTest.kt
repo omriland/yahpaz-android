@@ -155,6 +155,27 @@ class EventDraftTest {
     }
 
     @Test
+    fun `remove confirm is needed after any lead field is filled`() {
+        val empty = EventResponderDraft("r1")
+        assertFalse(eventResponderHasFilledFields(empty))
+        assertTrue(eventResponderHasFilledFields(empty.copy(startTime = "08:00")))
+        assertTrue(eventResponderHasFilledFields(empty.copy(endTime = "09:00")))
+        assertTrue(eventResponderHasFilledFields(empty.copy(totalKm = "12")))
+        assertTrue(eventResponderHasFilledFields(empty.copy(emergencyMeans = true)))
+        assertTrue(
+            eventResponderHasFilledFields(
+                empty.copy(treated = listOf(TreatedVehicleDraft("car", 1))),
+            ),
+        )
+        assertFalse(eventResponderHasFilledFields(empty.copy(totalKm = "12", hasVehicle = false)))
+        assertFalse(
+            eventResponderHasFilledFields(
+                empty.copy(treated = listOf(TreatedVehicleDraft("car", 0))),
+            ),
+        )
+    }
+
+    @Test
     fun `create blocks the lead from assigning themselves`() {
         val crew = listOf(EventResponderDraft("lead"), EventResponderDraft("r2"))
         assertTrue(createIncludesSelfAssign("lead", crew))
@@ -206,6 +227,8 @@ class EventDraftTest {
         assertEquals("סגירת הקצאה", EVENT_ASSIGN_CLOSE)
         assertEquals("הסרת מתנדב", EVENT_ASSIGN_REMOVE)
         assertEquals("שעות · ק״מ", EVENT_ASSIGN_EDIT_HINT)
+        assertEquals("האם אתה בטוח שברצונך להסיר את דנה?", eventResponderRemoveConfirm("דנה"))
+        assertEquals("האם אתה בטוח שברצונך להסיר את מתנדב?", eventResponderRemoveConfirm("  "))
         assertEquals("או״ק ניידת", EVENT_PATROL_CALLSIGN_LABEL)
         assertEquals("טעינת האירועים נכשלה. בדקו את החיבור ונסו שוב.", UNIT_EVENTS_LOAD_FAILED)
     }

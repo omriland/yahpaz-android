@@ -44,6 +44,7 @@ const val NO_VEHICLE_KM_PLACEHOLDER = "מתנדב ללא רכב"
 const val EVENT_ASSIGN_OPEN = "מתנדבים"
 const val EVENT_ASSIGN_CLOSE = "סגירת הקצאה"
 const val EVENT_ASSIGN_REMOVE = "הסרת מתנדב"
+const val EVENT_ASSIGN_REMOVE_CANCEL = "ביטול"
 const val EVENT_ASSIGN_EMPTY = "בלי מתנדב משובץ האירוע נשאר בהזנה ואינו מוצג למתנדבים."
 const val EVENT_ASSIGN_EDIT_HINT = "שעות · ק״מ"
 const val EVENT_SELF_ASSIGN_ON_CREATE_ERROR = "לא ניתן לשבץ את יוצר האירוע כמתנדב."
@@ -221,6 +222,19 @@ fun deriveEventStatusFromDraft(responders: List<EventResponderDraft>): EventStat
 /** A new event with no responders is a draft; adding pending crew opens it for documentation. */
 fun eventDraftStatus(responderCount: Int): EventStatus =
     if (responderCount == 0) EventStatus.DRAFT else EventStatus.IN_PROGRESS
+
+/** Any lead-owned field the אחמ״ש typed or toggled on this assignment. */
+fun eventResponderHasFilledFields(row: EventResponderDraft): Boolean {
+    if (row.startTime.isNotBlank() || row.endTime.isNotBlank()) return true
+    if (row.hasVehicle && row.totalKm.isNotBlank()) return true
+    if (row.emergencyMeans) return true
+    return row.treated.any { it.quantity > 0 }
+}
+
+fun eventResponderRemoveConfirm(name: String): String {
+    val trimmed = name.trim().ifEmpty { "מתנדב" }
+    return "האם אתה בטוח שברצונך להסיר את $trimmed?"
+}
 
 fun eventDraftSummary(responderCount: Int): String = when (responderCount) {
     0 -> "טרם הוקצו מתנדבים · אירוע בהזנה"

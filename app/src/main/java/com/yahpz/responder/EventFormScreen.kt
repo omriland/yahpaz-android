@@ -42,7 +42,11 @@ import com.yahpz.domain.ASSIGNED_VOLUNTEER_EVENT_EDIT_ERROR
 import com.yahpz.domain.EVENT_ASSIGN_CLOSE
 import com.yahpz.domain.EVENT_ASSIGN_EMPTY
 import com.yahpz.domain.EVENT_ASSIGN_OPEN
+import com.yahpz.domain.EVENT_ASSIGN_REMOVE
+import com.yahpz.domain.EVENT_ASSIGN_REMOVE_CANCEL
 import com.yahpz.domain.assignedResponderCaption
+import com.yahpz.domain.eventResponderHasFilledFields
+import com.yahpz.domain.eventResponderRemoveConfirm
 import com.yahpz.domain.EVENT_SELF_ASSIGN_DISABLED_HINT
 import com.yahpz.domain.EVENT_SELF_ASSIGN_ON_CREATE_ERROR
 import com.yahpz.domain.EVENT_CANCELLED_LABEL
@@ -132,6 +136,7 @@ fun EventFormScreen(
     var deleteHint by remember(eventId) { mutableStateOf<String?>(null) }
     var vehicleOwnerIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var detailResponderId by remember { mutableStateOf<String?>(null) }
+    var removeResponderId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(ui.userId) {
         if (ui.lookups.isEmpty && !ui.lookupsLoading) app.reloadLookups()
@@ -312,6 +317,8 @@ fun EventFormScreen(
 
     val detailResponder = detailResponderId?.let { id -> responders.firstOrNull { it.responderId == id } }
     val detailProfile = detailResponderId?.let { id -> ui.assignableProfiles.firstOrNull { it.id == id } }
+    val removeResponder = removeResponderId?.let { id -> responders.firstOrNull { it.responderId == id } }
+    val removeProfile = removeResponderId?.let { id -> ui.assignableProfiles.firstOrNull { it.id == id } }
 
     Column(
         modifier = Modifier
@@ -476,8 +483,13 @@ fun EventFormScreen(
                     disabledIds = if (!editing) setOfNotNull(ui.userId) else emptySet(),
                     disabledHint = EVENT_SELF_ASSIGN_DISABLED_HINT,
                     onRemove = { id ->
-                        responders = toggleEventResponder(responders, id)
-                        if (detailResponderId == id) detailResponderId = null
+                        val row = responders.firstOrNull { it.responderId == id }
+                        if (row != null && eventResponderHasFilledFields(row)) {
+                            removeResponderId = id
+                        } else {
+                            responders = toggleEventResponder(responders, id)
+                            if (detailResponderId == id) detailResponderId = null
+                        }
                     },
                     onResponderClick = { detailResponderId = it },
                     rowCaptions = responders.associate { row ->
@@ -543,6 +555,37 @@ fun EventFormScreen(
                 )
                 TextButton(onClick = onBack, modifier = Modifier.align(Alignment.End)) {
                     Text(FOREIGN_EVENT_EDIT_CANCEL, color = FieldTheme.accent)
+                }
+            }
+        }
+    }
+
+    if (removeResponder != null) {
+        ModalBottomSheet(onDismissRequest = { removeResponderId = null }) {
+            Column(
+                Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    eventResponderRemoveConfirm(removeProfile?.fullName.orEmpty()),
+                    style = TypeScale.section,
+                    color = FieldTheme.textPrimary,
+                )
+                GhostButton(
+                    title = EVENT_ASSIGN_REMOVE,
+                    danger = true,
+                    onClick = {
+                        val id = removeResponder.responderId
+                        responders = toggleEventResponder(responders, id)
+                        if (detailResponderId == id) detailResponderId = null
+                        removeResponderId = null
+                    },
+                )
+                TextButton(
+                    onClick = { removeResponderId = null },
+                    modifier = Modifier.align(Alignment.End),
+                ) {
+                    Text(EVENT_ASSIGN_REMOVE_CANCEL, color = FieldTheme.accent)
                 }
             }
         }
