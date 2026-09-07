@@ -662,7 +662,7 @@ private fun TreatedPlateCard(
     onLeftWhereChange: (String, String) -> Unit,
 ) {
     val caption = treatedPlateCaption(model = row.model, color = row.color)
-    val leftWhere = row.leftWhere?.trim().orEmpty()
+    val leftWhere = row.leftWhere.orEmpty()
     Column(
         modifier = Modifier
             .fillMaxWidth()

@@ -42,6 +42,7 @@ import com.yahpz.domain.ASSIGNED_VOLUNTEER_EVENT_EDIT_ERROR
 import com.yahpz.domain.EVENT_ASSIGN_CLOSE
 import com.yahpz.domain.EVENT_ASSIGN_EMPTY
 import com.yahpz.domain.EVENT_ASSIGN_OPEN
+import com.yahpz.domain.assignedResponderCaption
 import com.yahpz.domain.EVENT_SELF_ASSIGN_DISABLED_HINT
 import com.yahpz.domain.EVENT_SELF_ASSIGN_ON_CREATE_ERROR
 import com.yahpz.domain.EVENT_CANCELLED_LABEL
@@ -479,6 +480,14 @@ fun EventFormScreen(
                         if (detailResponderId == id) detailResponderId = null
                     },
                     onResponderClick = { detailResponderId = it },
+                    rowCaptions = responders.associate { row ->
+                        row.responderId to assignedResponderCaption(
+                            startTime = row.startTime,
+                            endTime = row.endTime,
+                            totalKm = row.totalKm,
+                            hasVehicle = row.hasVehicle,
+                        )
+                    },
                     caption = eventDraftSummary(responders.size),
                     emptyHint = EVENT_ASSIGN_EMPTY,
                     emptyRoster = "אין משתמשים פעילים להקצאה.",

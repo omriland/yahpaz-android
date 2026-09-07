@@ -84,6 +84,45 @@ class EventDraftTest {
     }
 
     @Test
+    fun `assigned responder caption teaches the tap target then shows filled values`() {
+        assertEquals("שעות · ק״מ", EVENT_ASSIGN_EDIT_HINT)
+        assertEquals(
+            EVENT_ASSIGN_EDIT_HINT,
+            assignedResponderCaption(startTime = "", endTime = "", totalKm = "", hasVehicle = true),
+        )
+        assertEquals(
+            EVENT_ASSIGN_EDIT_HINT,
+            assignedResponderCaption(startTime = "", endTime = "", totalKm = "", hasVehicle = false),
+        )
+        assertEquals(
+            "08:00–09:30 · 12 ק״מ",
+            assignedResponderCaption(
+                startTime = "08:00",
+                endTime = "09:30",
+                totalKm = "12",
+                hasVehicle = true,
+            ),
+        )
+        assertEquals(
+            "08:00–—",
+            assignedResponderCaption(startTime = "08:00", endTime = "", totalKm = "", hasVehicle = true),
+        )
+        assertEquals(
+            "18 ק״מ",
+            assignedResponderCaption(startTime = "", endTime = "", totalKm = "18", hasVehicle = true),
+        )
+        assertEquals(
+            "08:00–09:30",
+            assignedResponderCaption(
+                startTime = "08:00",
+                endTime = "09:30",
+                totalKm = "12",
+                hasVehicle = false,
+            ),
+        )
+    }
+
+    @Test
     fun `the system district defaults to the 101 road`() {
         assertEquals("road-101", defaultRoadIdForSystemDistrict(roads))
         assertNull(defaultRoadIdForSystemDistrict(listOf(LookupOption("a", "6"))))
@@ -166,6 +205,7 @@ class EventDraftTest {
         assertEquals("מתנדבים", EVENT_ASSIGN_OPEN)
         assertEquals("סגירת הקצאה", EVENT_ASSIGN_CLOSE)
         assertEquals("הסרת מתנדב", EVENT_ASSIGN_REMOVE)
+        assertEquals("שעות · ק״מ", EVENT_ASSIGN_EDIT_HINT)
         assertEquals("או״ק ניידת", EVENT_PATROL_CALLSIGN_LABEL)
         assertEquals("טעינת האירועים נכשלה. בדקו את החיבור ונסו שוב.", UNIT_EVENTS_LOAD_FAILED)
     }

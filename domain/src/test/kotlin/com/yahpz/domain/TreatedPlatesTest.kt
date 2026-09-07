@@ -130,6 +130,13 @@ class TreatedPlatesTest {
     }
 
     @Test
+    fun setLeftWhereKeepsInternalSpaces() {
+        val plates = listOf(TreatedPlate(plateNumber = "12-345-67"))
+        val next = setTreatedPlateLeftWhere(plates, plateDigitsKey = "1234567", leftWhere = "חניון גרר")
+        assertEquals("חניון גרר", next.single().leftWhere)
+    }
+
+    @Test
     fun hebrewErrorStringsMatchWeb() {
         assertEquals("יש להזין 7 או 8 ספרות.", TREATED_PLATE_LENGTH_ERROR)
         assertEquals("מספר זה כבר נוסף.", TREATED_PLATE_DUPLICATE_ERROR)

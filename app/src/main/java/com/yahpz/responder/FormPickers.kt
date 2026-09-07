@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -23,6 +22,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.UnfoldMore
@@ -45,6 +45,7 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.yahpz.domain.AssignableProfile
+import com.yahpz.domain.EVENT_ASSIGN_EDIT_HINT
 import com.yahpz.domain.EVENT_ASSIGN_REMOVE
 import com.yahpz.domain.LookupOption
 import com.yahpz.domain.filterAssignableProfiles
@@ -298,6 +299,7 @@ fun CrewAssignmentSection(
     error: String? = null,
     removeLabel: String = EVENT_ASSIGN_REMOVE,
     onResponderClick: ((String) -> Unit)? = null,
+    rowCaptions: Map<String, String> = emptyMap(),
     disabledIds: Set<String> = emptySet(),
     disabledHint: String? = null,
 ) {
@@ -330,30 +332,54 @@ fun CrewAssignmentSection(
         ) {
             FieldCard {
                 selectedPeople.forEachIndexed { index, person ->
+                    val pressable = onResponderClick != null
+                    val rowCaption = rowCaptions[person.id] ?: EVENT_ASSIGN_EDIT_HINT
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(min = 44.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Box(
+                        Row(
                             modifier = Modifier
                                 .weight(1f)
                                 .heightIn(min = 44.dp)
                                 .then(
-                                    if (onResponderClick != null) {
-                                        Modifier.clickable { onResponderClick(person.id) }
+                                    if (pressable) {
+                                        Modifier
+                                            .clickable { onResponderClick(person.id) }
+                                            .semantics {
+                                                contentDescription = "${person.display}. $rowCaption"
+                                                role = Role.Button
+                                            }
                                     } else {
                                         Modifier
                                     },
-                                ),
-                            contentAlignment = Alignment.CenterStart,
+                                )
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(
-                                person.display,
-                                style = TypeScale.body,
-                                color = FieldTheme.textPrimary,
-                            )
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    person.display,
+                                    style = TypeScale.body,
+                                    color = FieldTheme.textPrimary,
+                                )
+                                if (pressable) {
+                                    Text(
+                                        rowCaption,
+                                        style = TypeScale.caption,
+                                        color = FieldTheme.textMuted,
+                                    )
+                                }
+                            }
+                            if (pressable) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
+                                    contentDescription = null,
+                                    tint = FieldTheme.accent,
+                                )
+                            }
                         }
                         Column(
                             modifier = Modifier

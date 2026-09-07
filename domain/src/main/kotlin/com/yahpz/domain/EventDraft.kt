@@ -45,6 +45,7 @@ const val EVENT_ASSIGN_OPEN = "מתנדבים"
 const val EVENT_ASSIGN_CLOSE = "סגירת הקצאה"
 const val EVENT_ASSIGN_REMOVE = "הסרת מתנדב"
 const val EVENT_ASSIGN_EMPTY = "בלי מתנדב משובץ האירוע נשאר בהזנה ואינו מוצג למתנדבים."
+const val EVENT_ASSIGN_EDIT_HINT = "שעות · ק״מ"
 const val EVENT_SELF_ASSIGN_ON_CREATE_ERROR = "לא ניתן לשבץ את יוצר האירוע כמתנדב."
 const val EVENT_SELF_ASSIGN_DISABLED_HINT = "לא ניתן לשבץ"
 const val EVENT_EDIT_LOAD_FAILED = "טעינת האירוע נכשלה. בדקו את החיבור ונסו שוב."
@@ -225,6 +226,27 @@ fun eventDraftSummary(responderCount: Int): String = when (responderCount) {
     0 -> "טרם הוקצו מתנדבים · אירוע בהזנה"
     1 -> "מתנדב אחד משובץ"
     else -> "$responderCount מתנדבים משובצים"
+}
+
+/** Caption under an assigned responder — teaches that the row opens hours / km. */
+fun assignedResponderCaption(
+    startTime: String,
+    endTime: String,
+    totalKm: String,
+    hasVehicle: Boolean,
+): String {
+    val times = if (startTime.isNotBlank() || endTime.isNotBlank()) {
+        "${startTime.ifBlank { "—" }}–${endTime.ifBlank { "—" }}"
+    } else {
+        null
+    }
+    val km = if (hasVehicle && totalKm.isNotBlank()) {
+        "${totalKm.trim()} ק״מ"
+    } else {
+        null
+    }
+    val parts = listOfNotNull(times, km)
+    return if (parts.isEmpty()) EVENT_ASSIGN_EDIT_HINT else parts.joinToString(" · ")
 }
 
 /** When entering the system שלוחה the web defaults כביש to the road containing 101. */
