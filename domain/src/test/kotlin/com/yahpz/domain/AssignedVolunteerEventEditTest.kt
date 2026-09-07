@@ -12,8 +12,8 @@ class AssignedVolunteerEventEditTest {
     }
 
     @Test
-    fun `blocks when the viewer is a secondary lead without a responder row`() {
-        assertTrue(isAssignedVolunteerEventEditBlocked("me", listOf("a"), listOf("me")))
+    fun `does not block a secondary lead without a responder row`() {
+        assertFalse(isAssignedVolunteerEventEditBlocked("me", listOf("a"), listOf("me")))
     }
 
     @Test
@@ -28,7 +28,7 @@ class AssignedVolunteerEventEditTest {
     }
 
     @Test
-    fun `draft helper uses responder and secondary ids`() {
+    fun `draft helper blocks responders and allows secondary leads`() {
         val draft = EventDraft(
             eventDate = "2026-09-04",
             responders = listOf(EventResponderDraft(responderId = "me")),
@@ -36,7 +36,7 @@ class AssignedVolunteerEventEditTest {
         )
         assertTrue(draft.blocksAssignedVolunteerEdit("me"))
         assertFalse(draft.blocksAssignedVolunteerEdit("lead"))
-        assertTrue(
+        assertFalse(
             EventDraft(
                 eventDate = "2026-09-04",
                 secondaryLeads = listOf(SecondaryLead(userId = "sec")),
