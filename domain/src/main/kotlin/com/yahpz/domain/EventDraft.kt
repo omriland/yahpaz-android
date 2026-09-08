@@ -51,6 +51,7 @@ const val EVENT_SELF_ASSIGN_ON_CREATE_ERROR = "לא ניתן לשבץ את יו�
 const val EVENT_SELF_ASSIGN_DISABLED_HINT = "לא ניתן לשבץ"
 const val EVENT_EDIT_LOAD_FAILED = "טעינת האירוע נכשלה. בדקו את החיבור ונסו שוב."
 const val UNIT_EVENTS_LOAD_FAILED = "טעינת האירועים נכשלה. בדקו את החיבור ונסו שוב."
+const val NEW_RESPONDER_EMERGENCY_MEANS = true
 
 /** Single system שלוחה that makes מיקום mandatory. Matches the web `systemDistricts`. */
 const val SYSTEM_DISTRICT_CODE = "station_other_duplicated"
@@ -227,7 +228,8 @@ fun eventDraftStatus(responderCount: Int): EventStatus =
 fun eventResponderHasFilledFields(row: EventResponderDraft): Boolean {
     if (row.startTime.isNotBlank() || row.endTime.isNotBlank()) return true
     if (row.hasVehicle && row.totalKm.isNotBlank()) return true
-    if (row.emergencyMeans) return true
+    // On a not-yet-saved assignment אמצעים is only the default, not entered data.
+    if (row.emergencyMeans && row.assignmentId.isNotBlank()) return true
     return row.treated.any { it.quantity > 0 }
 }
 
@@ -290,7 +292,11 @@ fun toggleEventResponder(
     if (selected.any { it.responderId == responderId }) {
         selected.filterNot { it.responderId == responderId }
     } else {
-        selected + EventResponderDraft(responderId = responderId, hasVehicle = hasVehicle)
+        selected + EventResponderDraft(
+            responderId = responderId,
+            emergencyMeans = NEW_RESPONDER_EMERGENCY_MEANS,
+            hasVehicle = hasVehicle,
+        )
     }
 
 fun updateEventResponder(

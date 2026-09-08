@@ -151,12 +151,13 @@ class EventDraftTest {
         crew = toggleEventResponder(crew, "c")
         crew = toggleEventResponder(crew, "d")
         assertEquals(listOf("a", "b", "c", "d"), crew.map { it.responderId })
+        assertTrue(crew.all { it.emergencyMeans == NEW_RESPONDER_EMERGENCY_MEANS })
         assertEquals(listOf("a", "c", "d"), toggleEventResponder(crew, "b").map { it.responderId })
     }
 
     @Test
     fun `remove confirm is needed after any lead field is filled`() {
-        val empty = EventResponderDraft("r1")
+        val empty = EventResponderDraft("r1", assignmentId = "a1")
         assertFalse(eventResponderHasFilledFields(empty))
         assertTrue(eventResponderHasFilledFields(empty.copy(startTime = "08:00")))
         assertTrue(eventResponderHasFilledFields(empty.copy(endTime = "09:00")))
@@ -171,6 +172,11 @@ class EventDraftTest {
         assertFalse(
             eventResponderHasFilledFields(
                 empty.copy(treated = listOf(TreatedVehicleDraft("car", 0))),
+            ),
+        )
+        assertFalse(
+            eventResponderHasFilledFields(
+                empty.copy(assignmentId = "", emergencyMeans = NEW_RESPONDER_EMERGENCY_MEANS),
             ),
         )
     }
