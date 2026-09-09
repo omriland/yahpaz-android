@@ -60,7 +60,12 @@ import com.yahpz.domain.FOREIGN_EVENT_EDIT_BODY
 import com.yahpz.domain.FOREIGN_EVENT_EDIT_CANCEL
 import com.yahpz.domain.FOREIGN_EVENT_EDIT_CONFIRM
 import com.yahpz.domain.EventDraft
+import com.yahpz.domain.LOCATION_GOOGLE_UNAVAILABLE
+import com.yahpz.domain.LOCATION_PLACEHOLDER
+import com.yahpz.domain.LocationPinFields
 import com.yahpz.domain.SecondaryLead
+import com.yahpz.domain.StampTone
+import com.yahpz.domain.roadIdAfterJunctionSelection
 import com.yahpz.domain.blocksAssignedVolunteerEdit
 import com.yahpz.domain.canManageSecondaryLeads
 import com.yahpz.domain.cockpitDeleteBlock
@@ -111,7 +116,7 @@ fun EventFormScreen(
     var eventTypeId by remember { mutableStateOf("") }
     var roadId by remember { mutableStateOf("") }
     var districtId by remember { mutableStateOf("") }
-    var location by remember { mutableStateOf("") }
+    var locationPin by remember { mutableStateOf(LocationPinFields()) }
     var station by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
     var responders by remember { mutableStateOf(emptyList<EventResponderDraft>()) }
@@ -184,7 +189,7 @@ fun EventFormScreen(
             eventTypeId = draft.eventTypeId
             roadId = draft.roadId
             districtId = draft.districtId
-            location = draft.location
+            locationPin = draft.locationPin
             station = draft.station
             notes = draft.notes
             responders = draft.responders
@@ -216,7 +221,13 @@ fun EventFormScreen(
         eventTypeId = eventTypeId,
         roadId = roadId,
         districtId = districtId,
-        location = location,
+        location = locationPin.location,
+        locationPlaceId = locationPin.locationPlaceId,
+        locationLat = locationPin.locationLat,
+        locationLng = locationPin.locationLng,
+        locationPinSource = locationPin.locationPinSource,
+        locationPinnedAt = locationPin.locationPinnedAt,
+        locationPinnedBy = locationPin.locationPinnedBy,
         station = station,
         notes = notes,
         responders = responders,
@@ -445,26 +456,35 @@ fun EventFormScreen(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
-                FormFieldRow {
-                    LookupPickerField(
-                        label = "כביש",
-                        options = ui.lookups.roads,
-                        selectedId = roadId,
-                        onSelect = { roadId = it },
-                        placeholder = "בחירת כביש",
-                        searchPlaceholder = "חיפוש כביש",
-                        error = errors.road,
-                        modifier = Modifier.weight(1f),
-                    )
-                    FormField(
-                        label = "מיקום",
-                        value = location,
-                        onValueChange = { location = it },
-                        placeholder = "למשל: מחלף שורק",
-                        error = errors.location,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
+                LocationPlacesField(
+                    value = locationPin,
+                    onChange = { locationPin = it },
+                    onJunctionCommit = { junction ->
+                        roadId = roadIdAfterJunctionSelection(
+                            currentRoadId = roadId,
+                            junctionRoads = junction.roads,
+                            lookups = ui.lookups.roads,
+                        )
+                    },
+                    roadName = ui.lookups.roads.firstOrNull { it.id == roadId }?.name,
+                    error = errors.location,
+                    mapsApiKey = BuildConfig.MAPS_API_KEY,
+                    onGoogleUnavailable = {
+                        app.showToast(LOCATION_GOOGLE_UNAVAILABLE, StampTone.PENDING)
+                    },
+                    placeholder = LOCATION_PLACEHOLDER,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                LookupPickerField(
+                    label = "כביש",
+                    options = ui.lookups.roads,
+                    selectedId = roadId,
+                    onSelect = { roadId = it },
+                    placeholder = "בחירת כביש",
+                    searchPlaceholder = "חיפוש כביש",
+                    error = errors.road,
+                    modifier = Modifier.fillMaxWidth(),
+                )
                 CrewAssignmentSection(
                     assignOpenLabel = EVENT_ASSIGN_OPEN,
                     assignCloseLabel = EVENT_ASSIGN_CLOSE,

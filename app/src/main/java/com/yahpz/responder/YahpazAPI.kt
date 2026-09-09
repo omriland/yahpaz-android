@@ -1,6 +1,9 @@
 package com.yahpz.responder
 
 import com.yahpz.domain.AssignableProfile
+import com.yahpz.domain.HighwayJunctionCatalogRow
+import com.yahpz.domain.buildLocationPayload
+import com.yahpz.domain.locationOrNull
 import com.yahpz.domain.AddressKind
 import com.yahpz.domain.AvailabilityStatus
 import com.yahpz.domain.AvailabilityWrite
@@ -1417,6 +1420,20 @@ object YahpazAPI {
             order("full_name", Order.ASCENDING)
         }.decodeList<AssignableProfileRow>().map { it.asProfile }
 
+    @Volatile
+    private var junctionCatalog: List<HighwayJunctionCatalogRow>? = null
+
+    suspend fun fetchHighwayJunctionCatalog(): List<HighwayJunctionCatalogRow> {
+        junctionCatalog?.let { return it }
+        val rows = client.from("highway_junctions").select(
+            Columns.raw("id, name_he, name_en, roads, lat, lng, aliases_he, aliases_en"),
+        ) {
+            limit(700)
+        }.decodeList<HighwayJunctionCatalogApiRow>().map { it.asCatalog() }
+        junctionCatalog = rows
+        return rows
+    }
+
     suspend fun fetchShiftLeadProfiles(): List<AssignableProfile> =
         client.postgrest.rpc("list_shift_lead_profiles").decodeList<AssignableProfileRow>().map { it.asProfile }
 
@@ -1451,6 +1468,7 @@ object YahpazAPI {
         val mainLeadId = draft.shiftLeadId.ifBlank { userId }
         return try {
             val nextStatus = deriveEventStatusFromDraft(draft.responders)
+            val locationPayload = buildLocationPayload(draft.locationPin)
             val inserted = client.from("events").insert(
                 EventInsert(
                     eventDate = eventDate,
@@ -1459,7 +1477,13 @@ object YahpazAPI {
                     patrolCallsign = draft.patrolCallsign.nilIfEmpty(),
                     eventTypeId = draft.eventTypeId.nilIfEmpty(),
                     roadId = draft.roadId.nilIfEmpty(),
-                    location = draft.location.nilIfEmpty(),
+                    location = locationPayload.locationOrNull(),
+                    locationPlaceId = locationPayload.locationPlaceId,
+                    locationLat = locationPayload.locationLat,
+                    locationLng = locationPayload.locationLng,
+                    locationPinSource = locationPayload.locationPinSource,
+                    locationPinnedAt = locationPayload.locationPinnedAt,
+                    locationPinnedBy = locationPayload.locationPinnedBy,
                     station = stationForSave(districts, draft.districtId, draft.station),
                     notes = draft.notes.nilIfEmpty(),
                     busLane = draft.busLane,
@@ -1592,7 +1616,9 @@ object YahpazAPI {
             Columns.raw(
                 """
                 id, event_date, police_event_id, district_id, patrol_callsign, event_type_id, road_id,
-                location, station, notes, is_cancelled, bus_lane, status, shift_lead_id,
+                location, location_place_id, location_lat, location_lng, location_pin_source,
+                location_pinned_at, location_pinned_by,
+                station, notes, is_cancelled, bus_lane, status, shift_lead_id,
                 shift_lead:profiles!events_shift_lead_id_fkey(full_name, callsign),
                 $EVENT_SECONDARY_LEADS_EMBED,
                 responders:event_responders(
@@ -1637,6 +1663,7 @@ object YahpazAPI {
         val mainLeadId = draft.shiftLeadId.ifBlank { return "אין אחמ״ש ראשי." }
         return try {
             val nextStatus = deriveEventStatusFromDraft(draft.responders)
+            val locationPayload = buildLocationPayload(draft.locationPin)
             val updated = client.from("events").update(
                 EventUpdateWrite(
                     eventDate = eventDate,
@@ -1645,7 +1672,13 @@ object YahpazAPI {
                     patrolCallsign = draft.patrolCallsign.nilIfEmpty(),
                     eventTypeId = draft.eventTypeId.nilIfEmpty(),
                     roadId = draft.roadId.nilIfEmpty(),
-                    location = draft.location.nilIfEmpty(),
+                    location = locationPayload.locationOrNull(),
+                    locationPlaceId = locationPayload.locationPlaceId,
+                    locationLat = locationPayload.locationLat,
+                    locationLng = locationPayload.locationLng,
+                    locationPinSource = locationPayload.locationPinSource,
+                    locationPinnedAt = locationPayload.locationPinnedAt,
+                    locationPinnedBy = locationPayload.locationPinnedBy,
                     station = stationForSave(districts, draft.districtId, draft.station),
                     notes = draft.notes.nilIfEmpty(),
                     isCancelled = draft.isCancelled,

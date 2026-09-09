@@ -1,5 +1,6 @@
 package com.yahpz.responder
 
+import kotlinx.serialization.EncodeDefault
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
@@ -28,6 +29,7 @@ import com.yahpz.domain.CockpitResponderInput
 import com.yahpz.domain.ContactSearchFields
 import com.yahpz.domain.DuplicateParticipation
 import com.yahpz.domain.EventDraft
+import com.yahpz.domain.HighwayJunctionCatalogRow
 import com.yahpz.domain.EventFreezeFlags
 import com.yahpz.domain.isAssignedVolunteerEventEditBlocked
 import com.yahpz.domain.IncompleteEventSnapshot
@@ -1281,6 +1283,7 @@ data class VehicleOwner(@SerialName("user_id") val userId: String? = null)
 
 object OptionalVehicleOwnerSerializer : OneOrNullSerializer<VehicleOwner>(VehicleOwner.serializer())
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class EventInsert(
     @SerialName("event_date") val eventDate: String,
@@ -1290,6 +1293,26 @@ data class EventInsert(
     @SerialName("event_type_id") val eventTypeId: String? = null,
     @SerialName("road_id") val roadId: String? = null,
     val location: String? = null,
+    @EncodeDefault
+    @SerialName("location_place_id")
+    val locationPlaceId: String? = null,
+    @EncodeDefault
+    @SerialName("location_lat")
+    @Serializable(with = OptionalDoubleSerializer::class)
+    val locationLat: Double? = null,
+    @EncodeDefault
+    @SerialName("location_lng")
+    @Serializable(with = OptionalDoubleSerializer::class)
+    val locationLng: Double? = null,
+    @EncodeDefault
+    @SerialName("location_pin_source")
+    val locationPinSource: String? = null,
+    @EncodeDefault
+    @SerialName("location_pinned_at")
+    val locationPinnedAt: String? = null,
+    @EncodeDefault
+    @SerialName("location_pinned_by")
+    val locationPinnedBy: String? = null,
     val station: String? = null,
     val notes: String? = null,
     @SerialName("is_cancelled") val isCancelled: Boolean = false,
@@ -1360,6 +1383,16 @@ data class EventFormDetail(
     @SerialName("event_type_id") val eventTypeId: String? = null,
     @SerialName("road_id") val roadId: String? = null,
     val location: String? = null,
+    @SerialName("location_place_id") val locationPlaceId: String? = null,
+    @SerialName("location_lat")
+    @Serializable(with = OptionalDoubleSerializer::class)
+    val locationLat: Double? = null,
+    @SerialName("location_lng")
+    @Serializable(with = OptionalDoubleSerializer::class)
+    val locationLng: Double? = null,
+    @SerialName("location_pin_source") val locationPinSource: String? = null,
+    @SerialName("location_pinned_at") val locationPinnedAt: String? = null,
+    @SerialName("location_pinned_by") val locationPinnedBy: String? = null,
     val station: String? = null,
     val notes: String? = null,
     @SerialName("is_cancelled") val isCancelled: Boolean = false,
@@ -1382,6 +1415,12 @@ data class EventFormDetail(
         roadId = roadId.orEmpty(),
         districtId = districtId.orEmpty(),
         location = location.orEmpty(),
+        locationPlaceId = locationPlaceId,
+        locationLat = locationLat,
+        locationLng = locationLng,
+        locationPinSource = locationPinSource,
+        locationPinnedAt = locationPinnedAt,
+        locationPinnedBy = locationPinnedBy,
         station = station.orEmpty(),
         notes = notes.orEmpty(),
         responders = responders.map { it.toDraft(vehicleOwnerIds.contains(it.responderId)) },
@@ -1419,6 +1458,7 @@ data class EventFormResponderRow(
     )
 }
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class EventUpdateWrite(
     @SerialName("event_date") val eventDate: String,
@@ -1428,6 +1468,26 @@ data class EventUpdateWrite(
     @SerialName("event_type_id") val eventTypeId: String? = null,
     @SerialName("road_id") val roadId: String? = null,
     val location: String? = null,
+    @EncodeDefault
+    @SerialName("location_place_id")
+    val locationPlaceId: String? = null,
+    @EncodeDefault
+    @SerialName("location_lat")
+    @Serializable(with = OptionalDoubleSerializer::class)
+    val locationLat: Double? = null,
+    @EncodeDefault
+    @SerialName("location_lng")
+    @Serializable(with = OptionalDoubleSerializer::class)
+    val locationLng: Double? = null,
+    @EncodeDefault
+    @SerialName("location_pin_source")
+    val locationPinSource: String? = null,
+    @EncodeDefault
+    @SerialName("location_pinned_at")
+    val locationPinnedAt: String? = null,
+    @EncodeDefault
+    @SerialName("location_pinned_by")
+    val locationPinnedBy: String? = null,
     val station: String? = null,
     val notes: String? = null,
     @SerialName("is_cancelled") val isCancelled: Boolean = false,
@@ -1436,6 +1496,30 @@ data class EventUpdateWrite(
     @SerialName("shift_lead_id") val shiftLeadId: String? = null,
     @SerialName("updated_at") val updatedAt: String,
 )
+
+@Serializable
+data class HighwayJunctionCatalogApiRow(
+    val id: String,
+    @SerialName("name_he") val nameHe: String,
+    @SerialName("name_en") val nameEn: String? = null,
+    val roads: String? = null,
+    val lat: Double,
+    val lng: Double,
+    @SerialName("aliases_he") val aliasesHe: List<String> = emptyList(),
+    @SerialName("aliases_en") val aliasesEn: List<String> = emptyList(),
+) {
+    fun asCatalog(): HighwayJunctionCatalogRow =
+        HighwayJunctionCatalogRow(
+            id = id,
+            nameHe = nameHe,
+            nameEn = nameEn,
+            aliasesHe = aliasesHe,
+            aliasesEn = aliasesEn,
+            roads = roads,
+            lat = lat,
+            lng = lng,
+        )
+}
 
 @Serializable
 data class ShiftFormDetail(

@@ -81,6 +81,12 @@ data class EventDraft(
     val roadId: String = "",
     val districtId: String = "",
     val location: String = "",
+    val locationPlaceId: String? = null,
+    val locationLat: Double? = null,
+    val locationLng: Double? = null,
+    val locationPinSource: String? = null,
+    val locationPinnedAt: String? = null,
+    val locationPinnedBy: String? = null,
     val station: String = "",
     val notes: String = "",
     val responders: List<EventResponderDraft> = emptyList(),
@@ -90,7 +96,28 @@ data class EventDraft(
     val secondaryLeads: List<SecondaryLead> = emptyList(),
 ) {
     val responderIds: List<String> get() = responders.map { it.responderId }
+
+    val locationPin: LocationPinFields
+        get() = LocationPinFields(
+            location = location,
+            locationPlaceId = locationPlaceId,
+            locationLat = locationLat,
+            locationLng = locationLng,
+            locationPinSource = locationPinSource,
+            locationPinnedAt = locationPinnedAt,
+            locationPinnedBy = locationPinnedBy,
+        )
 }
+
+fun EventDraft.withLocationPin(pin: LocationPinFields): EventDraft = copy(
+    location = pin.location,
+    locationPlaceId = pin.locationPlaceId,
+    locationLat = pin.locationLat,
+    locationLng = pin.locationLng,
+    locationPinSource = pin.locationPinSource,
+    locationPinnedAt = pin.locationPinnedAt,
+    locationPinnedBy = pin.locationPinnedBy,
+)
 
 /** Equality for confirm-without-change: ignore client-only flags that refresh after load. */
 fun EventDraft.forPersistCompare(): EventDraft = copy(
