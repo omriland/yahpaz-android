@@ -33,6 +33,12 @@ data class ResponderFillErrors(
 
 enum class FillMode { DRAFT, COMPLETE }
 
+/**
+ * An equal pair is a real record: a vehicle that never left the spot, or a
+ * responder who logs 0 in both fields. Only a reversed pair is a typo.
+ */
+const val ODOMETER_ORDER_ERROR = "מד אוץ סיום אינו יכול להיות קטן ממד אוץ התחלה"
+
 private sealed class ParsedNumber {
     data object Missing : ParsedNumber()
     data object Invalid : ParsedNumber()
@@ -86,8 +92,8 @@ fun validateResponderFillDraft(
         if (draft.treatmentDetail.trim().isEmpty()) treatmentDetail = "יש למלא פירוט הטיפול."
     }
 
-    if (odometerEnd == null && start is ParsedNumber.Value && end is ParsedNumber.Value && end.value <= start.value) {
-        odometerEnd = "מד אוץ סיום חייב להיות גדול ממד אוץ התחלה"
+    if (odometerEnd == null && start is ParsedNumber.Value && end is ParsedNumber.Value && end.value < start.value) {
+        odometerEnd = ODOMETER_ORDER_ERROR
     }
 
     leftoverTreatedPlateError(pending = draft.treatedPlatePending, mode = mode)?.let {

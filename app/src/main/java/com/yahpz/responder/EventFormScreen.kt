@@ -632,7 +632,6 @@ private fun EventResponderDetailSheet(
                 label = "שעת התחלה",
                 value = responder.startTime,
                 onValueChange = { onChange(responder.copy(startTime = it)) },
-                placeholder = "08:00",
                 imeAction = ImeAction.Next,
                 onFourDigitsComplete = { endTimeFocus.requestFocus() },
                 modifier = Modifier.weight(1f),
@@ -641,7 +640,6 @@ private fun EventResponderDetailSheet(
                 label = "שעת סיום",
                 value = responder.endTime,
                 onValueChange = { onChange(responder.copy(endTime = it)) },
-                placeholder = "09:30",
                 focusRequester = endTimeFocus,
                 modifier = Modifier.weight(1f),
             )

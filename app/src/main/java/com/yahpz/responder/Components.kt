@@ -472,7 +472,7 @@ fun TimeField(
     value: String,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
-    placeholder: String = "08:00",
+    placeholder: String? = null,
     imeAction: ImeAction = ImeAction.Done,
     focusRequester: FocusRequester? = null,
     onFourDigitsComplete: (() -> Unit)? = null,
@@ -504,8 +504,10 @@ fun TimeField(
                     textDirection = TextDirection.Ltr,
                     textAlign = TextAlign.Left,
                 ),
-                placeholder = {
-                    Text(placeholder, style = TypeScale.numeric, color = FieldTheme.textMuted)
+                placeholder = placeholder?.takeIf { it.isNotEmpty() }?.let { hint ->
+                    {
+                        Text(hint, style = TypeScale.numeric, color = FieldTheme.textMuted)
+                    }
                 },
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Number,

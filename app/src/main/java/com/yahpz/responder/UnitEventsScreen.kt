@@ -86,6 +86,7 @@ import com.yahpz.domain.leadKmPendingNote
 import com.yahpz.domain.mineFillCtaLabel
 import com.yahpz.domain.mineParticipationStamp
 import com.yahpz.domain.participationStamp
+import com.yahpz.domain.plateDigits
 import com.yahpz.domain.visibleMyActiveIds
 import com.yahpz.domain.INCOMPLETE_EVENTS_HEADING
 import com.yahpz.domain.INCOMPLETE_NOTICE_MARK
@@ -498,13 +499,15 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
             )
         }
         var expandedResponderIds by remember(current.id) { mutableStateOf(setOf<String>()) }
-        var detailResponders by remember(current.id) { mutableStateOf<List<UnitEventDetailResponderRow>?>(null) }
+        var detailRows by remember(current.id) { mutableStateOf<UnitEventDetailRespondersWrap?>(null) }
         var confirmDelete by remember(current.id) { mutableStateOf(false) }
         var deleting by remember(current.id) { mutableStateOf(false) }
+        val loadedDetail = detailRows
+        val detailResponders = loadedDetail?.responders
 
         LaunchedEffect(current.id) {
             expandedResponderIds = emptySet()
-            detailResponders = runCatching {
+            detailRows = runCatching {
                 YahpazAPI.fetchUnitEventDetailResponders(current.id)
             }.getOrNull()
         }
@@ -538,6 +541,9 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                 LedgerRow("כביש", current.road?.name.orEmpty())
                 LedgerRow("מיקום", current.location.orEmpty())
                 LedgerRow("נת״צ", if (current.busLane) "כן" else "לא")
+                if (current.origin == "shift" && loadedDetail != null) {
+                    LedgerRow("מספרי כלי רכב", treatedPlatesLabel(shiftEventPlates(loadedDetail)))
+                }
                 LedgerRow("סטטוס", stamp.label)
                 EventLeadLedgerRows(current.shiftLead, current.secondaryLeads)
                 Text("מתנדבים (${current.responders.size})", style = TypeScale.section, color = FieldTheme.textPrimary)
@@ -829,6 +835,16 @@ private fun treatedVehiclesLabel(treated: List<TreatedVehicleKindRow>): String =
         val name = row.kind?.name?.trim().orEmpty().ifEmpty { "רכב" }
         "$name × $qty"
     }.joinToString(", ")
+
+/**
+ * One plate list for a shift-born event: the lead's event-keyed rows plus whatever
+ * each responder logged from their own fill, which is keyed to the participation.
+ */
+private fun shiftEventPlates(detail: UnitEventDetailRespondersWrap): List<EventTreatedPlateRow> {
+    val seen = mutableSetOf<String>()
+    return (detail.sharedPlates + detail.responders.flatMap { it.treatedPlates })
+        .filter { seen.add(plateDigits(it.plateNumber.orEmpty())) }
+}
 
 private fun treatedPlatesLabel(plates: List<EventTreatedPlateRow>): String =
     plates.mapNotNull { plate ->

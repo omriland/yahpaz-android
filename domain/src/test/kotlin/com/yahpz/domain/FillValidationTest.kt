@@ -149,14 +149,34 @@ class FillValidationTest {
     }
 
     @Test
-    fun endMustBeGreaterThanStart() {
+    fun equalOdometersAreAllowedIncludingZeroInBoth() {
+        assertNull(
+            validateResponderFillDraft(
+                ResponderFillDraft(odometerStart = "100", odometerEnd = "100"),
+                FillMode.DRAFT,
+                plates,
+                null,
+            ).odometerEnd,
+        )
+        assertNull(
+            validateResponderFillDraft(
+                ResponderFillDraft(odometerStart = "0", odometerEnd = "0"),
+                FillMode.DRAFT,
+                plates,
+                null,
+            ).odometerEnd,
+        )
+    }
+
+    @Test
+    fun endMustNotBeSmallerThanStart() {
         val errors = validateResponderFillDraft(
-            ResponderFillDraft(odometerStart = "100", odometerEnd = "100"),
+            ResponderFillDraft(odometerStart = "100", odometerEnd = "99"),
             FillMode.DRAFT,
             plates,
             null,
         )
-        assertEquals("מד אוץ סיום חייב להיות גדול ממד אוץ התחלה", errors.odometerEnd)
+        assertEquals(ODOMETER_ORDER_ERROR, errors.odometerEnd)
     }
 
     @Test

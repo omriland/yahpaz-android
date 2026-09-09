@@ -683,10 +683,13 @@ object YahpazAPI {
         EVENT_DELETE_FAILED
     }
 
-    suspend fun fetchUnitEventDetailResponders(eventId: String): List<UnitEventDetailResponderRow> =
+    suspend fun fetchUnitEventDetailResponders(eventId: String): UnitEventDetailRespondersWrap =
         client.from("events").select(
             Columns.raw(
                 """
+                shared_plates:event_treated_plates!event_treated_plates_event_id_fkey(
+                  plate_number, model, color, left_where, manufacturer, logo_slug, sort_order
+                ),
                 responders:event_responders(
                   id, responder_id, started_at, ended_at, vehicle_plate, total_km,
                   odometer_start, odometer_end, route, treatment_detail, treatment_notes,
@@ -699,7 +702,7 @@ object YahpazAPI {
             ),
         ) {
             filter { eq("id", eventId) }
-        }.decodeSingle<UnitEventDetailRespondersWrap>().responders
+        }.decodeSingle<UnitEventDetailRespondersWrap>()
 
     /** Ops cockpit reel — recent window, open statuses (in_progress/partial), not cancelled. */
     suspend fun fetchCockpitEvents(now: Instant = Instant.now()): List<CockpitEventListItem> {
@@ -2573,7 +2576,9 @@ private fun EventMediaPlateOptionRow.toOption(): EventMediaPlateOption? {
 }
 
 @Serializable
-private data class UnitEventDetailRespondersWrap(
+data class UnitEventDetailRespondersWrap(
+    /** Event-keyed plates — shift-born fill writes here, responder fill does not. */
+    @SerialName("shared_plates") val sharedPlates: List<EventTreatedPlateRow> = emptyList(),
     val responders: List<UnitEventDetailResponderRow> = emptyList(),
 )
 
