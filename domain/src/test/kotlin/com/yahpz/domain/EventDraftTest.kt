@@ -28,6 +28,7 @@ class EventDraftTest {
         roadId = roadId,
         districtId = districtId,
         location = location,
+        patrolCallsignNumber = "411",
     )
 
     @Test
@@ -75,6 +76,15 @@ class EventDraftTest {
     }
 
     @Test
+    fun `full save requires callsign number but partial does not`() {
+        assertEquals(
+            PATROL_CALLSIGN_NUMBER_ERROR,
+            validateEventDraft(draft().copy(patrolCallsignNumber = "")).patrolCallsignNumber,
+        )
+        assertTrue(validateEventDraftPartial(draft().copy(patrolCallsignNumber = "")).isEmpty)
+    }
+
+    @Test
     fun `crewless events save as drafts`() {
         assertEquals(EventStatus.DRAFT, eventDraftStatus(0))
         assertEquals(EventStatus.IN_PROGRESS, eventDraftStatus(1))
@@ -85,40 +95,18 @@ class EventDraftTest {
 
     @Test
     fun `assigned responder caption teaches the tap target then shows filled values`() {
-        assertEquals("שעות · ק״מ", EVENT_ASSIGN_EDIT_HINT)
+        assertEquals("ק״מ", EVENT_ASSIGN_EDIT_HINT)
         assertEquals(
             EVENT_ASSIGN_EDIT_HINT,
-            assignedResponderCaption(startTime = "", endTime = "", totalKm = "", hasVehicle = true),
-        )
-        assertEquals(
-            EVENT_ASSIGN_EDIT_HINT,
-            assignedResponderCaption(startTime = "", endTime = "", totalKm = "", hasVehicle = false),
-        )
-        assertEquals(
-            "08:00–09:30 · 12 ק״מ",
-            assignedResponderCaption(
-                startTime = "08:00",
-                endTime = "09:30",
-                totalKm = "12",
-                hasVehicle = true,
-            ),
-        )
-        assertEquals(
-            "08:00–—",
-            assignedResponderCaption(startTime = "08:00", endTime = "", totalKm = "", hasVehicle = true),
+            assignedResponderCaption(totalKm = "", hasVehicle = true),
         )
         assertEquals(
             "18 ק״מ",
-            assignedResponderCaption(startTime = "", endTime = "", totalKm = "18", hasVehicle = true),
+            assignedResponderCaption(totalKm = "18", hasVehicle = true),
         )
         assertEquals(
-            "08:00–09:30",
-            assignedResponderCaption(
-                startTime = "08:00",
-                endTime = "09:30",
-                totalKm = "12",
-                hasVehicle = false,
-            ),
+            EVENT_ASSIGN_EDIT_HINT,
+            assignedResponderCaption(totalKm = "12", hasVehicle = false),
         )
     }
 
@@ -159,8 +147,6 @@ class EventDraftTest {
     fun `remove confirm is needed after any lead field is filled`() {
         val empty = EventResponderDraft("r1", assignmentId = "a1")
         assertFalse(eventResponderHasFilledFields(empty))
-        assertTrue(eventResponderHasFilledFields(empty.copy(startTime = "08:00")))
-        assertTrue(eventResponderHasFilledFields(empty.copy(endTime = "09:00")))
         assertTrue(eventResponderHasFilledFields(empty.copy(totalKm = "12")))
         assertTrue(eventResponderHasFilledFields(empty.copy(emergencyMeans = true)))
         assertTrue(
@@ -232,10 +218,10 @@ class EventDraftTest {
         assertEquals("מתנדבים", EVENT_ASSIGN_OPEN)
         assertEquals("סגירת הקצאה", EVENT_ASSIGN_CLOSE)
         assertEquals("הסרת מתנדב", EVENT_ASSIGN_REMOVE)
-        assertEquals("שעות · ק״מ", EVENT_ASSIGN_EDIT_HINT)
+        assertEquals("ק״מ", EVENT_ASSIGN_EDIT_HINT)
         assertEquals("האם אתה בטוח שברצונך להסיר את דנה?", eventResponderRemoveConfirm("דנה"))
         assertEquals("האם אתה בטוח שברצונך להסיר את מתנדב?", eventResponderRemoveConfirm("  "))
-        assertEquals("או״ק ניידת", EVENT_PATROL_CALLSIGN_LABEL)
+        assertEquals("אוק - מס", EVENT_PATROL_CALLSIGN_LABEL)
         assertEquals("טעינת האירועים נכשלה. בדקו את החיבור ונסו שוב.", UNIT_EVENTS_LOAD_FAILED)
     }
 

@@ -60,7 +60,11 @@ import androidx.compose.ui.zIndex
 import com.yahpz.domain.EVENT_DELETE_ACTION
 import com.yahpz.domain.EVENT_DELETE_CONFIRM
 import com.yahpz.domain.EVENT_DELETE_TITLE
+import com.yahpz.domain.EVENT_EDIT_LOCKED_TOOLTIP
 import com.yahpz.domain.EVENT_EDIT_TITLE
+import com.yahpz.domain.formatPatrolCallsign
+import com.yahpz.domain.isEventEditAgeLocked
+import com.yahpz.domain.resolvePatrolCallsign
 import com.yahpz.domain.MY_ACTIVE_ADD
 import com.yahpz.domain.MY_ACTIVE_DRAG_TO_ACTIVE
 import com.yahpz.domain.MY_ACTIVE_DRAG_TO_ADD
@@ -131,6 +135,10 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
     fun tryOpenEdit(event: EventListItem): Boolean {
         if (event.blocksAssignedVolunteerEdit(ui.userId)) {
             assignedEditBlocked = true
+            return false
+        }
+        if (isEventEditAgeLocked(event.createdAt, ui.roles)) {
+            app.showToast(EVENT_EDIT_LOCKED_TOOLTIP, StampTone.PENDING)
             return false
         }
         app.openEditEvent(event.id)
@@ -537,6 +545,16 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                 }
                 LedgerRow("תאריך", formatDate(current.eventDate))
                 LedgerRow("מספר אירוע", current.policeEventId.orEmpty())
+                run {
+                    val callsign = resolvePatrolCallsign(
+                        current.patrolCallsignPrefix,
+                        current.patrolCallsignNumber,
+                        current.patrolCallsign,
+                    )
+                    LedgerRow("אוק", formatPatrolCallsign(callsign.prefix, callsign.number))
+                }
+                LedgerRow("שעת התחלה", formatTime(current.startedAt).orEmpty())
+                LedgerRow("שעת סיום", formatTime(current.endedAt).orEmpty())
                 LedgerRow("סוג אירוע", current.typeLabel)
                 LedgerRow("כביש", current.road?.name.orEmpty())
                 LedgerRow("מיקום", current.location.orEmpty())
@@ -584,12 +602,21 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                     }
                 }
                 if (ui.canManageUnit) {
+                    val ageLocked = isEventEditAgeLocked(current.createdAt, ui.roles)
                     PrimaryButton(
                         title = EVENT_EDIT_TITLE,
+                        enabled = !ageLocked,
                         onClick = {
                             if (tryOpenEdit(current)) detail = null
                         },
                     )
+                    if (ageLocked) {
+                        Text(
+                            EVENT_EDIT_LOCKED_TOOLTIP,
+                            style = TypeScale.caption,
+                            color = FieldTheme.textMuted,
+                        )
+                    }
                 }
                 if (canDeleteUnassignedEvent(
                         ui.canManageUnit,
@@ -786,8 +813,6 @@ private fun UnitEventResponderRow(
         if (expanded) {
             Spacer(Modifier.height(8.dp))
             Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                LedgerRow("זמן התחלה", formatTime(row.startedAt).orEmpty())
-                LedgerRow("זמן סיום", formatTime(row.endedAt).orEmpty())
                 row.totalKm?.let { km ->
                     LedgerRow("קילומטרים", "${formatNumber(km)} ק״מ")
                 }

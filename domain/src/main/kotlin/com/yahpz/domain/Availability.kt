@@ -33,6 +33,9 @@ fun availabilitySearchLabel(
 fun israelToday(now: ZonedDateTime = ZonedDateTime.now(ZoneId.of("Asia/Jerusalem"))): String =
     now.format(DateTimeFormatter.ISO_LOCAL_DATE)
 
+fun israelNowTime(now: ZonedDateTime = ZonedDateTime.now(ZoneId.of("Asia/Jerusalem"))): String =
+    now.format(DateTimeFormatter.ofPattern("HH:mm"))
+
 fun effectiveAvailability(
     status: AvailabilityStatus,
     availableFrom: String?,

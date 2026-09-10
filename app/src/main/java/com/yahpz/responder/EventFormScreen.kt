@@ -30,7 +30,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -53,9 +52,13 @@ import com.yahpz.domain.EVENT_CANCELLED_LABEL
 import com.yahpz.domain.EVENT_EDIT_LOAD_FAILED
 import com.yahpz.domain.EVENT_EDIT_TITLE
 import com.yahpz.domain.EVENT_NEW_TITLE
-import com.yahpz.domain.EVENT_PATROL_CALLSIGN_LABEL
+import com.yahpz.domain.EVENT_EDIT_LOCKED_TOOLTIP
 import com.yahpz.domain.EVENT_SAVE_DRAFT_TITLE
 import com.yahpz.domain.EVENT_SAVE_TITLE
+import com.yahpz.domain.PATROL_CALLSIGN_NUMBER_LABEL
+import com.yahpz.domain.PATROL_CALLSIGN_NUMBER_PLACEHOLDER
+import com.yahpz.domain.PATROL_CALLSIGN_PREFIX_LABEL
+import com.yahpz.domain.PATROL_CALLSIGN_PREFIX_PLACEHOLDER
 import com.yahpz.domain.FOREIGN_EVENT_EDIT_BODY
 import com.yahpz.domain.FOREIGN_EVENT_EDIT_CANCEL
 import com.yahpz.domain.FOREIGN_EVENT_EDIT_CONFIRM
@@ -88,7 +91,13 @@ import com.yahpz.domain.canToggleEventCancelled
 import com.yahpz.domain.createIncludesSelfAssign
 import com.yahpz.domain.eventDraftSummary
 import com.yahpz.domain.isSelfAssignDisabledOnCreate
+import com.yahpz.domain.formatPatrolCallsign
+import com.yahpz.domain.isEventEditAgeLocked
+import com.yahpz.domain.israelNowTime
 import com.yahpz.domain.israelToday
+import com.yahpz.domain.patrolCallsignNumberForInput
+import com.yahpz.domain.patrolCallsignPrefixForInput
+import com.yahpz.domain.policeEventIdForInput
 import com.yahpz.domain.returnDateToInput
 import com.yahpz.domain.shouldShowCockpitDelete
 import com.yahpz.domain.toggleEventResponder
@@ -112,7 +121,11 @@ fun EventFormScreen(
     val scope = rememberCoroutineScope()
     var eventDate by remember { mutableStateOf(returnDateToInput(israelToday())) }
     var policeEventId by remember { mutableStateOf("") }
-    var patrolCallsign by remember { mutableStateOf("") }
+    var patrolCallsignPrefix by remember { mutableStateOf("") }
+    var patrolCallsignNumber by remember { mutableStateOf("") }
+    var startTime by remember { mutableStateOf(if (editing) "" else israelNowTime()) }
+    var endTime by remember { mutableStateOf("") }
+    var createdAt by remember { mutableStateOf("") }
     var eventTypeId by remember { mutableStateOf("") }
     var roadId by remember { mutableStateOf("") }
     var districtId by remember { mutableStateOf("") }
@@ -185,7 +198,11 @@ fun EventFormScreen(
             val draft = detail.toDraft(vehicles.map { it.userId }.toSet())
             eventDate = draft.eventDate
             policeEventId = draft.policeEventId
-            patrolCallsign = draft.patrolCallsign
+            patrolCallsignPrefix = draft.patrolCallsignPrefix
+            patrolCallsignNumber = draft.patrolCallsignNumber
+            startTime = draft.startTime
+            endTime = draft.endTime
+            createdAt = draft.createdAt
             eventTypeId = draft.eventTypeId
             roadId = draft.roadId
             districtId = draft.districtId
@@ -217,7 +234,12 @@ fun EventFormScreen(
     fun draft() = EventDraft(
         eventDate = eventDate,
         policeEventId = policeEventId,
-        patrolCallsign = patrolCallsign,
+        patrolCallsign = formatPatrolCallsign(patrolCallsignPrefix, patrolCallsignNumber),
+        patrolCallsignPrefix = patrolCallsignPrefix,
+        patrolCallsignNumber = patrolCallsignNumber,
+        startTime = startTime,
+        endTime = endTime,
+        createdAt = createdAt,
         eventTypeId = eventTypeId,
         roadId = roadId,
         districtId = districtId,
@@ -249,6 +271,10 @@ fun EventFormScreen(
         if (deleting || saving) return
         if (assignedBlocked) {
             formError = ASSIGNED_VOLUNTEER_EVENT_EDIT_ERROR
+            return
+        }
+        if (editing && isEventEditAgeLocked(createdAt, ui.roles)) {
+            formError = EVENT_EDIT_LOCKED_TOOLTIP
             return
         }
         if (isForeignShiftLeadEvent(ui.userId, shiftLeadId) && !foreignEditAcked) return
@@ -353,6 +379,11 @@ fun EventFormScreen(
                 actionTitle = "חזרה",
                 onAction = onBack,
             )
+            editing && isEventEditAgeLocked(createdAt, ui.roles) -> EmptyState(
+                title = EVENT_EDIT_LOCKED_TOOLTIP,
+                actionTitle = "חזרה",
+                onAction = onBack,
+            )
             foreignEditPending -> { /* confirm sheet below */ }
             ui.lookupsFailed && ui.lookups.isEmpty -> EmptyState(
                 title = "טעינת הרשימות נכשלה. בדקו את החיבור ונסו שוב.",
@@ -400,19 +431,45 @@ fun EventFormScreen(
                     FormField(
                         label = "מספר אירוע",
                         value = policeEventId,
-                        onValueChange = { policeEventId = it },
+                        onValueChange = { policeEventId = policeEventIdForInput(it) },
                         keyboardType = KeyboardType.Number,
                         mono = true,
                         ltr = true,
                         modifier = Modifier.weight(1f),
                     )
+                }
+                FormFieldRow {
                     FormField(
-                        label = EVENT_PATROL_CALLSIGN_LABEL,
-                        value = patrolCallsign,
-                        onValueChange = { patrolCallsign = it },
+                        label = PATROL_CALLSIGN_PREFIX_LABEL,
+                        value = patrolCallsignPrefix,
+                        onValueChange = { patrolCallsignPrefix = patrolCallsignPrefixForInput(it) },
+                        placeholder = PATROL_CALLSIGN_PREFIX_PLACEHOLDER,
+                        modifier = Modifier.weight(1f),
+                    )
+                    FormField(
+                        label = PATROL_CALLSIGN_NUMBER_LABEL,
+                        value = patrolCallsignNumber,
+                        onValueChange = { patrolCallsignNumber = patrolCallsignNumberForInput(it) },
+                        placeholder = PATROL_CALLSIGN_NUMBER_PLACEHOLDER,
                         keyboardType = KeyboardType.Number,
                         mono = true,
                         ltr = true,
+                        error = errors.patrolCallsignNumber,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                FormFieldRow {
+                    TimeField(
+                        label = "שעת התחלה",
+                        value = startTime,
+                        onValueChange = { startTime = it },
+                        imeAction = ImeAction.Next,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TimeField(
+                        label = "שעת סיום",
+                        value = endTime,
+                        onValueChange = { endTime = it },
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -514,8 +571,6 @@ fun EventFormScreen(
                     onResponderClick = { detailResponderId = it },
                     rowCaptions = responders.associate { row ->
                         row.responderId to assignedResponderCaption(
-                            startTime = row.startTime,
-                            endTime = row.endTime,
                             totalKm = row.totalKm,
                             hasVehicle = row.hasVehicle,
                         )
@@ -638,7 +693,6 @@ private fun EventResponderDetailSheet(
     onDismiss: () -> Unit,
     onChange: (EventResponderDraft) -> Unit,
 ) {
-    val endTimeFocus = remember { FocusRequester() }
     Column(
         Modifier
             .padding(horizontal = 16.dp)
@@ -647,23 +701,6 @@ private fun EventResponderDetailSheet(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Text(profile.display, style = TypeScale.section, color = FieldTheme.textPrimary)
-        FormFieldRow {
-            TimeField(
-                label = "שעת התחלה",
-                value = responder.startTime,
-                onValueChange = { onChange(responder.copy(startTime = it)) },
-                imeAction = ImeAction.Next,
-                onFourDigitsComplete = { endTimeFocus.requestFocus() },
-                modifier = Modifier.weight(1f),
-            )
-            TimeField(
-                label = "שעת סיום",
-                value = responder.endTime,
-                onValueChange = { onChange(responder.copy(endTime = it)) },
-                focusRequester = endTimeFocus,
-                modifier = Modifier.weight(1f),
-            )
-        }
         FormField(
             label = "קילומטרים",
             value = if (responder.hasVehicle) responder.totalKm else "",

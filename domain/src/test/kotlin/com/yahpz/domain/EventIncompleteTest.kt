@@ -20,9 +20,13 @@ class EventIncompleteTest {
         hasRoad: Boolean = true,
         location: String? = "מחלף אייל",
         responders: List<IncompleteResponderSnapshot> = listOf(responder()),
+        startedAt: String? = null,
+        endedAt: String? = null,
     ) = IncompleteEventSnapshot(
         policeEventId = policeEventId,
         patrolCallsign = patrolCallsign,
+        startedAt = startedAt,
+        endedAt = endedAt,
         hasDistrict = hasDistrict,
         hasEventType = hasEventType,
         hasRoad = hasRoad,
@@ -66,12 +70,36 @@ class EventIncompleteTest {
     @Test
     fun `flags times when any responder is missing start or end`() {
         assertEquals(
-            setOf(IncompleteField.RESPONDER_TIMES),
+            setOf(IncompleteField.EVENT_TIMES),
             missingEventFields(event(responders = listOf(responder(startedAt = null)))),
         )
         assertEquals(
-            setOf(IncompleteField.RESPONDER_TIMES),
+            setOf(IncompleteField.EVENT_TIMES),
             missingEventFields(event(responders = listOf(responder(endedAt = "  ")))),
+        )
+    }
+
+    @Test
+    fun `event-level times win over responder times`() {
+        assertEquals(
+            emptySet<IncompleteField>(),
+            missingEventFields(
+                event(
+                    startedAt = "2026-09-04T06:00:00",
+                    endedAt = "2026-09-04T07:00:00",
+                    responders = listOf(responder(startedAt = null, endedAt = null)),
+                ),
+            ),
+        )
+        assertEquals(
+            setOf(IncompleteField.EVENT_TIMES),
+            missingEventFields(
+                event(
+                    startedAt = "2026-09-04T06:00:00",
+                    endedAt = null,
+                    responders = listOf(responder()),
+                ),
+            ),
         )
     }
 
@@ -86,7 +114,7 @@ class EventIncompleteTest {
         assertEquals(listOf("מספר אירוע", "ק״מ"), incompleteFieldLabels(fields))
         assertEquals("חסרים: מספר אירוע · ק״מ", incompleteNoticeLabel(fields))
         assertEquals("ק״מ", INCOMPLETE_FIELD_LABELS[IncompleteField.RESPONDER_KM])
-        assertEquals("שעות", INCOMPLETE_FIELD_LABELS[IncompleteField.RESPONDER_TIMES])
+        assertEquals("שעות", INCOMPLETE_FIELD_LABELS[IncompleteField.EVENT_TIMES])
         assertEquals("דורשים השלמת פרטים", INCOMPLETE_EVENTS_HEADING)
         assertEquals("פרטים חסרים:", INCOMPLETE_NOTICE_MARK)
     }

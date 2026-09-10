@@ -15,18 +15,18 @@ enum class IncompleteField {
     ROAD,
     LOCATION,
     RESPONDER_KM,
-    RESPONDER_TIMES,
+    EVENT_TIMES,
 }
 
 val INCOMPLETE_FIELD_LABELS: Map<IncompleteField, String> = mapOf(
     IncompleteField.POLICE_EVENT_ID to "מספר אירוע",
-    IncompleteField.PATROL_CALLSIGN to "או״ק ניידת",
+    IncompleteField.PATROL_CALLSIGN to "אוק - מס",
     IncompleteField.DISTRICT to "שלוחה",
     IncompleteField.EVENT_TYPE to "סוג אירוע",
     IncompleteField.ROAD to "כביש",
     IncompleteField.LOCATION to "מיקום",
     IncompleteField.RESPONDER_KM to "ק״מ",
-    IncompleteField.RESPONDER_TIMES to "שעות",
+    IncompleteField.EVENT_TIMES to "שעות",
 )
 
 const val INCOMPLETE_EVENTS_HEADING = "דורשים השלמת פרטים"
@@ -41,6 +41,9 @@ data class IncompleteResponderSnapshot(
 data class IncompleteEventSnapshot(
     val policeEventId: String? = null,
     val patrolCallsign: String? = null,
+    val patrolCallsignNumber: String? = null,
+    val startedAt: String? = null,
+    val endedAt: String? = null,
     val hasDistrict: Boolean = false,
     val hasEventType: Boolean = false,
     val hasRoad: Boolean = false,
@@ -53,22 +56,29 @@ private fun isMissing(value: String?): Boolean = value.isNullOrBlank()
 fun missingEventFields(event: IncompleteEventSnapshot): Set<IncompleteField> {
     val missing = linkedSetOf<IncompleteField>()
     if (isMissing(event.policeEventId)) missing += IncompleteField.POLICE_EVENT_ID
-    if (isMissing(event.patrolCallsign)) missing += IncompleteField.PATROL_CALLSIGN
+    val callsign = resolvePatrolCallsign(null, event.patrolCallsignNumber, event.patrolCallsign)
+    if (isMissing(callsign.number)) missing += IncompleteField.PATROL_CALLSIGN
     if (!event.hasDistrict) missing += IncompleteField.DISTRICT
     if (!event.hasEventType) missing += IncompleteField.EVENT_TYPE
     if (!event.hasRoad) missing += IncompleteField.ROAD
     if (isMissing(event.location)) missing += IncompleteField.LOCATION
 
+    if (event.startedAt != null || event.endedAt != null) {
+        if (isMissing(event.startedAt) || isMissing(event.endedAt)) {
+            missing += IncompleteField.EVENT_TIMES
+        }
+    } else {
+        for (responder in event.responders) {
+            if (isMissing(responder.startedAt) || isMissing(responder.endedAt)) {
+                missing += IncompleteField.EVENT_TIMES
+                break
+            }
+        }
+    }
+
     for (responder in event.responders) {
         if (responder.totalKm == null) missing += IncompleteField.RESPONDER_KM
-        if (isMissing(responder.startedAt) || isMissing(responder.endedAt)) {
-            missing += IncompleteField.RESPONDER_TIMES
-        }
-        if (missing.contains(IncompleteField.RESPONDER_KM) &&
-            missing.contains(IncompleteField.RESPONDER_TIMES)
-        ) {
-            break
-        }
+        if (missing.contains(IncompleteField.RESPONDER_KM)) break
     }
     return missing
 }

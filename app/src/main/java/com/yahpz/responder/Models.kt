@@ -61,6 +61,9 @@ import com.yahpz.domain.VEHICLE_TYPE_LABELS
 import com.yahpz.domain.formatNumber
 import com.yahpz.domain.returnDateToInput
 import com.yahpz.domain.toTimeInput
+import com.yahpz.domain.formatPatrolCallsign
+import com.yahpz.domain.israelNowTime
+import com.yahpz.domain.resolvePatrolCallsign
 import com.yahpz.domain.FuelQuarterRow as DomainFuelQuarterRow
 import com.yahpz.domain.formatDate
 import com.yahpz.domain.formatPlate
@@ -179,6 +182,11 @@ data class EventListItem(
     @SerialName("event_date") val eventDate: String,
     @SerialName("police_event_id") val policeEventId: String? = null,
     @SerialName("patrol_callsign") val patrolCallsign: String? = null,
+    @SerialName("patrol_callsign_prefix") val patrolCallsignPrefix: String? = null,
+    @SerialName("patrol_callsign_number") val patrolCallsignNumber: String? = null,
+    @SerialName("started_at") val startedAt: String? = null,
+    @SerialName("ended_at") val endedAt: String? = null,
+    @SerialName("created_at") val createdAt: String? = null,
     val location: String? = null,
     @Serializable(with = EventStatusSerializer::class)
     val status: EventStatus,
@@ -281,6 +289,9 @@ data class EventListItem(
     fun asIncompleteSnapshot(): IncompleteEventSnapshot = IncompleteEventSnapshot(
         policeEventId = policeEventId,
         patrolCallsign = patrolCallsign,
+        patrolCallsignNumber = patrolCallsignNumber,
+        startedAt = startedAt,
+        endedAt = endedAt,
         hasDistrict = district != null,
         hasEventType = eventType != null,
         hasRoad = road != null,
@@ -1290,6 +1301,10 @@ data class EventInsert(
     @SerialName("police_event_id") val policeEventId: String? = null,
     @SerialName("district_id") val districtId: String? = null,
     @SerialName("patrol_callsign") val patrolCallsign: String? = null,
+    @SerialName("patrol_callsign_prefix") val patrolCallsignPrefix: String? = null,
+    @SerialName("patrol_callsign_number") val patrolCallsignNumber: String? = null,
+    @SerialName("started_at") val startedAt: String? = null,
+    @SerialName("ended_at") val endedAt: String? = null,
     @SerialName("event_type_id") val eventTypeId: String? = null,
     @SerialName("road_id") val roadId: String? = null,
     val location: String? = null,
@@ -1380,6 +1395,11 @@ data class EventFormDetail(
     @SerialName("police_event_id") val policeEventId: String? = null,
     @SerialName("district_id") val districtId: String? = null,
     @SerialName("patrol_callsign") val patrolCallsign: String? = null,
+    @SerialName("patrol_callsign_prefix") val patrolCallsignPrefix: String? = null,
+    @SerialName("patrol_callsign_number") val patrolCallsignNumber: String? = null,
+    @SerialName("started_at") val startedAt: String? = null,
+    @SerialName("ended_at") val endedAt: String? = null,
+    @SerialName("created_at") val createdAt: String? = null,
     @SerialName("event_type_id") val eventTypeId: String? = null,
     @SerialName("road_id") val roadId: String? = null,
     val location: String? = null,
@@ -1407,10 +1427,19 @@ data class EventFormDetail(
     val status: EventStatus = EventStatus.DRAFT,
     val responders: List<EventFormResponderRow> = emptyList(),
 ) {
-    fun toDraft(vehicleOwnerIds: Set<String>): EventDraft = EventDraft(
+    fun toDraft(vehicleOwnerIds: Set<String>): EventDraft {
+        val callsign = resolvePatrolCallsign(patrolCallsignPrefix, patrolCallsignNumber, patrolCallsign)
+        val responderStarts = responders.map { toTimeInput(it.startedAt) }.filter { it.isNotEmpty() }.sorted()
+        val responderEnds = responders.map { toTimeInput(it.endedAt) }.filter { it.isNotEmpty() }.sorted()
+        return EventDraft(
         eventDate = returnDateToInput(eventDate),
         policeEventId = policeEventId.orEmpty(),
-        patrolCallsign = patrolCallsign.orEmpty(),
+        patrolCallsign = formatPatrolCallsign(callsign.prefix, callsign.number).ifEmpty { patrolCallsign.orEmpty() },
+        patrolCallsignPrefix = callsign.prefix,
+        patrolCallsignNumber = callsign.number,
+        startTime = toTimeInput(startedAt).ifEmpty { responderStarts.firstOrNull().orEmpty() }.ifEmpty { israelNowTime() },
+        endTime = toTimeInput(endedAt).ifEmpty { responderEnds.lastOrNull().orEmpty() },
+        createdAt = createdAt.orEmpty(),
         eventTypeId = eventTypeId.orEmpty(),
         roadId = roadId.orEmpty(),
         districtId = districtId.orEmpty(),
@@ -1429,6 +1458,7 @@ data class EventFormDetail(
         shiftLeadId = shiftLeadId.orEmpty(),
         secondaryLeads = secondaryLeads.map { it.asDomain() },
     )
+    }
 }
 
 @Serializable
@@ -1448,8 +1478,6 @@ data class EventFormResponderRow(
     fun toDraft(hasVehicle: Boolean): EventResponderDraft = EventResponderDraft(
         responderId = responderId,
         assignmentId = id,
-        startTime = toTimeInput(startedAt),
-        endTime = toTimeInput(endedAt),
         totalKm = totalKm?.let { formatNumber(it) }.orEmpty(),
         emergencyMeans = emergencyMeans,
         treated = treated.map { TreatedVehicleDraft(vehicleKindId = it.vehicleKindId, quantity = it.quantity) },
@@ -1465,6 +1493,10 @@ data class EventUpdateWrite(
     @SerialName("police_event_id") val policeEventId: String? = null,
     @SerialName("district_id") val districtId: String? = null,
     @SerialName("patrol_callsign") val patrolCallsign: String? = null,
+    @SerialName("patrol_callsign_prefix") val patrolCallsignPrefix: String? = null,
+    @SerialName("patrol_callsign_number") val patrolCallsignNumber: String? = null,
+    @SerialName("started_at") val startedAt: String? = null,
+    @SerialName("ended_at") val endedAt: String? = null,
     @SerialName("event_type_id") val eventTypeId: String? = null,
     @SerialName("road_id") val roadId: String? = null,
     val location: String? = null,

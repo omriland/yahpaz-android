@@ -771,6 +771,7 @@ class AppModel : ViewModel() {
             districts = _state.value.lookups.districts,
             vehicleKinds = _state.value.lookups.vehicleKinds,
             viewerIsAdmin = _state.value.canManageUnit,
+            viewerRoles = _state.value.roles,
             previousIsCancelled = previousIsCancelled,
             allowPartial = allowPartial,
             previousDraft = previousDraft,

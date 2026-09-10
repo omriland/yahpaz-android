@@ -35,7 +35,7 @@ const val EVENT_EDIT_TITLE = "עריכת אירוע"
 const val EVENT_SAVE_TITLE = "שמירת אירוע"
 const val EVENT_SAVE_DRAFT_TITLE = "שמירת טיוטה"
 const val EVENT_DRAFT_PARTIAL_SAVED = "הטיוטה נשמרה."
-const val EVENT_PATROL_CALLSIGN_LABEL = "או״ק ניידת"
+const val EVENT_PATROL_CALLSIGN_LABEL = PATROL_CALLSIGN_NUMBER_LABEL
 const val EVENT_STATION_LABEL = "תחנה"
 const val STATION_MAX_LENGTH = 80
 const val MY_ACTIVE_EVENTS_TITLE = "האירועים הפעילים שלי"
@@ -46,7 +46,7 @@ const val EVENT_ASSIGN_CLOSE = "סגירת הקצאה"
 const val EVENT_ASSIGN_REMOVE = "הסרת מתנדב"
 const val EVENT_ASSIGN_REMOVE_CANCEL = "ביטול"
 const val EVENT_ASSIGN_EMPTY = "בלי מתנדב משובץ האירוע נשאר בהזנה ואינו מוצג למתנדבים."
-const val EVENT_ASSIGN_EDIT_HINT = "שעות · ק״מ"
+const val EVENT_ASSIGN_EDIT_HINT = "ק״מ"
 const val EVENT_SELF_ASSIGN_ON_CREATE_ERROR = "לא ניתן לשבץ את יוצר האירוע כמתנדב."
 const val EVENT_SELF_ASSIGN_DISABLED_HINT = "לא ניתן לשבץ"
 const val EVENT_EDIT_LOAD_FAILED = "טעינת האירוע נכשלה. בדקו את החיבור ונסו שוב."
@@ -64,8 +64,6 @@ data class TreatedVehicleDraft(
 data class EventResponderDraft(
     val responderId: String,
     val assignmentId: String = "",
-    val startTime: String = "",
-    val endTime: String = "",
     val totalKm: String = "",
     val emergencyMeans: Boolean = false,
     val treated: List<TreatedVehicleDraft> = emptyList(),
@@ -77,6 +75,11 @@ data class EventDraft(
     val eventDate: String,
     val policeEventId: String = "",
     val patrolCallsign: String = "",
+    val patrolCallsignPrefix: String = "",
+    val patrolCallsignNumber: String = "",
+    val startTime: String = "",
+    val endTime: String = "",
+    val createdAt: String = "",
     val eventTypeId: String = "",
     val roadId: String = "",
     val districtId: String = "",
@@ -130,8 +133,11 @@ data class EventDraftErrors(
     val eventType: String? = null,
     val road: String? = null,
     val location: String? = null,
+    val patrolCallsignNumber: String? = null,
 ) {
-    val isEmpty: Boolean get() = eventDate == null && eventType == null && road == null && location == null
+    val isEmpty: Boolean get() =
+        eventDate == null && eventType == null && road == null && location == null &&
+            patrolCallsignNumber == null
 
     /** Matching web copy: the location variant only when מיקום is the missing piece. */
     val formMessage: String?
@@ -178,6 +184,11 @@ fun validateEventDraft(draft: EventDraft, districts: List<LookupOption> = emptyL
         road = if (draft.roadId.isEmpty()) EVENT_DRAFT_ROAD_ERROR else null,
         location = if (districtNeedsLocation(districts, draft.districtId) && draft.location.isBlank()) {
             EVENT_DRAFT_LOCATION_ERROR
+        } else {
+            null
+        },
+        patrolCallsignNumber = if (draft.patrolCallsignNumber.isBlank()) {
+            PATROL_CALLSIGN_NUMBER_ERROR
         } else {
             null
         },
@@ -253,7 +264,6 @@ fun eventDraftStatus(responderCount: Int): EventStatus =
 
 /** Any lead-owned field the אחמ״ש typed or toggled on this assignment. */
 fun eventResponderHasFilledFields(row: EventResponderDraft): Boolean {
-    if (row.startTime.isNotBlank() || row.endTime.isNotBlank()) return true
     if (row.hasVehicle && row.totalKm.isNotBlank()) return true
     // On a not-yet-saved assignment אמצעים is only the default, not entered data.
     if (row.emergencyMeans && row.assignmentId.isNotBlank()) return true
@@ -273,23 +283,15 @@ fun eventDraftSummary(responderCount: Int): String = when (responderCount) {
 
 /** Caption under an assigned responder — teaches that the row opens hours / km. */
 fun assignedResponderCaption(
-    startTime: String,
-    endTime: String,
     totalKm: String,
     hasVehicle: Boolean,
 ): String {
-    val times = if (startTime.isNotBlank() || endTime.isNotBlank()) {
-        "${startTime.ifBlank { "—" }}–${endTime.ifBlank { "—" }}"
-    } else {
-        null
-    }
     val km = if (hasVehicle && totalKm.isNotBlank()) {
         "${totalKm.trim()} ק״מ"
     } else {
         null
     }
-    val parts = listOfNotNull(times, km)
-    return if (parts.isEmpty()) EVENT_ASSIGN_EDIT_HINT else parts.joinToString(" · ")
+    return km ?: "ק״מ"
 }
 
 /** When entering the system שלוחה the web defaults כביש to the road containing 101. */

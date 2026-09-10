@@ -8,6 +8,10 @@ import java.util.Locale
 
 fun digitsOnly(value: String): String = value.filter { it.isDigit() }
 
+const val POLICE_EVENT_ID_MAX_LENGTH = 5
+
+fun policeEventIdForInput(raw: String): String = digitsOnly(raw).take(POLICE_EVENT_ID_MAX_LENGTH)
+
 fun plateDigits(value: String): String = digitsOnly(value)
 
 fun formatPlate(raw: String): String {

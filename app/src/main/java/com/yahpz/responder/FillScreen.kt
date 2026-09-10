@@ -24,8 +24,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -83,8 +85,14 @@ import com.yahpz.domain.mineParticipationStamp
 import com.yahpz.domain.plateDigits
 import com.yahpz.domain.removeTreatedPlate
 import com.yahpz.domain.setTreatedPlateLeftWhere
+import com.yahpz.domain.coveredPlateDigits
+import com.yahpz.domain.coveragePlatesFromOptions
 import com.yahpz.domain.treatedPlateCaption
 import com.yahpz.domain.validateResponderFillDraft
+import com.yahpz.domain.vehiclesMissingPhotos
+import com.yahpz.domain.VEHICLE_PHOTOS_BACK
+import com.yahpz.domain.VEHICLE_PHOTOS_PROCEED
+import com.yahpz.domain.VEHICLE_PHOTOS_TITLE
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -95,6 +103,7 @@ private enum class FillPane { DOCS, MEDIA }
 /** Long enough to not thrash on every keystroke, short enough to survive a kill. */
 private const val FILL_STASH_DEBOUNCE_MS = 600L
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FillScreen(eventId: String, app: AppModel) {
     val ui by app.state.collectAsState()
@@ -114,6 +123,9 @@ fun FillScreen(eventId: String, app: AppModel) {
     var plateScanOpen by remember { mutableStateOf(false) }
     var localSavedAt by remember { mutableLongStateOf(0L) }
     var restoredFromDevice by remember { mutableStateOf(false) }
+    var photoNotifyOk by remember { mutableStateOf(false) }
+    var missingPhotoPlates by remember { mutableStateOf<List<TreatedPlate>>(emptyList()) }
+    var pendingPhotoSaveComplete by remember { mutableStateOf<Boolean?>(null) }
 
     fun commitPendingPlate(pendingOverride: String? = null) {
         when (
@@ -159,6 +171,49 @@ fun FillScreen(eventId: String, app: AppModel) {
         val now = System.currentTimeMillis()
         FillDraftStore.stash(fill.assignmentId, latestDraft, now)
         localSavedAt = now
+    }
+
+    suspend fun persistFill(fill: FillContext, complete: Boolean) {
+        formError = null
+        errors = validateResponderFillDraft(
+            draft,
+            if (complete) FillMode.COMPLETE else FillMode.DRAFT,
+            fill.vehicles.map { it.plate },
+            fill.totalKm,
+            unfinishedMediaDrafts,
+        )
+        if (!errors.isEmpty) {
+            if (errors.eventMedia != null) pane = FillPane.MEDIA
+            return
+        }
+        if (!photoNotifyOk) {
+            val media = withContext(Dispatchers.IO) { YahpazAPI.listEventMedia(fill.eventId) }
+            val plates = withContext(Dispatchers.IO) { YahpazAPI.listEventMediaPlates(fill.eventId) }
+            val missing = vehiclesMissingPhotos(
+                draft.treatedPlates,
+                coveredPlateDigits(media, coveragePlatesFromOptions(plates)),
+            )
+            if (missing.isNotEmpty()) {
+                missingPhotoPlates = missing
+                pendingPhotoSaveComplete = complete
+                return
+            }
+        }
+        if (complete) completing = true else savingDraft = true
+        val error = YahpazAPI.saveFill(fill, draft, complete, unfinishedMediaDrafts)
+        if (complete) completing = false else savingDraft = false
+        if (error != null) {
+            if (error == errors.eventMedia) pane = FillPane.MEDIA
+            if (error != errors.treatedPlates) {
+                formError = error
+                app.showToast(error, com.yahpz.domain.StampTone.PENDING)
+            }
+        } else {
+            if (complete) FillDraftStore.clear(fill.assignmentId)
+            app.showToast(if (complete) "הדיווח הושלם" else "הטיוטה נשמרה")
+            app.reloadEvents()
+            app.closeFill()
+        }
     }
 
     fun leaveFill() {
@@ -445,64 +500,60 @@ fun FillScreen(eventId: String, app: AppModel) {
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             PrimaryButton(title = "סיום דיווח", busy = completing, onClick = {
-                                scope.launch {
-                                    formError = null
-                                    errors = validateResponderFillDraft(
-                                        draft,
-                                        FillMode.COMPLETE,
-                                        fill.vehicles.map { it.plate },
-                                        fill.totalKm,
-                                        unfinishedMediaDrafts,
-                                    )
-                                    if (errors.eventMedia != null) pane = FillPane.MEDIA
-                                    completing = true
-                                    val error = YahpazAPI.saveFill(fill, draft, true, unfinishedMediaDrafts)
-                                    completing = false
-                                    if (error != null) {
-                                        if (error == errors.eventMedia) pane = FillPane.MEDIA
-                                        // Field-level leftover plate copy already sits under the LP input.
-                                        if (error != errors.treatedPlates) {
-                                            formError = error
-                                            app.showToast(error, com.yahpz.domain.StampTone.PENDING)
-                                        }
-                                    } else {
-                                        FillDraftStore.clear(fill.assignmentId)
-                                        app.showToast("הדיווח הושלם")
-                                        app.reloadEvents()
-                                        app.closeFill()
-                                    }
-                                }
+                                scope.launch { persistFill(fill, complete = true) }
                             })
                             GhostButton(
                                 title = "שמירת טיוטה",
                                 enabled = !savingDraft && !completing,
                                 onClick = {
-                                    scope.launch {
-                                        formError = null
-                                        errors = validateResponderFillDraft(
-                                            draft,
-                                            FillMode.DRAFT,
-                                            fill.vehicles.map { it.plate },
-                                            fill.totalKm,
-                                            unfinishedMediaDrafts,
-                                        )
-                                        savingDraft = true
-                                        val error = YahpazAPI.saveFill(fill, draft, false, unfinishedMediaDrafts)
-                                        savingDraft = false
-                                        if (error != null) {
-                                            formError = error
-                                            app.showToast(error, com.yahpz.domain.StampTone.PENDING)
-                                        } else {
-                                            app.showToast("הטיוטה נשמרה")
-                                            app.reloadEvents()
-                                            app.closeFill()
-                                        }
-                                    }
+                                    scope.launch { persistFill(fill, complete = false) }
                                 },
                             )
                         }
                     }
                 }
+            }
+        }
+    }
+
+    if (missingPhotoPlates.isNotEmpty()) {
+        ModalBottomSheet(onDismissRequest = {
+            missingPhotoPlates = emptyList()
+            pendingPhotoSaveComplete = null
+        }) {
+            Column(
+                Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(VEHICLE_PHOTOS_TITLE, style = TypeScale.section, color = FieldTheme.textPrimary)
+                missingPhotoPlates.forEach { plate ->
+                    TreatedPlateCard(
+                        row = plate,
+                        removable = false,
+                        onRemove = {},
+                        onLeftWhereChange = { _, _ -> },
+                    )
+                }
+                GhostButton(
+                    title = VEHICLE_PHOTOS_BACK,
+                    onClick = {
+                        missingPhotoPlates = emptyList()
+                        pendingPhotoSaveComplete = null
+                    },
+                )
+                PrimaryButton(
+                    title = VEHICLE_PHOTOS_PROCEED,
+                    onClick = {
+                        val fill = context
+                        val complete = pendingPhotoSaveComplete
+                        photoNotifyOk = true
+                        missingPhotoPlates = emptyList()
+                        pendingPhotoSaveComplete = null
+                        if (fill != null && complete != null) {
+                            scope.launch { persistFill(fill, complete) }
+                        }
+                    },
+                )
             }
         }
     }

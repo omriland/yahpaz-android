@@ -112,6 +112,10 @@ import com.yahpz.domain.stationForSave
 import com.yahpz.domain.FillReadyNextRow
 import com.yahpz.domain.FillReadyPreviousRow
 import com.yahpz.domain.fillReadyNotifyIds
+import com.yahpz.domain.EVENT_EDIT_LOCKED_TOOLTIP
+import com.yahpz.domain.formatPatrolCallsign
+import com.yahpz.domain.isEventEditAgeLocked
+import com.yahpz.domain.resolvePatrolCallsign
 import com.yahpz.domain.wallTimestamp
 import com.yahpz.domain.FuelQuarterParticipationInput
 import com.yahpz.domain.FuelQuarterProfileInput
@@ -239,7 +243,9 @@ object YahpazAPI {
         "secondary_leads:event_secondary_leads(user_id, locked, added_at, profile:profiles!event_secondary_leads_user_id_fkey(full_name, callsign))"
 
     private val eventListSelect = """
-        id, event_date, police_event_id, patrol_callsign, location, status, is_cancelled, bus_lane, origin, shift_lead_id, shift_id,
+        id, event_date, police_event_id, patrol_callsign, patrol_callsign_prefix, patrol_callsign_number,
+        started_at, ended_at, created_at,
+        location, status, is_cancelled, bus_lane, origin, shift_lead_id, shift_id,
         frozen_over_60km, frozen_suspicious_duplicate,
         district:districts(name),
         event_type:event_types(name),
@@ -1469,12 +1475,24 @@ object YahpazAPI {
         return try {
             val nextStatus = deriveEventStatusFromDraft(draft.responders)
             val locationPayload = buildLocationPayload(draft.locationPin)
+            val callsign = resolvePatrolCallsign(
+                draft.patrolCallsignPrefix,
+                draft.patrolCallsignNumber,
+                draft.patrolCallsign,
+            )
+            val overnight = isOvernightEnd(draft.startTime, draft.endTime)
+            val eventStartedAt = wallTimestamp(eventDate, draft.startTime, 0)
+            val eventEndedAt = wallTimestamp(eventDate, draft.endTime, if (overnight) 1 else 0)
             val inserted = client.from("events").insert(
                 EventInsert(
                     eventDate = eventDate,
                     policeEventId = draft.policeEventId.nilIfEmpty(),
                     districtId = draft.districtId.nilIfEmpty(),
-                    patrolCallsign = draft.patrolCallsign.nilIfEmpty(),
+                    patrolCallsign = formatPatrolCallsign(callsign.prefix, callsign.number).nilIfEmpty(),
+                    patrolCallsignPrefix = callsign.prefix.nilIfEmpty(),
+                    patrolCallsignNumber = callsign.number.nilIfEmpty(),
+                    startedAt = eventStartedAt,
+                    endedAt = eventEndedAt,
                     eventTypeId = draft.eventTypeId.nilIfEmpty(),
                     roadId = draft.roadId.nilIfEmpty(),
                     location = locationPayload.locationOrNull(),
@@ -1500,6 +1518,8 @@ object YahpazAPI {
                 responders = draft.responders,
                 vehicleKinds = vehicleKinds,
                 isCancelled = draft.isCancelled,
+                eventStartedAt = eventStartedAt,
+                eventEndedAt = eventEndedAt,
             )?.let { return it }
             syncEventSecondaryLeads(
                 eventId = inserted.id,
@@ -1557,6 +1577,7 @@ object YahpazAPI {
             districts = districts,
             vehicleKinds = vehicleKinds,
             viewerIsAdmin = false,
+            viewerRoles = emptyList(),
             previousIsCancelled = false,
             allowPartial = allowPartial,
         )
@@ -1615,7 +1636,9 @@ object YahpazAPI {
         client.from("events").select(
             Columns.raw(
                 """
-                id, event_date, police_event_id, district_id, patrol_callsign, event_type_id, road_id,
+                id, event_date, police_event_id, district_id, patrol_callsign,
+                patrol_callsign_prefix, patrol_callsign_number, started_at, ended_at, created_at,
+                event_type_id, road_id,
                 location, location_place_id, location_lat, location_lng, location_pin_source,
                 location_pinned_at, location_pinned_by,
                 station, notes, is_cancelled, bus_lane, status, shift_lead_id,
@@ -1637,6 +1660,7 @@ object YahpazAPI {
         districts: List<LookupOption>,
         vehicleKinds: List<LookupOption>,
         viewerIsAdmin: Boolean,
+        viewerRoles: Collection<String>,
         previousIsCancelled: Boolean,
         allowPartial: Boolean = false,
         previousDraft: EventDraft? = null,
@@ -1659,17 +1683,32 @@ object YahpazAPI {
         if (assignmentSource.blocksAssignedVolunteerEdit(sessionUserId())) {
             return ASSIGNED_VOLUNTEER_EVENT_EDIT_ERROR
         }
+        if (isEventEditAgeLocked(draft.createdAt, viewerRoles)) {
+            return EVENT_EDIT_LOCKED_TOOLTIP
+        }
         val eventDate = normalizeReturnDate(draft.eventDate) ?: return EVENT_DRAFT_DATE_ERROR
         val mainLeadId = draft.shiftLeadId.ifBlank { return "אין אחמ״ש ראשי." }
         return try {
             val nextStatus = deriveEventStatusFromDraft(draft.responders)
             val locationPayload = buildLocationPayload(draft.locationPin)
+            val callsign = resolvePatrolCallsign(
+                draft.patrolCallsignPrefix,
+                draft.patrolCallsignNumber,
+                draft.patrolCallsign,
+            )
+            val overnight = isOvernightEnd(draft.startTime, draft.endTime)
+            val eventStartedAt = wallTimestamp(eventDate, draft.startTime, 0)
+            val eventEndedAt = wallTimestamp(eventDate, draft.endTime, if (overnight) 1 else 0)
             val updated = client.from("events").update(
                 EventUpdateWrite(
                     eventDate = eventDate,
                     policeEventId = draft.policeEventId.nilIfEmpty(),
                     districtId = draft.districtId.nilIfEmpty(),
-                    patrolCallsign = draft.patrolCallsign.nilIfEmpty(),
+                    patrolCallsign = formatPatrolCallsign(callsign.prefix, callsign.number).nilIfEmpty(),
+                    patrolCallsignPrefix = callsign.prefix.nilIfEmpty(),
+                    patrolCallsignNumber = callsign.number.nilIfEmpty(),
+                    startedAt = eventStartedAt,
+                    endedAt = eventEndedAt,
                     eventTypeId = draft.eventTypeId.nilIfEmpty(),
                     roadId = draft.roadId.nilIfEmpty(),
                     location = locationPayload.locationOrNull(),
@@ -1698,6 +1737,8 @@ object YahpazAPI {
                 responders = draft.responders,
                 vehicleKinds = vehicleKinds,
                 isCancelled = draft.isCancelled,
+                eventStartedAt = eventStartedAt,
+                eventEndedAt = eventEndedAt,
             )?.let { return it }
             syncEventSecondaryLeads(
                 eventId = eventId,
@@ -1775,9 +1816,11 @@ object YahpazAPI {
         responders: List<EventResponderDraft>,
         vehicleKinds: List<LookupOption>,
         isCancelled: Boolean,
+        eventStartedAt: String?,
+        eventEndedAt: String?,
     ): String? {
         val existing = client.from("event_responders")
-            .select(Columns.raw("id, responder_id, status, total_km")) {
+            .select(Columns.raw("id, responder_id, status, total_km, ended_at")) {
                 filter { eq("event_id", eventId) }
             }.decodeList<EventFormResponderRow>()
         val keepIds = responders.map { it.responderId }.distinct().toSet()
@@ -1794,17 +1837,18 @@ object YahpazAPI {
             if (responder.hasVehicle && responder.totalKm.isNotBlank() && km == null) {
                 return "קילומטרים חייבים להיות מספר."
             }
-            val overnight = isOvernightEnd(responder.startTime, responder.endTime)
-            val startedAt = wallTimestamp(eventDate, responder.startTime, 0)
-            val endedAt = wallTimestamp(eventDate, responder.endTime, if (overnight) 1 else 0)
             val assignmentId = responder.assignmentId.ifEmpty { null }
                 ?: existingByResponder[responder.responderId]
             val now = Instant.now().toString()
+            val existingEndedAt = existing.firstOrNull {
+                it.id == assignmentId || it.responderId == responder.responderId
+            }?.endedAt
+            val responderEndedAt = eventEndedAt ?: existingEndedAt
             val resolvedId = if (assignmentId != null) {
                 client.from("event_responders").update(
                     EventResponderLeadWrite(
-                        startedAt = startedAt,
-                        endedAt = endedAt,
+                        startedAt = eventStartedAt,
+                        endedAt = responderEndedAt,
                         totalKm = km,
                         emergencyMeans = responder.emergencyMeans,
                         updatedAt = now,
@@ -1818,8 +1862,8 @@ object YahpazAPI {
                     EventResponderInsert(
                         eventId = eventId,
                         responderId = responder.responderId,
-                        startedAt = startedAt,
-                        endedAt = endedAt,
+                        startedAt = eventStartedAt,
+                        endedAt = eventEndedAt,
                         totalKm = km,
                         emergencyMeans = responder.emergencyMeans,
                         status = responder.status.raw,
