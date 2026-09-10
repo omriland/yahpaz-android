@@ -53,8 +53,14 @@ import com.yahpz.domain.EVENT_EDIT_LOAD_FAILED
 import com.yahpz.domain.EVENT_EDIT_TITLE
 import com.yahpz.domain.EVENT_NEW_TITLE
 import com.yahpz.domain.EVENT_EDIT_LOCKED_TOOLTIP
-import com.yahpz.domain.EVENT_SAVE_DRAFT_TITLE
-import com.yahpz.domain.EVENT_SAVE_TITLE
+import com.yahpz.domain.EVENT_FORM_DETAILS_SECTION
+import com.yahpz.domain.EVENT_FORM_LEADS_SECTION
+import com.yahpz.domain.EVENT_FORM_RESPONDERS_SECTION
+import com.yahpz.domain.EVENT_END_TIME_LABEL
+import com.yahpz.domain.EVENT_START_TIME_LABEL
+import com.yahpz.domain.EventFormFieldNoteId
+import com.yahpz.domain.eventFormPrimarySaveTitle
+import com.yahpz.domain.eventFormSecondarySaveTitle
 import com.yahpz.domain.PATROL_CALLSIGN_NUMBER_LABEL
 import com.yahpz.domain.PATROL_CALLSIGN_NUMBER_PLACEHOLDER
 import com.yahpz.domain.PATROL_CALLSIGN_PREFIX_LABEL
@@ -155,6 +161,7 @@ fun EventFormScreen(
     var vehicleOwnerIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var detailResponderId by remember { mutableStateOf<String?>(null) }
     var removeResponderId by remember { mutableStateOf<String?>(null) }
+    var createdEventId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(ui.userId) {
         if (ui.lookups.isEmpty && !ui.lookupsLoading) app.reloadLookups()
@@ -296,16 +303,28 @@ fun EventFormScreen(
         formError = null
         scope.launch {
             saving = true
-            formError = if (eventId != null) {
-                app.updateUnitEvent(
-                    eventId = eventId,
+            val existingId = eventId ?: createdEventId
+            if (existingId != null) {
+                formError = app.updateUnitEvent(
+                    eventId = existingId,
                     draft = current,
                     previousIsCancelled = previousIsCancelled,
                     allowPartial = allowPartial,
                     previousDraft = persistedDraft,
+                    stayOnForm = allowPartial && eventId == null,
                 )
+                if (formError == null) persistedDraft = current
             } else {
-                app.createUnitEvent(current, allowPartial = allowPartial)
+                val outcome = app.createUnitEvent(
+                    current,
+                    allowPartial = allowPartial,
+                    stayOnForm = allowPartial,
+                )
+                formError = outcome.error
+                if (outcome.error == null && allowPartial) {
+                    createdEventId = outcome.eventId
+                    persistedDraft = current
+                }
             }
             saving = false
         }
@@ -403,6 +422,7 @@ fun EventFormScreen(
                         },
                     )
                 }
+                FormSectionHeading(EVENT_FORM_LEADS_SECTION)
                 EventShiftLeadsFields(
                     roles = ui.roles,
                     viewerId = ui.userId,
@@ -419,6 +439,7 @@ fun EventFormScreen(
                         secondaryLeads = secondaries
                     },
                 )
+                FormSectionHeading(EVENT_FORM_DETAILS_SECTION)
                 ReturnDateField(
                     label = "תאריך",
                     value = eventDate,
@@ -428,6 +449,16 @@ fun EventFormScreen(
                 )
                 errors.eventDate?.let { Text(it, style = TypeScale.caption, color = FieldTheme.alert) }
                 FormFieldRow {
+                    LookupPickerField(
+                        label = "סוג אירוע",
+                        options = ui.lookups.eventTypes,
+                        selectedId = eventTypeId,
+                        onSelect = { eventTypeId = it },
+                        placeholder = "בחירת סוג",
+                        searchPlaceholder = "חיפוש סוג אירוע",
+                        error = errors.eventType,
+                        modifier = Modifier.weight(1f),
+                    )
                     FormField(
                         label = "מספר אירוע",
                         value = policeEventId,
@@ -438,6 +469,7 @@ fun EventFormScreen(
                         modifier = Modifier.weight(1f),
                     )
                 }
+                FieldNote(field = EventFormFieldNoteId.PATROL_CALLSIGN)
                 FormFieldRow {
                     FormField(
                         label = PATROL_CALLSIGN_PREFIX_LABEL,
@@ -458,53 +490,44 @@ fun EventFormScreen(
                         modifier = Modifier.weight(1f),
                     )
                 }
+                FieldNote(field = EventFormFieldNoteId.EVENT_TIMES)
                 FormFieldRow {
                     TimeField(
-                        label = "שעת התחלה",
+                        label = EVENT_START_TIME_LABEL,
                         value = startTime,
                         onValueChange = { startTime = it },
                         imeAction = ImeAction.Next,
+                        showNow = true,
                         modifier = Modifier.weight(1f),
                     )
                     TimeField(
-                        label = "שעת סיום",
+                        label = EVENT_END_TIME_LABEL,
                         value = endTime,
                         onValueChange = { endTime = it },
+                        showNow = true,
                         modifier = Modifier.weight(1f),
                     )
                 }
-                FormFieldRow {
-                    LookupPickerField(
-                        label = "סוג אירוע",
-                        options = ui.lookups.eventTypes,
-                        selectedId = eventTypeId,
-                        onSelect = { eventTypeId = it },
-                        placeholder = "בחירת סוג",
-                        searchPlaceholder = "חיפוש סוג אירוע",
-                        error = errors.eventType,
-                        modifier = Modifier.weight(1f),
-                    )
-                    LookupPickerField(
-                        label = "שלוחה",
-                        options = ui.lookups.districts,
-                        selectedId = districtId,
-                        onSelect = { next ->
-                            roadId = applyDistrictRoadDefault(
-                                previousDistrictId = districtId,
-                                nextDistrictId = next,
-                                districts = ui.lookups.districts,
-                                roads = ui.lookups.roads,
-                                currentRoadId = roadId,
-                            )
-                            station = stationAfterDistrictChange(ui.lookups.districts, next, station)
-                            districtId = next
-                        },
-                        placeholder = "בחירת שלוחה",
-                        searchPlaceholder = "חיפוש שלוחה",
-                        allowClear = true,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
+                LookupPickerField(
+                    label = "שלוחה",
+                    options = ui.lookups.districts,
+                    selectedId = districtId,
+                    onSelect = { next ->
+                        roadId = applyDistrictRoadDefault(
+                            previousDistrictId = districtId,
+                            nextDistrictId = next,
+                            districts = ui.lookups.districts,
+                            roads = ui.lookups.roads,
+                            currentRoadId = roadId,
+                        )
+                        station = stationAfterDistrictChange(ui.lookups.districts, next, station)
+                        districtId = next
+                    },
+                    placeholder = "בחירת שלוחה",
+                    searchPlaceholder = "חיפוש שלוחה",
+                    allowClear = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
                 if (districtNeedsStation(ui.lookups.districts, districtId)) {
                     FormField(
                         label = EVENT_STATION_LABEL,
@@ -513,6 +536,7 @@ fun EventFormScreen(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
+                FieldNote(field = EventFormFieldNoteId.LOCATION)
                 LocationPlacesField(
                     value = locationPin,
                     onChange = { locationPin = it },
@@ -542,6 +566,13 @@ fun EventFormScreen(
                     error = errors.road,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                FormArea(
+                    label = "הערות",
+                    value = notes,
+                    onValueChange = { notes = it },
+                    minHeight = 96,
+                )
+                FormSectionHeading(EVENT_FORM_RESPONDERS_SECTION)
                 CrewAssignmentSection(
                     assignOpenLabel = EVENT_ASSIGN_OPEN,
                     assignCloseLabel = EVENT_ASSIGN_CLOSE,
@@ -580,21 +611,15 @@ fun EventFormScreen(
                     emptyRoster = "אין משתמשים פעילים להקצאה.",
                     emptyQuery = "לא נמצאו מתנדבים להקצאה",
                 )
-                FormArea(
-                    label = "הערות",
-                    value = notes,
-                    onValueChange = { notes = it },
-                    minHeight = 96,
-                )
                 formError?.let { Text(it, style = TypeScale.caption, color = FieldTheme.alert) }
                 PrimaryButton(
-                    title = EVENT_SAVE_TITLE,
+                    title = eventFormPrimarySaveTitle(editing),
                     busy = saving,
                     enabled = !deleting,
                     onClick = { persist(allowPartial = false) },
                 )
                 GhostButton(
-                    title = EVENT_SAVE_DRAFT_TITLE,
+                    title = eventFormSecondarySaveTitle(editing),
                     enabled = !saving && !deleting,
                     onClick = { persist(allowPartial = true) },
                 )

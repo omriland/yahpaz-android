@@ -121,6 +121,12 @@ class OpsMapTest {
     }
 
     @Test
+    fun legendCopyMatchesVolunteerStatuses() {
+        assertEquals("מתנדב פעיל / חניכה ברכב פרטי", MAP_LEGEND_ACTIVE)
+        assertEquals("חניכה טלפונית", MAP_LEGEND_PHONE)
+    }
+
+    @Test
     fun responderPinLabelAndZoomGate() {
         assertEquals("336 · עמרי", mapResponderPinLabel("336", "עמרי"))
         assertEquals("336", mapResponderPinLabel("336", "  "))

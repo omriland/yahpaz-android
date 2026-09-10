@@ -63,7 +63,7 @@ private fun PickerField(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(label, style = TypeScale.label, color = FieldTheme.textSecondary)
         Row(
             modifier = Modifier

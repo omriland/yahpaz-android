@@ -26,6 +26,7 @@ import com.yahpz.domain.EVENT_DRAFT_PARTIAL_SAVED
 import com.yahpz.domain.EVENT_DRAFT_SAVED
 import com.yahpz.domain.FEEDBACK_SENT
 import com.yahpz.domain.EventDraft
+import com.yahpz.domain.EventWriteOutcome
 import com.yahpz.domain.InviteDraft
 import com.yahpz.domain.USER_DELETED
 import com.yahpz.domain.USER_SAVED
@@ -743,18 +744,19 @@ class AppModel : ViewModel() {
         draft: EventDraft,
         allowPartial: Boolean = false,
         stayOnForm: Boolean = false,
-    ): String? {
-        YahpazAPI.createUnitEvent(
+    ): EventWriteOutcome {
+        val outcome = YahpazAPI.createUnitEvent(
             draft = draft,
             districts = _state.value.lookups.districts,
             vehicleKinds = _state.value.lookups.vehicleKinds,
             allowPartial = allowPartial,
-        )?.let { return it }
+        )
+        if (outcome.error != null) return outcome
         reloadUnitEvents()
         viewModelScope.launch { reloadEvents() }
         showToast(if (allowPartial) EVENT_DRAFT_PARTIAL_SAVED else EVENT_DRAFT_SAVED, StampTone.DONE)
         if (!stayOnForm) setTab(AppTab.UNIT_EVENTS)
-        return null
+        return outcome
     }
 
     suspend fun updateUnitEvent(

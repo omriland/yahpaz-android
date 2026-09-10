@@ -11,6 +11,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -70,6 +72,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.LayoutDirection
@@ -78,6 +82,10 @@ import com.yahpz.domain.ASSIGNED_VOLUNTEER_EVENT_EDIT_CLOSE
 import com.yahpz.domain.ASSIGNED_VOLUNTEER_EVENT_EDIT_ERROR
 import com.yahpz.domain.EVENT_DELETE_ACTION
 import com.yahpz.domain.EVENT_DELETE_TITLE
+import com.yahpz.domain.EventFormFieldNoteId
+import com.yahpz.domain.TIME_NOW_LABEL
+import com.yahpz.domain.eventFormFieldNote
+import com.yahpz.domain.israelNowTime
 import com.yahpz.domain.EventFreezeFlags
 import com.yahpz.domain.StampDescriptor
 import com.yahpz.domain.StampTone
@@ -262,6 +270,55 @@ fun FormFieldRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         content = content,
     )
+}
+
+@Composable
+fun FormSectionHeading(title: String, modifier: Modifier = Modifier) {
+    Text(title, style = TypeScale.section, color = FieldTheme.textPrimary, modifier = modifier)
+}
+
+@Composable
+fun FieldNote(
+    field: EventFormFieldNoteId? = null,
+    note: String? = null,
+    tooltip: String? = null,
+    modifier: Modifier = Modifier,
+) {
+    val fromRegistry = field?.let { eventFormFieldNote(it) }
+    val text = (note ?: fromRegistry?.note)?.trim().orEmpty()
+    val tip = (tooltip ?: fromRegistry?.tooltip)?.trim().orEmpty()
+    var showTip by remember { mutableStateOf(false) }
+    if (text.isEmpty() && tip.isEmpty()) return
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            if (text.isNotEmpty()) {
+                Text(
+                    text,
+                    style = TypeScale.caption,
+                    color = FieldTheme.textSecondary,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+            }
+            if (tip.isNotEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .border(1.dp, FieldTheme.strong, CircleShape)
+                        .clickable { showTip = !showTip }
+                        .semantics { contentDescription = "מידע נוסף" },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("?", style = TypeScale.caption, color = FieldTheme.textSecondary)
+                }
+            }
+        }
+        if (showTip && tip.isNotEmpty()) {
+            Text(tip, style = TypeScale.caption, color = FieldTheme.textMuted)
+        }
+    }
 }
 
 @Composable
@@ -476,6 +533,7 @@ fun TimeField(
     imeAction: ImeAction = ImeAction.Done,
     focusRequester: FocusRequester? = null,
     onFourDigitsComplete: (() -> Unit)? = null,
+    showNow: Boolean = false,
 ) {
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
@@ -488,7 +546,24 @@ fun TimeField(
         }
     }
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(label, style = TypeScale.label, color = FieldTheme.textSecondary)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(label, style = TypeScale.label, color = FieldTheme.textSecondary)
+            if (showNow) {
+                Text(
+                    TIME_NOW_LABEL,
+                    style = TypeScale.caption,
+                    color = FieldTheme.accent,
+                    modifier = Modifier
+                        .clickable { onValueChange(israelNowTime()) }
+                        .padding(horizontal = 4.dp, vertical = 10.dp)
+                        .semantics { contentDescription = TIME_NOW_LABEL },
+                )
+            }
+        }
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
             TextField(
                 value = field,

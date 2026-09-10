@@ -86,7 +86,10 @@ fun EventShiftLeadsFields(
         onChange(mainId, mainName, mainCallsign, secondaries)
     }
 
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         if (canChangeMain) {
             LookupPickerField(
                 label = eventLeadFieldLabel(secondaryLeads.isNotEmpty()),
@@ -111,6 +114,7 @@ fun EventShiftLeadsFields(
                 },
                 placeholder = "בחירת אחמ״ש",
                 searchPlaceholder = "חיפוש אחמ״ש",
+                modifier = Modifier.fillMaxWidth(),
             )
         } else {
             LedgerRow(

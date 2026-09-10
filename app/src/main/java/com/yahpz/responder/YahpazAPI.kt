@@ -37,6 +37,7 @@ import com.yahpz.domain.EVENT_DRAFT_SAVE_FAILED
 import com.yahpz.domain.EVENT_SELF_ASSIGN_ON_CREATE_ERROR
 import com.yahpz.domain.ASSIGNED_VOLUNTEER_EVENT_EDIT_ERROR
 import com.yahpz.domain.EventDraft
+import com.yahpz.domain.EventWriteOutcome
 import com.yahpz.domain.blocksAssignedVolunteerEdit
 import com.yahpz.domain.EventResponderDraft
 import com.yahpz.domain.EventStatus
@@ -1457,20 +1458,21 @@ object YahpazAPI {
         districts: List<LookupOption>,
         vehicleKinds: List<LookupOption>,
         allowPartial: Boolean = false,
-    ): String? {
+    ): EventWriteOutcome {
         val errors = if (allowPartial) {
             validateEventDraftPartial(draft)
         } else {
             validateEventDraft(draft, districts)
         }
         if (!errors.isEmpty) {
-            return errors.eventDate ?: errors.formMessage ?: EVENT_DRAFT_FORM_ERROR
+            return EventWriteOutcome(error = errors.eventDate ?: errors.formMessage ?: EVENT_DRAFT_FORM_ERROR)
         }
-        val userId = sessionUserId() ?: return "יש להתחבר מחדש."
+        val userId = sessionUserId() ?: return EventWriteOutcome(error = "יש להתחבר מחדש.")
         if (createIncludesSelfAssign(userId, draft.responders)) {
-            return EVENT_SELF_ASSIGN_ON_CREATE_ERROR
+            return EventWriteOutcome(error = EVENT_SELF_ASSIGN_ON_CREATE_ERROR)
         }
-        val eventDate = normalizeReturnDate(draft.eventDate) ?: return EVENT_DRAFT_DATE_ERROR
+        val eventDate = normalizeReturnDate(draft.eventDate)
+            ?: return EventWriteOutcome(error = EVENT_DRAFT_DATE_ERROR)
         val mainLeadId = draft.shiftLeadId.ifBlank { userId }
         return try {
             val nextStatus = deriveEventStatusFromDraft(draft.responders)
@@ -1520,22 +1522,25 @@ object YahpazAPI {
                 isCancelled = draft.isCancelled,
                 eventStartedAt = eventStartedAt,
                 eventEndedAt = eventEndedAt,
-            )?.let { return it }
+            )?.let { return EventWriteOutcome(error = it) }
             syncEventSecondaryLeads(
                 eventId = inserted.id,
                 desired = draft.secondaryLeads,
                 creatorSecondary = createTimeCreatorSecondary(userId, mainLeadId),
                 mainLeadId = mainLeadId,
-            )
+            )?.let { return EventWriteOutcome(error = it) }
+            EventWriteOutcome(eventId = inserted.id)
         } catch (_: Exception) {
-            recoverOwnCreatedEvent(
-                draft = draft,
-                eventDate = eventDate,
-                mainLeadId = mainLeadId,
-                districts = districts,
-                vehicleKinds = vehicleKinds,
-                allowPartial = allowPartial,
-            ) ?: EVENT_DRAFT_SAVE_FAILED
+            EventWriteOutcome(
+                error = recoverOwnCreatedEvent(
+                    draft = draft,
+                    eventDate = eventDate,
+                    mainLeadId = mainLeadId,
+                    districts = districts,
+                    vehicleKinds = vehicleKinds,
+                    allowPartial = allowPartial,
+                ) ?: EVENT_DRAFT_SAVE_FAILED,
+            )
         }
     }
 

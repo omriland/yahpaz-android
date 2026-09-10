@@ -129,6 +129,7 @@ class EventShiftLeadsTest {
 
     @Test
     fun leadCopyAndCaption() {
+        assertEquals("אחמ״ש/ים", EVENT_FORM_LEADS_SECTION)
         assertEquals(MAIN_LEAD_LABEL_SHORT, eventLeadFieldLabel(hasSecondaries = false))
         assertEquals(MAIN_LEAD_LABEL, eventLeadFieldLabel(hasSecondaries = true))
         assertEquals("דנה כהן · D1", formatLeadPerson("דנה כהן", "D1"))

@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Layers
+import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -352,8 +353,8 @@ fun MapScreen(app: AppModel, ui: AppUiState) {
                             val chrome = mapUserPinChrome(pin)
                             val fill = when {
                                 chrome.unavailable -> FieldTheme.draft
-                                chrome.tone == MapUserPinTone.PHONE -> FieldTheme.done
-                                else -> FieldTheme.accent
+                                chrome.tone == MapUserPinTone.PHONE -> FieldTheme.draft
+                                else -> FieldTheme.done
                             }
                             val key = "${pin.userId}:${pin.kind}:${pin.lat}:${pin.lng}"
                             val label = if (showLabels) {
@@ -365,7 +366,12 @@ fun MapScreen(app: AppModel, ui: AppUiState) {
                                 state = MarkerState(position = LatLng(pin.lat, pin.lng)),
                                 title = pin.label,
                                 snippet = chrome.tooltip,
-                                icon = MapPinBitmaps.disc(context, fill = fill, label = label),
+                                icon = MapPinBitmaps.disc(
+                                    context,
+                                    fill = fill,
+                                    label = label,
+                                    phoneInLabel = chrome.tone == MapUserPinTone.PHONE && label != null,
+                                ),
                                 anchor = Offset(0.5f, MapPinBitmaps.anchorVForLabeled(label != null)),
                                 zIndex = if (focusedPinKey == key) 2f else 1f,
                             )
@@ -520,23 +526,33 @@ private fun MapLegendCard() {
             modifier = Modifier.padding(10.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            LegendRow(FieldTheme.accent, MAP_LEGEND_ACTIVE)
-            LegendRow(FieldTheme.done, MAP_LEGEND_PHONE)
+            LegendRow(FieldTheme.done, MAP_LEGEND_ACTIVE)
+            LegendRow(FieldTheme.draft, MAP_LEGEND_PHONE, phoneIcon = true)
             LegendRow(FieldTheme.draft, MAP_LEGEND_UNAVAILABLE)
         }
     }
 }
 
 @Composable
-private fun LegendRow(color: Color, label: String) {
+private fun LegendRow(color: Color, label: String, phoneIcon: Boolean = false) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Box(
             modifier = Modifier
-                .size(10.dp)
+                .size(12.dp)
                 .clip(CircleShape)
                 .background(color),
-        )
-        Text(label, style = TypeScale.caption, color = FieldTheme.textSecondary)
+            contentAlignment = Alignment.Center,
+        ) {
+            if (phoneIcon) {
+                Icon(
+                    Icons.Outlined.Phone,
+                    contentDescription = null,
+                    tint = FieldTheme.textOnAccent,
+                    modifier = Modifier.size(8.dp),
+                )
+            }
+        }
+        Text(label, style = TypeScale.caption, color = FieldTheme.textSecondary, maxLines = 1)
     }
 }
 

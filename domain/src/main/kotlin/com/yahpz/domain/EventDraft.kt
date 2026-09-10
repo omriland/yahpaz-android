@@ -34,6 +34,22 @@ const val EVENT_NEW_TITLE = "אירוע חדש"
 const val EVENT_EDIT_TITLE = "עריכת אירוע"
 const val EVENT_SAVE_TITLE = "שמירת אירוע"
 const val EVENT_SAVE_DRAFT_TITLE = "שמירת טיוטה"
+const val EVENT_CREATE_TITLE = "יצירת אירוע"
+const val EVENT_SAVE_AS_DRAFT_TITLE = "שמירה כטיוטה"
+const val EVENT_FORM_DETAILS_SECTION = "פרטי האירוע"
+const val EVENT_FORM_RESPONDERS_SECTION = "מתנדבים"
+const val EVENT_START_TIME_LABEL = "זמן התחלה"
+const val EVENT_END_TIME_LABEL = "זמן סיום"
+const val TIME_NOW_LABEL = "עכשיו"
+
+fun eventFormPrimarySaveTitle(editing: Boolean): String =
+    if (editing) EVENT_SAVE_TITLE else EVENT_CREATE_TITLE
+
+fun eventFormSecondarySaveTitle(editing: Boolean): String =
+    if (editing) EVENT_SAVE_DRAFT_TITLE else EVENT_SAVE_AS_DRAFT_TITLE
+
+/** Create-event write: [error] on failure, [eventId] after a successful insert. */
+data class EventWriteOutcome(val error: String? = null, val eventId: String? = null)
 const val EVENT_DRAFT_PARTIAL_SAVED = "הטיוטה נשמרה."
 const val EVENT_PATROL_CALLSIGN_LABEL = PATROL_CALLSIGN_NUMBER_LABEL
 const val EVENT_STATION_LABEL = "תחנה"

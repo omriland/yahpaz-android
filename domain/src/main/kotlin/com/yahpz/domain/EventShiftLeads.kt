@@ -1,5 +1,7 @@
 package com.yahpz.domain
 
+/** Create/edit form section title — gershayim match `אחמ״ש`. */
+const val EVENT_FORM_LEADS_SECTION = "אחמ״ש/ים"
 const val MAIN_LEAD_LABEL = "אחמ״ש ראשי"
 const val MAIN_LEAD_LABEL_SHORT = "אחמ״ש"
 const val SECONDARY_LEAD_LABEL = "אחמ״ש משני"
