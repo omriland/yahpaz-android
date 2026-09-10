@@ -10,9 +10,9 @@ data class EventFreezeFlags(
     val tooltipHe: String?
         get() = when {
             frozenOver60km && frozenSuspiciousDuplicate ->
-                "האירוע מוקפא בגלל חריגת קילומטרים (מעל 60 ק״מ) ובגלל חשד לאירוע כפול, וממתין לאישור מנהל."
+                "האירוע מוקפא בגלל חריגת קילומטרים (מעל ${KM_EXCEPTION_THRESHOLD.toInt()} ק״מ) ובגלל חשד לאירוע כפול, וממתין לאישור מנהל."
             frozenOver60km ->
-                "האירוע מוקפא בגלל חריגת קילומטרים (מעל 60 ק״מ) וממתין לאישור מנהל."
+                "האירוע מוקפא בגלל חריגת קילומטרים (מעל ${KM_EXCEPTION_THRESHOLD.toInt()} ק״מ) וממתין לאישור מנהל."
             frozenSuspiciousDuplicate ->
                 "האירוע מוקפא בגלל חשד לאירוע כפול וממתין לאישור מנהל."
             else -> null

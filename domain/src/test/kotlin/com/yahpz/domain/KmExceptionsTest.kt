@@ -29,8 +29,8 @@ class KmExceptionsTest {
                     "e1",
                     "2026-02-02",
                     listOf(
-                        KmExceptionResponderInput(59.9, "מתחת", "1"),
-                        KmExceptionResponderInput(60.0, "בדיוק", "2"),
+                        KmExceptionResponderInput(79.9, "מתחת", "1"),
+                        KmExceptionResponderInput(80.0, "בדיוק", "2"),
                         KmExceptionResponderInput(120.0, "מעל", "3"),
                         KmExceptionResponderInput(null, "בלי ק״מ", "4"),
                     ),
@@ -45,7 +45,7 @@ class KmExceptionsTest {
         val rows = buildKmExceptionRows(
             listOf(
                 event("old", "2026-01-01", listOf(KmExceptionResponderInput(200.0, "א", "1"))),
-                event("new", "2026-02-01", listOf(KmExceptionResponderInput(70.0, "ב", "2"))),
+                event("new", "2026-02-01", listOf(KmExceptionResponderInput(80.0, "ב", "2"))),
                 event("new2", "2026-02-01", listOf(KmExceptionResponderInput(90.0, "ג", "3"))),
             ),
         )

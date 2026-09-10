@@ -75,7 +75,7 @@ val REPORT_SPECS: List<ReportSpec> = listOf(
     ReportSpec(
         id = ReportKindId.KM_EXCEPTIONS,
         title = "חריגי ק״מ",
-        includes = "אירועים עם $KM_EXCEPTION_THRESHOLD ק״מ ומעלה",
+        includes = "אירועים עם ${KM_EXCEPTION_THRESHOLD.toInt()} ק״מ ומעלה",
         audience = ReportAudience.MANAGES_UNIT,
         searchPlaceholder = "מתנדב, אירוע או מיקום",
         emptyTitle = "אין חריגי ק״מ בתקופה זו",

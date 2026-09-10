@@ -1,6 +1,6 @@
 package com.yahpz.domain
 
-const val KM_EXCEPTION_THRESHOLD = 60.0
+const val KM_EXCEPTION_THRESHOLD = 80.0
 
 data class KmExceptionResponderInput(
     val totalKm: Double? = null,

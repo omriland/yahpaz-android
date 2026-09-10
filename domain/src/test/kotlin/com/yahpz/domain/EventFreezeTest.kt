@@ -18,13 +18,13 @@ class EventFreezeTest {
         assertTrue(flags.isFrozen)
         assertFalse(flags.countsTowardFuelRefund)
         assertEquals(
-            "האירוע מוקפא בגלל חריגת קילומטרים (מעל 60 ק״מ) ובגלל חשד לאירוע כפול, וממתין לאישור מנהל.",
+            "האירוע מוקפא בגלל חריגת קילומטרים (מעל 80 ק״מ) ובגלל חשד לאירוע כפול, וממתין לאישור מנהל.",
             flags.tooltipHe,
         )
     }
 
     @Test
-    fun `approving 60km leaves a duplicate freeze in place`() {
+    fun `approving high-km leaves a duplicate freeze in place`() {
         val flags = computeFreezeFlags(
             matchesOver60km = true,
             matchesSuspiciousDuplicate = true,
