@@ -61,6 +61,9 @@ import com.yahpz.domain.formatDate
 import com.yahpz.domain.isMineFillOverdue
 import com.yahpz.domain.israelToday
 import com.yahpz.domain.mineEventMatchesQuery
+import com.yahpz.domain.IncompleteField
+import com.yahpz.domain.eventMissingLeadDoneDetails
+import com.yahpz.domain.missingEventFields
 import com.yahpz.domain.leadKmPendingNote
 import com.yahpz.domain.mineFillCtaLabel
 import com.yahpz.domain.mineInboxIsOpen
@@ -196,11 +199,28 @@ fun InboxScreen(app: AppModel, ui: AppUiState) {
                     }
                     Text("פרטי האירוע", style = TypeScale.section, color = FieldTheme.textPrimary)
                 }
+                val missingLead = missingEventFields(event.asIncompleteSnapshot())
                 LedgerRow("תאריך", formatDate(event.eventDate))
-                LedgerRow("מספר אירוע", event.policeEventId.orEmpty())
-                LedgerRow("סוג אירוע", event.typeLabel)
-                LedgerRow("כביש", event.road?.name.orEmpty())
-                LedgerRow("מיקום", event.location.orEmpty())
+                LedgerRow(
+                    "מספר אירוע",
+                    event.policeEventId.orEmpty(),
+                    missing = IncompleteField.POLICE_EVENT_ID in missingLead,
+                )
+                LedgerRow(
+                    "סוג אירוע",
+                    event.typeLabel,
+                    missing = IncompleteField.EVENT_TYPE in missingLead,
+                )
+                LedgerRow(
+                    "כביש",
+                    event.road?.name.orEmpty(),
+                    missing = IncompleteField.ROAD in missingLead,
+                )
+                LedgerRow(
+                    "מיקום",
+                    event.location.orEmpty(),
+                    missing = IncompleteField.LOCATION in missingLead,
+                )
                 EventLeadLedgerRows(event.shiftLead, event.secondaryLeads)
                 Text("מתנדבים (${event.responders.size})", style = TypeScale.section, color = FieldTheme.textPrimary)
                 event.responders.forEach { row ->
@@ -214,14 +234,20 @@ fun InboxScreen(app: AppModel, ui: AppUiState) {
                             style = TypeScale.body,
                             color = FieldTheme.textPrimary,
                         )
+                        val missingLead = event.origin != "shift" && eventMissingLeadDoneDetails(event.endedAt)
                         StampWithNote(
                             if (row.responderId == ui.userId) {
-                                mineParticipationStamp(row.status, row.totalKm)
+                                mineParticipationStamp(row.status, row.totalKm, missingLead)
                             } else {
                                 participationStamp(row.status, false)
                             },
                             note = if (row.responderId == ui.userId) {
-                                leadKmPendingNote(row.status, row.totalKm)
+                                leadKmPendingNote(
+                                    row.status,
+                                    row.totalKm,
+                                    origin = event.origin,
+                                    missingLeadDetails = missingLead,
+                                )
                             } else {
                                 null
                             },
@@ -395,9 +421,15 @@ private fun LoggedList(
                             }
                         }
                         val ownKm = userId?.let { event.ownTotalKm(it) }
+                        val missingLead = event.origin != "shift" && eventMissingLeadDoneDetails(event.endedAt)
                         StampWithNote(
-                            mineParticipationStamp(ParticipationStatus.DONE, ownKm),
-                            note = leadKmPendingNote(ParticipationStatus.DONE, ownKm),
+                            mineParticipationStamp(ParticipationStatus.DONE, ownKm, missingLead),
+                            note = leadKmPendingNote(
+                                ParticipationStatus.DONE,
+                                ownKm,
+                                origin = event.origin,
+                                missingLeadDetails = missingLead,
+                            ),
                         )
                     }
                 }
@@ -442,7 +474,8 @@ private fun EventCard(
 ) {
     val mine = userId?.let { event.ownParticipation(it) } ?: ParticipationStatus.PENDING
     val ownKm = userId?.let { event.ownTotalKm(it) }
-    val stamp = if (event.isCancelled) cancelledStamp() else mineParticipationStamp(mine, ownKm)
+    val missingLead = event.origin != "shift" && eventMissingLeadDoneDetails(event.endedAt)
+    val stamp = if (event.isCancelled) cancelledStamp() else mineParticipationStamp(mine, ownKm, missingLead)
     val overdue = isMineFillOverdue(
         isCancelled = event.isCancelled,
         participationStatus = mine,
@@ -504,7 +537,14 @@ private fun EventCard(
                 }
                 StampWithNote(
                     stamp,
-                    note = userId?.let { leadKmPendingNote(mine, event.ownTotalKm(it)) },
+                    note = userId?.let {
+                        leadKmPendingNote(
+                            mine,
+                            event.ownTotalKm(it),
+                            origin = event.origin,
+                            missingLeadDetails = missingLead,
+                        )
+                    },
                 )
             }
             mineFillCtaLabel(mine)?.let { label ->

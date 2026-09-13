@@ -7,7 +7,7 @@ const val MINE_PENDING_EMPTY_CAPTION = "אירוע חדש יופיע כאן כש
 const val MINE_PENDING_EMPTY_VIEW_LOGGED = "לצפייה באירועים שתועדו"
 const val MINE_LOGGED_EMPTY_TITLE = "אין אירועים שתועדו בתקופה זו"
 const val MINE_LOGGED_WINDOW_DAYS = 30
-const val FUEL_NOTE = "שימו לב! אירועים שלא תועדו במלואם לא נכללים בהחזר הדלק הרבעוני"
+const val FUEL_NOTE = "שימו לב! אירועים שטרם תועדו על ידי המתנדב, או ללא ק״מ, אינם נכללים בהחזר הדלק הרבעוני"
 
 fun openMineSummary(count: Int, ready: Boolean): String {
     if (!ready) return "טוען את הדיווחים שלך…"

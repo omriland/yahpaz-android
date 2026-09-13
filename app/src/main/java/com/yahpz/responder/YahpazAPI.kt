@@ -2066,13 +2066,13 @@ object YahpazAPI {
         val rows = client.from("event_responders").select(
             Columns.raw(
                 """
-                responder_id, total_km,
+                responder_id, status, total_km,
                 events!inner(created_at, status)
                 """.trimIndent(),
             ),
         ) {
             filter {
-                eq("events.status", EventStatus.DONE.raw)
+                eq("status", ParticipationStatus.DONE.raw)
                 gte("events.created_at", bounds.first)
                 lte("events.created_at", bounds.second)
             }
@@ -2080,6 +2080,7 @@ object YahpazAPI {
         return rows.mapNotNull { row ->
             val event = row.events ?: return@mapNotNull null
             if (row.totalKm == null) return@mapNotNull null
+            if (row.status != ParticipationStatus.DONE) return@mapNotNull null
             FuelQuarterParticipationInput(
                 responderId = row.responderId,
                 createdAt = event.createdAt,

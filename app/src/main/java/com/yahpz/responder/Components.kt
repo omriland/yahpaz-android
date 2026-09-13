@@ -657,7 +657,8 @@ fun FormArea(
 }
 
 @Composable
-fun LedgerRow(label: String, value: String) {
+fun LedgerRow(label: String, value: String, missing: Boolean = false) {
+    val ink = if (missing) FieldTheme.alert else null
     Column {
         Row(
             modifier = Modifier
@@ -665,12 +666,12 @@ fun LedgerRow(label: String, value: String) {
                 .padding(vertical = 6.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text(label, style = TypeScale.label, color = FieldTheme.textSecondary)
+            Text(label, style = TypeScale.label, color = ink ?: FieldTheme.textSecondary)
             Spacer(Modifier.width(12.dp))
             Text(
                 text = value.ifEmpty { "—" },
                 style = TypeScale.body,
-                color = FieldTheme.textPrimary,
+                color = ink ?: FieldTheme.textPrimary,
                 textAlign = TextAlign.End,
                 modifier = Modifier.weight(1f),
             )

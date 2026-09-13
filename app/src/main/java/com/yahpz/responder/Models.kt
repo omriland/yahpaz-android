@@ -1612,6 +1612,8 @@ data class FuelQuarterDistributionRow(
 @Serializable
 data class FuelQuarterParticipationRow(
     @SerialName("responder_id") val responderId: String,
+    @Serializable(with = ParticipationStatusSerializer::class)
+    val status: ParticipationStatus = ParticipationStatus.PENDING,
     @SerialName("total_km")
     @Serializable(with = OptionalDoubleSerializer::class)
     val totalKm: Double? = null,

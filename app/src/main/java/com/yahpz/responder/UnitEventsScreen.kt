@@ -86,6 +86,7 @@ import com.yahpz.domain.formatDate
 import com.yahpz.domain.formatNumber
 import com.yahpz.domain.formatPlate
 import com.yahpz.domain.formatTime
+import com.yahpz.domain.eventMissingLeadDoneDetails
 import com.yahpz.domain.leadKmPendingNote
 import com.yahpz.domain.mineFillCtaLabel
 import com.yahpz.domain.mineParticipationStamp
@@ -95,6 +96,7 @@ import com.yahpz.domain.visibleMyActiveIds
 import com.yahpz.domain.INCOMPLETE_EVENTS_HEADING
 import com.yahpz.domain.INCOMPLETE_NOTICE_MARK
 import com.yahpz.domain.SHOW_OTHERS_CREATED_EVENTS_LABEL
+import com.yahpz.domain.IncompleteField
 import com.yahpz.domain.incompleteFieldLabels
 import com.yahpz.domain.incompleteNoticeLabel
 import com.yahpz.domain.missingEventFields
@@ -543,21 +545,50 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                     }
                     StampChip(stamp)
                 }
+                val missingLead = missingEventFields(current.asIncompleteSnapshot())
                 LedgerRow("תאריך", formatDate(current.eventDate))
-                LedgerRow("מספר אירוע", current.policeEventId.orEmpty())
+                LedgerRow(
+                    "מספר אירוע",
+                    current.policeEventId.orEmpty(),
+                    missing = IncompleteField.POLICE_EVENT_ID in missingLead,
+                )
                 run {
                     val callsign = resolvePatrolCallsign(
                         current.patrolCallsignPrefix,
                         current.patrolCallsignNumber,
                         current.patrolCallsign,
                     )
-                    LedgerRow("אוק", formatPatrolCallsign(callsign.prefix, callsign.number))
+                    LedgerRow(
+                        "אוק",
+                        formatPatrolCallsign(callsign.prefix, callsign.number),
+                        missing = IncompleteField.PATROL_CALLSIGN in missingLead,
+                    )
                 }
-                LedgerRow("שעת התחלה", formatTime(current.startedAt).orEmpty())
-                LedgerRow("שעת סיום", formatTime(current.endedAt).orEmpty())
-                LedgerRow("סוג אירוע", current.typeLabel)
-                LedgerRow("כביש", current.road?.name.orEmpty())
-                LedgerRow("מיקום", current.location.orEmpty())
+                LedgerRow(
+                    "שעת התחלה",
+                    formatTime(current.startedAt).orEmpty(),
+                    missing = current.startedAt.isNullOrBlank(),
+                )
+                LedgerRow(
+                    "שעת סיום",
+                    formatTime(current.endedAt).orEmpty(),
+                    missing = current.endedAt.isNullOrBlank(),
+                )
+                LedgerRow(
+                    "סוג אירוע",
+                    current.typeLabel,
+                    missing = IncompleteField.EVENT_TYPE in missingLead,
+                )
+                LedgerRow(
+                    "כביש",
+                    current.road?.name.orEmpty(),
+                    missing = IncompleteField.ROAD in missingLead,
+                )
+                LedgerRow(
+                    "מיקום",
+                    current.location.orEmpty(),
+                    missing = IncompleteField.LOCATION in missingLead,
+                )
                 LedgerRow("נת״צ", if (current.busLane) "כן" else "לא")
                 if (current.origin == "shift" && loadedDetail != null) {
                     LedgerRow("מספרי כלי רכב", treatedPlatesLabel(shiftEventPlates(loadedDetail)))
@@ -580,6 +611,8 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                             row = row,
                             eventDate = current.eventDate,
                             showTreatedPlates = current.origin != "shift",
+                            missingLeadDetails = current.origin != "shift" &&
+                                eventMissingLeadDoneDetails(current.endedAt),
                             isViewer = row.responderId == ui.userId,
                             expanded = row.id in expandedResponderIds,
                             onToggle = {
@@ -761,12 +794,13 @@ private fun UnitEventResponderRow(
     row: UnitEventDetailResponderRow,
     eventDate: String,
     showTreatedPlates: Boolean,
+    missingLeadDetails: Boolean,
     isViewer: Boolean,
     expanded: Boolean,
     onToggle: () -> Unit,
 ) {
     val stamp = if (isViewer) {
-        mineParticipationStamp(row.status, row.totalKm)
+        mineParticipationStamp(row.status, row.totalKm, missingLeadDetails)
     } else {
         participationStamp(row.status, false)
     }
@@ -798,7 +832,15 @@ private fun UnitEventResponderRow(
             ) {
                 StampWithNote(
                     stamp,
-                    note = if (isViewer) leadKmPendingNote(row.status, row.totalKm) else null,
+                    note = if (isViewer) {
+                        leadKmPendingNote(
+                            row.status,
+                            row.totalKm,
+                            missingLeadDetails = missingLeadDetails,
+                        )
+                    } else {
+                        null
+                    },
                 )
                 Icon(
                     imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
@@ -813,9 +855,11 @@ private fun UnitEventResponderRow(
         if (expanded) {
             Spacer(Modifier.height(8.dp))
             Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                row.totalKm?.let { km ->
-                    LedgerRow("קילומטרים", "${formatNumber(km)} ק״מ")
-                }
+                LedgerRow(
+                    "קילומטרים",
+                    row.totalKm?.let { "${formatNumber(it)} ק״מ" }.orEmpty(),
+                    missing = row.totalKm == null,
+                )
                 LedgerRow("אמצעים", if (row.emergencyMeans) "כן" else "לא")
                 val treated = treatedVehiclesLabel(row.treated)
                 if (treated.isNotEmpty()) {

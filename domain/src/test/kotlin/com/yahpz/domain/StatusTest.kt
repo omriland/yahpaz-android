@@ -56,4 +56,22 @@ class StatusTest {
             mineParticipationStamp(ParticipationStatus.DONE, 12.0),
         )
     }
+
+    @Test
+    fun `completed fill with missing lead end time is תועד חלקית`() {
+        assertEquals(true, eventMissingLeadDoneDetails(null))
+        assertEquals(false, eventMissingLeadDoneDetails("2026-09-10T11:13:00"))
+        assertEquals(
+            eventStamp(EventStatus.PARTIAL),
+            mineParticipationStamp(ParticipationStatus.DONE, 9.0, missingLeadDetails = true),
+        )
+        assertEquals(
+            AWAITING_LEAD_DETAILS_NOTE,
+            leadKmPendingNote(ParticipationStatus.DONE, 9.0, origin = "manual", missingLeadDetails = true),
+        )
+        assertEquals(
+            StampDescriptor("הושלם", StampTone.DONE),
+            mineParticipationStamp(ParticipationStatus.DONE, 9.0, missingLeadDetails = false),
+        )
+    }
 }

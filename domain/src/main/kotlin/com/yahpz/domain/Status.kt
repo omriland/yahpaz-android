@@ -68,12 +68,34 @@ const val FILL_DONE_AWAITING_KM_LABEL = "סיימת לתעד"
 /** Responder-facing: they finished; the lead has not entered KM yet. */
 const val LEAD_KM_PENDING_NOTE = "אחמ״ש טרם הזין ק״מ"
 
-fun leadKmPendingNote(participation: ParticipationStatus?, totalKm: Double?): String? =
-    if (participation == ParticipationStatus.DONE && totalKm == null) LEAD_KM_PENDING_NOTE else null
+/** Responder-facing: they finished; the lead still owes end time (or other done-gate fields). */
+const val AWAITING_LEAD_DETAILS_NOTE = "ממתין לפרטים נוספים מאחמש"
+
+/** Lead-owned field that keeps stored status from becoming `done`. */
+fun eventMissingLeadDoneDetails(endedAt: String?): Boolean = endedAt.isNullOrBlank()
+
+fun leadKmPendingNote(
+    participation: ParticipationStatus?,
+    totalKm: Double?,
+    origin: String? = null,
+    missingLeadDetails: Boolean = false,
+): String? {
+    if (origin == "shift") return null
+    if (participation != ParticipationStatus.DONE) return null
+    if (missingLeadDetails) return AWAITING_LEAD_DETAILS_NOTE
+    return if (totalKm == null) LEAD_KM_PENDING_NOTE else null
+}
 
 /** Own-row stamp for mine inbox / fill / detail: סיימת לתעד when lead KM is still null. */
-fun mineParticipationStamp(status: ParticipationStatus?, totalKm: Double?): StampDescriptor {
+fun mineParticipationStamp(
+    status: ParticipationStatus?,
+    totalKm: Double?,
+    missingLeadDetails: Boolean = false,
+): StampDescriptor {
     val resolved = status ?: ParticipationStatus.PENDING
+    if (resolved == ParticipationStatus.DONE && missingLeadDetails) {
+        return eventStamp(EventStatus.PARTIAL)
+    }
     if (resolved == ParticipationStatus.DONE && totalKm == null) {
         return StampDescriptor(FILL_DONE_AWAITING_KM_LABEL, StampTone.DONE)
     }
