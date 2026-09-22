@@ -97,10 +97,12 @@ import com.yahpz.domain.INCOMPLETE_EVENTS_HEADING
 import com.yahpz.domain.INCOMPLETE_NOTICE_MARK
 import com.yahpz.domain.SHOW_OTHERS_CREATED_EVENTS_LABEL
 import com.yahpz.domain.IncompleteField
-import com.yahpz.domain.incompleteFieldLabels
-import com.yahpz.domain.incompleteNoticeLabel
+import com.yahpz.domain.LEAD_KM_VIEW_LABEL
+import com.yahpz.domain.incompleteLeadNoticeLabels
+import com.yahpz.domain.managesUnit
 import com.yahpz.domain.missingEventFields
 import com.yahpz.domain.partitionIncompleteEvents
+import com.yahpz.domain.responderCardShowsLeadKm
 import com.yahpz.domain.shouldFilterUnitEventsToOwnCreated
 import kotlinx.coroutines.launch
 
@@ -611,6 +613,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                             row = row,
                             eventDate = current.eventDate,
                             showTreatedPlates = current.origin != "shift",
+                            showLeadKm = responderCardShowsLeadKm(managesUnit(ui.roles)),
                             missingLeadDetails = current.origin != "shift" &&
                                 eventMissingLeadDoneDetails(current.endedAt),
                             isViewer = row.responderId == ui.userId,
@@ -783,8 +786,10 @@ private fun DraggableActiveEventRow(
             boardActionHint = boardActionHint,
             onBoardAction = onBoardAction,
             onOpen = onOpen,
-            incompleteFields = incompleteFieldLabels(missingEventFields(event.asIncompleteSnapshot())),
-            incompleteSpoken = incompleteNoticeLabel(missingEventFields(event.asIncompleteSnapshot())),
+            incompleteFields = incompleteLeadNoticeLabels(event.asIncompleteSnapshot()),
+            incompleteSpoken = incompleteLeadNoticeLabels(event.asIncompleteSnapshot()).let { labels ->
+                if (labels.isEmpty()) "" else "חסרים: ${labels.joinToString(" · ")}"
+            },
         )
     }
 }
@@ -794,6 +799,7 @@ private fun UnitEventResponderRow(
     row: UnitEventDetailResponderRow,
     eventDate: String,
     showTreatedPlates: Boolean,
+    showLeadKm: Boolean,
     missingLeadDetails: Boolean,
     isViewer: Boolean,
     expanded: Boolean,
@@ -855,11 +861,13 @@ private fun UnitEventResponderRow(
         if (expanded) {
             Spacer(Modifier.height(8.dp))
             Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                LedgerRow(
-                    "קילומטרים",
-                    row.totalKm?.let { "${formatNumber(it)} ק״מ" }.orEmpty(),
-                    missing = row.totalKm == null,
-                )
+                if (showLeadKm) {
+                    LedgerRow(
+                        LEAD_KM_VIEW_LABEL,
+                        row.totalKm?.let { "${formatNumber(it)} ק״מ" }.orEmpty(),
+                        missing = row.totalKm == null,
+                    )
+                }
                 LedgerRow("אמצעים", if (row.emergencyMeans) "כן" else "לא")
                 val treated = treatedVehiclesLabel(row.treated)
                 if (treated.isNotEmpty()) {

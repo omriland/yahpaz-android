@@ -67,6 +67,7 @@ import com.yahpz.domain.missingEventFields
 import com.yahpz.domain.leadKmPendingNote
 import com.yahpz.domain.mineFillCtaLabel
 import com.yahpz.domain.mineInboxIsOpen
+import com.yahpz.domain.eventReleasedToResponders
 import com.yahpz.domain.mineLoggedNoResultsTitle
 import com.yahpz.domain.mineParticipationStamp
 import com.yahpz.domain.minePendingTabLabel
@@ -98,6 +99,7 @@ fun InboxScreen(app: AppModel, ui: AppUiState) {
 
     val pending = ui.events.filter { event ->
         val userId = ui.userId ?: return@filter false
+        if (!eventReleasedToResponders(event.origin, event.policeEventId)) return@filter false
         mineInboxIsOpen(event.ownParticipation(userId), event.ownTotalKm(userId))
     }.sortedByDescending { it.eventDate }
 

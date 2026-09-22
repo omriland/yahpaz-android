@@ -62,15 +62,12 @@ import com.yahpz.domain.EventFormFieldNoteId
 import com.yahpz.domain.eventFormPrimarySaveTitle
 import com.yahpz.domain.eventFormSecondarySaveTitle
 import com.yahpz.domain.PATROL_CALLSIGN_NUMBER_LABEL
-import com.yahpz.domain.PATROL_CALLSIGN_NUMBER_PLACEHOLDER
 import com.yahpz.domain.PATROL_CALLSIGN_PREFIX_LABEL
-import com.yahpz.domain.PATROL_CALLSIGN_PREFIX_PLACEHOLDER
 import com.yahpz.domain.FOREIGN_EVENT_EDIT_BODY
 import com.yahpz.domain.FOREIGN_EVENT_EDIT_CANCEL
 import com.yahpz.domain.FOREIGN_EVENT_EDIT_CONFIRM
 import com.yahpz.domain.EventDraft
 import com.yahpz.domain.LOCATION_GOOGLE_UNAVAILABLE
-import com.yahpz.domain.LOCATION_PLACEHOLDER
 import com.yahpz.domain.LocationPinFields
 import com.yahpz.domain.SecondaryLead
 import com.yahpz.domain.StampTone
@@ -88,6 +85,8 @@ import com.yahpz.domain.EventResponderDraft
 import com.yahpz.domain.LookupOption
 import com.yahpz.domain.NO_VEHICLE_KM_PLACEHOLDER
 import com.yahpz.domain.EVENT_STATION_LABEL
+import com.yahpz.domain.RESPONDERS_HELD_FOR_POLICE_ID_NOTE
+import com.yahpz.domain.eventReleasedToResponders
 import com.yahpz.domain.STATION_MAX_LENGTH
 import com.yahpz.domain.applyDistrictRoadDefault
 import com.yahpz.domain.districtNeedsStation
@@ -475,14 +474,12 @@ fun EventFormScreen(
                         label = PATROL_CALLSIGN_PREFIX_LABEL,
                         value = patrolCallsignPrefix,
                         onValueChange = { patrolCallsignPrefix = patrolCallsignPrefixForInput(it) },
-                        placeholder = PATROL_CALLSIGN_PREFIX_PLACEHOLDER,
                         modifier = Modifier.weight(1f),
                     )
                     FormField(
                         label = PATROL_CALLSIGN_NUMBER_LABEL,
                         value = patrolCallsignNumber,
                         onValueChange = { patrolCallsignNumber = patrolCallsignNumberForInput(it) },
-                        placeholder = PATROL_CALLSIGN_NUMBER_PLACEHOLDER,
                         keyboardType = KeyboardType.Number,
                         mono = true,
                         ltr = true,
@@ -553,7 +550,7 @@ fun EventFormScreen(
                     onGoogleUnavailable = {
                         app.showToast(LOCATION_GOOGLE_UNAVAILABLE, StampTone.PENDING)
                     },
-                    placeholder = LOCATION_PLACEHOLDER,
+                    placeholder = "",
                     modifier = Modifier.fillMaxWidth(),
                 )
                 LookupPickerField(
@@ -611,6 +608,16 @@ fun EventFormScreen(
                     emptyRoster = "אין משתמשים פעילים להקצאה.",
                     emptyQuery = "לא נמצאו מתנדבים להקצאה",
                 )
+                if (
+                    responders.isNotEmpty() &&
+                    !eventReleasedToResponders("manual", policeEventId)
+                ) {
+                    Text(
+                        RESPONDERS_HELD_FOR_POLICE_ID_NOTE,
+                        style = TypeScale.caption,
+                        color = FieldTheme.textMuted,
+                    )
+                }
                 formError?.let { Text(it, style = TypeScale.caption, color = FieldTheme.alert) }
                 PrimaryButton(
                     title = eventFormPrimarySaveTitle(editing),

@@ -31,6 +31,9 @@ val INCOMPLETE_FIELD_LABELS: Map<IncompleteField, String> = mapOf(
 
 const val INCOMPLETE_EVENTS_HEADING = "דורשים השלמת פרטים"
 const val INCOMPLETE_NOTICE_MARK = "פרטים חסרים:"
+const val HELD_FROM_RESPONDERS_LABEL = "לא נשלח למתנדבים"
+const val RESPONDERS_HELD_FOR_POLICE_ID_NOTE =
+    "המתנדבים יקבלו את האירוע רק אחרי הזנת מספר אירוע."
 
 data class IncompleteResponderSnapshot(
     val totalKm: Double? = null,
@@ -88,6 +91,16 @@ fun incompleteFieldLabels(fields: Set<IncompleteField>): List<String> =
 
 fun incompleteNoticeLabel(fields: Set<IncompleteField>): String =
     "חסרים: ${incompleteFieldLabels(fields).joinToString(" · ")}"
+
+fun incompleteLeadNoticeLabels(event: IncompleteEventSnapshot): List<String> {
+    val missing = missingEventFields(event)
+    val labels = incompleteFieldLabels(missing)
+    return if (IncompleteField.POLICE_EVENT_ID in missing && event.responders.isNotEmpty()) {
+        labels + HELD_FROM_RESPONDERS_LABEL
+    } else {
+        labels
+    }
+}
 
 fun isEventIncomplete(event: IncompleteEventSnapshot): Boolean =
     missingEventFields(event).isNotEmpty()

@@ -120,6 +120,19 @@ class EventIncompleteTest {
     }
 
     @Test
+    fun `adds not-sent mark when volunteers are assigned without police id`() {
+        assertEquals(
+            listOf("מספר אירוע", "לא נשלח למתנדבים"),
+            incompleteLeadNoticeLabels(event(policeEventId = null)),
+        )
+        assertEquals(
+            listOf("מספר אירוע"),
+            incompleteLeadNoticeLabels(event(policeEventId = null, responders = emptyList())),
+        )
+        assertEquals(emptyList<String>(), incompleteLeadNoticeLabels(event()))
+    }
+
+    @Test
     fun `partition pins incomplete first and keeps input order`() {
         val complete = "ok" to event()
         val incomplete = "gap" to event(location = null)
