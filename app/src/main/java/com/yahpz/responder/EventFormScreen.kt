@@ -608,9 +608,13 @@ fun EventFormScreen(
                     emptyRoster = "אין משתמשים פעילים להקצאה.",
                     emptyQuery = "לא נמצאו מתנדבים להקצאה",
                 )
-                if (
-                    responders.isNotEmpty() &&
-                    !eventReleasedToResponders("manual", policeEventId)
+                if (!eventReleasedToResponders(
+                        origin = "manual",
+                        policeEventId = policeEventId,
+                        patrolCallsignNumber = patrolCallsignNumber,
+                        hasRoad = roadId.isNotBlank(),
+                        patrolCallsignPrefix = patrolCallsignPrefix,
+                    )
                 ) {
                     Text(
                         RESPONDERS_HELD_FOR_POLICE_ID_NOTE,

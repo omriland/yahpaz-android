@@ -22,7 +22,9 @@ class EventIncompleteTest {
         responders: List<IncompleteResponderSnapshot> = listOf(responder()),
         startedAt: String? = null,
         endedAt: String? = null,
+        origin: String? = null,
     ) = IncompleteEventSnapshot(
+        origin = origin,
         policeEventId = policeEventId,
         patrolCallsign = patrolCallsign,
         startedAt = startedAt,
@@ -120,7 +122,7 @@ class EventIncompleteTest {
     }
 
     @Test
-    fun `adds not-sent mark when volunteers are assigned without police id`() {
+    fun `adds not-sent mark when volunteers are assigned before the event is released`() {
         assertEquals(
             listOf("מספר אירוע", "לא נשלח למתנדבים"),
             incompleteLeadNoticeLabels(event(policeEventId = null)),
@@ -129,7 +131,19 @@ class EventIncompleteTest {
             listOf("מספר אירוע"),
             incompleteLeadNoticeLabels(event(policeEventId = null, responders = emptyList())),
         )
+        assertEquals(
+            listOf("כביש", "לא נשלח למתנדבים"),
+            incompleteLeadNoticeLabels(event(hasRoad = false)),
+        )
+        assertEquals(
+            listOf("אוק - מס", "לא נשלח למתנדבים"),
+            incompleteLeadNoticeLabels(event(patrolCallsign = null)),
+        )
         assertEquals(emptyList<String>(), incompleteLeadNoticeLabels(event()))
+        assertEquals(
+            listOf("מספר אירוע"),
+            incompleteLeadNoticeLabels(event(origin = "shift", policeEventId = null)),
+        )
     }
 
     @Test

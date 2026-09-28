@@ -33,7 +33,7 @@ const val INCOMPLETE_EVENTS_HEADING = "דורשים השלמת פרטים"
 const val INCOMPLETE_NOTICE_MARK = "פרטים חסרים:"
 const val HELD_FROM_RESPONDERS_LABEL = "לא נשלח למתנדבים"
 const val RESPONDERS_HELD_FOR_POLICE_ID_NOTE =
-    "המתנדבים יקבלו את האירוע רק אחרי הזנת מספר אירוע."
+    "האירוע לא יוצג למתנדב עד שאו״ק, כביש ומספר אירוע מלאים."
 
 data class IncompleteResponderSnapshot(
     val totalKm: Double? = null,
@@ -42,6 +42,7 @@ data class IncompleteResponderSnapshot(
 )
 
 data class IncompleteEventSnapshot(
+    val origin: String? = null,
     val policeEventId: String? = null,
     val patrolCallsign: String? = null,
     val patrolCallsignNumber: String? = null,
@@ -95,11 +96,14 @@ fun incompleteNoticeLabel(fields: Set<IncompleteField>): String =
 fun incompleteLeadNoticeLabels(event: IncompleteEventSnapshot): List<String> {
     val missing = missingEventFields(event)
     val labels = incompleteFieldLabels(missing)
-    return if (IncompleteField.POLICE_EVENT_ID in missing && event.responders.isNotEmpty()) {
-        labels + HELD_FROM_RESPONDERS_LABEL
-    } else {
-        labels
-    }
+    val held = event.responders.isNotEmpty() && !eventReleasedToResponders(
+        origin = event.origin,
+        policeEventId = event.policeEventId,
+        patrolCallsignNumber = event.patrolCallsignNumber,
+        hasRoad = event.hasRoad,
+        patrolCallsignLegacy = event.patrolCallsign,
+    )
+    return if (held) labels + HELD_FROM_RESPONDERS_LABEL else labels
 }
 
 fun isEventIncomplete(event: IncompleteEventSnapshot): Boolean =

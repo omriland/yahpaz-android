@@ -26,8 +26,8 @@ const val EVENT_DRAFT_DATE_ERROR = "יש לבחור תאריך."
 const val EVENT_DRAFT_TYPE_ERROR = "יש לבחור סוג אירוע."
 const val EVENT_DRAFT_ROAD_ERROR = "יש לבחור כביש."
 const val EVENT_DRAFT_LOCATION_ERROR = "יש לבחור או להזין מיקום."
-const val EVENT_DRAFT_FORM_ERROR = "יש למלא תאריך, סוג אירוע וכביש כדי ליצור אירוע."
-const val EVENT_DRAFT_FORM_LOCATION_ERROR = "יש למלא תאריך, סוג אירוע, כביש ומיקום כדי ליצור אירוע."
+const val EVENT_DRAFT_FORM_ERROR = "יש למלא תאריך וסוג אירוע כדי ליצור אירוע."
+const val EVENT_DRAFT_FORM_LOCATION_ERROR = "יש למלא תאריך, סוג אירוע ומיקום כדי ליצור אירוע."
 const val EVENT_DRAFT_SAVE_FAILED = "שמירת האירוע נכשלה. בדקו את החיבור ונסו שוב."
 const val EVENT_DRAFT_SAVED = "האירוע נשמר."
 const val EVENT_NEW_TITLE = "אירוע חדש"
@@ -192,19 +192,17 @@ fun validateEventDraftPartial(draft: EventDraft): EventDraftErrors =
         eventDate = if (normalizeReturnDate(draft.eventDate) == null) EVENT_DRAFT_DATE_ERROR else null,
     )
 
-/** Minimum to create an event: date + event type + road (+ מיקום for the system שלוחה). */
+/**
+ * Minimum to create an event: date + event type (+ מיקום for the system שלוחה).
+ * או״ק, כביש, and מספר אירוע may be empty — the event is saved and a responder
+ * can be attached, but it stays hidden from responders until all three are filled.
+ */
 fun validateEventDraft(draft: EventDraft, districts: List<LookupOption> = emptyList()): EventDraftErrors =
     EventDraftErrors(
         eventDate = if (normalizeReturnDate(draft.eventDate) == null) EVENT_DRAFT_DATE_ERROR else null,
         eventType = if (draft.eventTypeId.isEmpty()) EVENT_DRAFT_TYPE_ERROR else null,
-        road = if (draft.roadId.isEmpty()) EVENT_DRAFT_ROAD_ERROR else null,
         location = if (districtNeedsLocation(districts, draft.districtId) && draft.location.isBlank()) {
             EVENT_DRAFT_LOCATION_ERROR
-        } else {
-            null
-        },
-        patrolCallsignNumber = if (draft.patrolCallsignNumber.isBlank()) {
-            PATROL_CALLSIGN_NUMBER_ERROR
         } else {
             null
         },

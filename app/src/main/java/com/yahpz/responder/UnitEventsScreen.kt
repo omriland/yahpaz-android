@@ -101,6 +101,7 @@ import com.yahpz.domain.LEAD_KM_VIEW_LABEL
 import com.yahpz.domain.incompleteLeadNoticeLabels
 import com.yahpz.domain.managesUnit
 import com.yahpz.domain.missingEventFields
+import com.yahpz.domain.RESPONDERS_HELD_FOR_POLICE_ID_NOTE
 import com.yahpz.domain.partitionIncompleteEvents
 import com.yahpz.domain.responderCardShowsLeadKm
 import com.yahpz.domain.shouldFilterUnitEventsToOwnCreated
@@ -598,6 +599,13 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                 LedgerRow("סטטוס", stamp.label)
                 EventLeadLedgerRows(current.shiftLead, current.secondaryLeads)
                 Text("מתנדבים (${current.responders.size})", style = TypeScale.section, color = FieldTheme.textPrimary)
+                if (!current.releasedToResponders()) {
+                    Text(
+                        RESPONDERS_HELD_FOR_POLICE_ID_NOTE,
+                        style = TypeScale.caption,
+                        color = FieldTheme.textMuted,
+                    )
+                }
                 if (current.responders.isEmpty()) {
                     Text(
                         "טרם שובצו מתנדבים לאירוע",
@@ -628,7 +636,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                         )
                     }
                 }
-                if (mine != null) {
+                if (mine != null && current.releasedToResponders()) {
                     mineFillCtaLabel(mine)?.let { label ->
                         PrimaryButton(title = label, onClick = {
                             val id = current.id

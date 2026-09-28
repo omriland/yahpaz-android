@@ -67,8 +67,8 @@ import com.yahpz.domain.missingEventFields
 import com.yahpz.domain.leadKmPendingNote
 import com.yahpz.domain.mineFillCtaLabel
 import com.yahpz.domain.mineInboxIsOpen
-import com.yahpz.domain.eventReleasedToResponders
 import com.yahpz.domain.mineLoggedNoResultsTitle
+import com.yahpz.domain.eventStamp
 import com.yahpz.domain.mineParticipationStamp
 import com.yahpz.domain.minePendingTabLabel
 import com.yahpz.domain.openMineSummary
@@ -99,7 +99,7 @@ fun InboxScreen(app: AppModel, ui: AppUiState) {
 
     val pending = ui.events.filter { event ->
         val userId = ui.userId ?: return@filter false
-        if (!eventReleasedToResponders(event.origin, event.policeEventId)) return@filter false
+        if (!event.releasedToResponders()) return@filter false
         mineInboxIsOpen(event.ownParticipation(userId), event.ownTotalKm(userId))
     }.sortedByDescending { it.eventDate }
 
@@ -120,7 +120,9 @@ fun InboxScreen(app: AppModel, ui: AppUiState) {
         )
     }
     val loggedIds = loggedWindow.logged.map { it.id }.toSet()
-    val logged = ui.events.filter { it.id in loggedIds }.sortedByDescending { it.eventDate }
+    val logged = ui.events
+        .filter { it.id in loggedIds && it.releasedToResponders() }
+        .sortedByDescending { it.eventDate }
     val query = loggedQuery.trim()
     val filteredLogged = if (query.isEmpty()) logged else logged.filter { mineEventMatchesQuery(it.searchFields, query) }
 

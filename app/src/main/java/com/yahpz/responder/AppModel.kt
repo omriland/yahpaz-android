@@ -292,6 +292,10 @@ class AppModel : ViewModel() {
     }
 
     fun openFill(eventId: String) {
+        val state = _state.value
+        val known = (state.events + state.unitEvents + state.myActiveUnitEvents + state.myActivePinnedEvents)
+            .firstOrNull { it.id == eventId }
+        if (known != null && !known.releasedToResponders()) return
         _state.update { it.copy(fillEventId = eventId) }
     }
 

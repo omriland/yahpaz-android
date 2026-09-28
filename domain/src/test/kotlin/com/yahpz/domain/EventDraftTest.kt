@@ -45,11 +45,12 @@ class EventDraftTest {
     }
 
     @Test
-    fun `date, type and road are the minimum`() {
+    fun `date and type are the minimum`() {
         assertTrue(validateEventDraft(draft()).isEmpty)
         assertEquals(EVENT_DRAFT_DATE_ERROR, validateEventDraft(draft(date = "")).eventDate)
         assertEquals(EVENT_DRAFT_TYPE_ERROR, validateEventDraft(draft(typeId = "")).eventType)
-        assertEquals(EVENT_DRAFT_ROAD_ERROR, validateEventDraft(draft(roadId = "")).road)
+        assertNull(validateEventDraft(draft(roadId = "")).road)
+        assertNull(validateEventDraft(draft().copy(patrolCallsignNumber = "")).patrolCallsignNumber)
     }
 
     @Test
@@ -71,16 +72,15 @@ class EventDraftTest {
 
     @Test
     fun `form message falls back to the non-location copy`() {
-        assertEquals(EVENT_DRAFT_FORM_ERROR, validateEventDraft(draft(roadId = "")).formMessage)
+        assertEquals(EVENT_DRAFT_FORM_ERROR, validateEventDraft(draft(typeId = "")).formMessage)
+        assertNull(validateEventDraft(draft(roadId = "")).formMessage)
         assertNull(validateEventDraft(draft()).formMessage)
     }
 
     @Test
-    fun `full save requires callsign number but partial does not`() {
-        assertEquals(
-            PATROL_CALLSIGN_NUMBER_ERROR,
-            validateEventDraft(draft().copy(patrolCallsignNumber = "")).patrolCallsignNumber,
-        )
+    fun `full save does not require callsign number or road`() {
+        assertNull(validateEventDraft(draft().copy(patrolCallsignNumber = "")).patrolCallsignNumber)
+        assertNull(validateEventDraft(draft(roadId = "")).road)
         assertTrue(validateEventDraftPartial(draft().copy(patrolCallsignNumber = "")).isEmpty)
     }
 

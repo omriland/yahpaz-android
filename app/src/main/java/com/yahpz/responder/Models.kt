@@ -40,6 +40,7 @@ import com.yahpz.domain.EventsByResponderEventInput
 import com.yahpz.domain.EventsByResponderResponderInput
 import com.yahpz.domain.SecondaryLead
 import com.yahpz.domain.eventLeadsCaption
+import com.yahpz.domain.eventReleasedToResponders
 import com.yahpz.domain.formatLeadsCaption
 import com.yahpz.domain.KmDiscrepancyEventInput
 import com.yahpz.domain.KmDiscrepancyResponderInput
@@ -287,6 +288,7 @@ data class EventListItem(
     )
 
     fun asIncompleteSnapshot(): IncompleteEventSnapshot = IncompleteEventSnapshot(
+        origin = origin,
         policeEventId = policeEventId,
         patrolCallsign = patrolCallsign,
         patrolCallsignNumber = patrolCallsignNumber,
@@ -303,6 +305,15 @@ data class EventListItem(
                 endedAt = row.endedAt,
             )
         },
+    )
+
+    fun releasedToResponders(): Boolean = eventReleasedToResponders(
+        origin = origin,
+        policeEventId = policeEventId,
+        patrolCallsignNumber = patrolCallsignNumber,
+        hasRoad = road != null,
+        patrolCallsignLegacy = patrolCallsign,
+        patrolCallsignPrefix = patrolCallsignPrefix,
     )
 }
 
