@@ -103,6 +103,8 @@ import com.yahpz.domain.duplicateEventsReportRows
 import com.yahpz.domain.createIncludesSelfAssign
 import com.yahpz.domain.digitsOnly
 import com.yahpz.domain.ownResumableEventId
+import com.yahpz.domain.POLICE_EVENT_ID_DUPLICATE_ERROR
+import com.yahpz.domain.sameDayPoliceEventIdCollides
 import com.yahpz.domain.SameDayPoliceEventRow
 import com.yahpz.domain.deriveEventStatusFromDraft
 import com.yahpz.domain.eventDraftStatus
@@ -1474,6 +1476,11 @@ object YahpazAPI {
         val eventDate = normalizeReturnDate(draft.eventDate)
             ?: return EventWriteOutcome(error = EVENT_DRAFT_DATE_ERROR)
         val mainLeadId = draft.shiftLeadId.ifBlank { userId }
+        sameDayPoliceEventIdCollision(
+            eventDate = eventDate,
+            policeEventId = draft.policeEventId,
+            currentEventId = null,
+        )?.let { return EventWriteOutcome(error = it) }
         return try {
             val nextStatus = deriveEventStatusFromDraft(draft.responders)
             val locationPayload = buildLocationPayload(draft.locationPin)
@@ -1530,7 +1537,7 @@ object YahpazAPI {
                 mainLeadId = mainLeadId,
             )?.let { return EventWriteOutcome(error = it) }
             EventWriteOutcome(eventId = inserted.id)
-        } catch (_: Exception) {
+        } catch (error: Exception) {
             EventWriteOutcome(
                 error = recoverOwnCreatedEvent(
                     draft = draft,
@@ -1539,7 +1546,7 @@ object YahpazAPI {
                     districts = districts,
                     vehicleKinds = vehicleKinds,
                     allowPartial = allowPartial,
-                ) ?: EVENT_DRAFT_SAVE_FAILED,
+                ) ?: policeEventIdDuplicateOrSaveFailed(error),
             )
         }
     }
@@ -1693,6 +1700,11 @@ object YahpazAPI {
         }
         val eventDate = normalizeReturnDate(draft.eventDate) ?: return EVENT_DRAFT_DATE_ERROR
         val mainLeadId = draft.shiftLeadId.ifBlank { return "אין אחמ״ש ראשי." }
+        sameDayPoliceEventIdCollision(
+            eventDate = eventDate,
+            policeEventId = draft.policeEventId,
+            currentEventId = eventId,
+        )?.let { return it }
         return try {
             val nextStatus = deriveEventStatusFromDraft(draft.responders)
             val locationPayload = buildLocationPayload(draft.locationPin)
@@ -1751,7 +1763,61 @@ object YahpazAPI {
                 creatorSecondary = null,
                 mainLeadId = mainLeadId,
             )
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            policeEventIdDuplicateOrSaveFailed(error)
+        }
+    }
+
+    private suspend fun sameDayPoliceEventIdCollision(
+        eventDate: String,
+        policeEventId: String,
+        currentEventId: String?,
+    ): String? {
+        val policeId = digitsOnly(policeEventId)
+        if (policeId.isEmpty()) return null
+        val existing = fetchSameDayPoliceEventIdRows(eventDate, policeId) ?: return EVENT_DRAFT_SAVE_FAILED
+        return if (
+            sameDayPoliceEventIdCollides(
+                eventDate = eventDate,
+                policeEventId = policeId,
+                currentEventId = currentEventId,
+                existing = existing,
+            )
+        ) {
+            POLICE_EVENT_ID_DUPLICATE_ERROR
+        } else {
+            null
+        }
+    }
+
+    private suspend fun fetchSameDayPoliceEventIdRows(
+        eventDate: String,
+        policeId: String,
+    ): List<SameDayPoliceEventRow>? = runCatching {
+        client.from("events").select(
+            Columns.raw("id, event_date, police_event_id, is_cancelled, shift_lead_id"),
+        ) {
+            filter {
+                eq("event_date", eventDate)
+                eq("police_event_id", policeId)
+                eq("is_cancelled", false)
+            }
+        }.decodeList<SameDayPoliceEventApiRow>().map {
+            SameDayPoliceEventRow(
+                id = it.id,
+                shiftLeadId = it.shiftLeadId,
+                isCancelled = it.isCancelled,
+                eventDate = it.eventDate,
+                policeEventId = it.policeEventId,
+            )
+        }
+    }.getOrNull()
+
+    private fun policeEventIdDuplicateOrSaveFailed(error: Exception): String {
+        val raw = error.message.orEmpty()
+        return if (raw.contains(POLICE_EVENT_ID_DUPLICATE_ERROR) || isUniqueViolation(raw)) {
+            POLICE_EVENT_ID_DUPLICATE_ERROR
+        } else {
             EVENT_DRAFT_SAVE_FAILED
         }
     }

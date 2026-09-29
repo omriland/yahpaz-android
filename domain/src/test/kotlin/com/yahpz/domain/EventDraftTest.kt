@@ -276,6 +276,64 @@ class EventDraftTest {
     }
 
     @Test
+    fun `same-day police event id collides unless cancelled, blank, or another date`() {
+        val existing = listOf(
+            SameDayPoliceEventRow(
+                id = "evt-1",
+                eventDate = "2026-09-03",
+                policeEventId = "12345",
+            ),
+            SameDayPoliceEventRow(
+                id = "evt-cancelled",
+                isCancelled = true,
+                eventDate = "2026-09-03",
+                policeEventId = "99999",
+            ),
+        )
+        assertTrue(
+            sameDayPoliceEventIdCollides(
+                eventDate = "2026-09-03",
+                policeEventId = "12345",
+                currentEventId = "evt-new",
+                existing = existing,
+            ),
+        )
+        assertFalse(
+            sameDayPoliceEventIdCollides(
+                eventDate = "2026-09-04",
+                policeEventId = "12345",
+                currentEventId = "evt-new",
+                existing = existing,
+            ),
+        )
+        assertFalse(
+            sameDayPoliceEventIdCollides(
+                eventDate = "2026-09-03",
+                policeEventId = "",
+                currentEventId = "evt-new",
+                existing = existing,
+            ),
+        )
+        assertFalse(
+            sameDayPoliceEventIdCollides(
+                eventDate = "2026-09-03",
+                policeEventId = "12345",
+                currentEventId = "evt-1",
+                existing = existing,
+            ),
+        )
+        assertFalse(
+            sameDayPoliceEventIdCollides(
+                eventDate = "2026-09-03",
+                policeEventId = "99999",
+                currentEventId = "evt-new",
+                existing = existing,
+            ),
+        )
+        assertEquals("כבר קיים אירוע עם המספר הזה באותו תאריך.", POLICE_EVENT_ID_DUPLICATE_ERROR)
+    }
+
+    @Test
     fun `fill ready notify still fires when an existing assignment first gets km`() {
         assertEquals(
             listOf("a"),

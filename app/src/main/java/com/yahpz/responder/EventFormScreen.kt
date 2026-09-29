@@ -102,6 +102,7 @@ import com.yahpz.domain.israelNowTime
 import com.yahpz.domain.israelToday
 import com.yahpz.domain.patrolCallsignNumberForInput
 import com.yahpz.domain.patrolCallsignPrefixForInput
+import com.yahpz.domain.POLICE_EVENT_ID_DUPLICATE_ERROR
 import com.yahpz.domain.policeEventIdForInput
 import com.yahpz.domain.returnDateToInput
 import com.yahpz.domain.shouldShowCockpitDelete
@@ -461,10 +462,14 @@ fun EventFormScreen(
                     FormField(
                         label = "מספר אירוע",
                         value = policeEventId,
-                        onValueChange = { policeEventId = policeEventIdForInput(it) },
+                        onValueChange = {
+                            policeEventId = policeEventIdForInput(it)
+                            if (formError == POLICE_EVENT_ID_DUPLICATE_ERROR) formError = null
+                        },
                         keyboardType = KeyboardType.Number,
                         mono = true,
                         ltr = true,
+                        error = if (formError == POLICE_EVENT_ID_DUPLICATE_ERROR) formError else null,
                         modifier = Modifier.weight(1f),
                     )
                 }

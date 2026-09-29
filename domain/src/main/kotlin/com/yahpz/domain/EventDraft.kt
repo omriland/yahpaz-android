@@ -394,11 +394,32 @@ fun eventCancelToast(isCancelled: Boolean): String =
 fun canToggleEventCancelled(next: Boolean, canClearCancelled: Boolean): String? =
     if (!next && !canClearCancelled) EVENT_CANCEL_ADMIN_ONLY else null
 
+const val POLICE_EVENT_ID_DUPLICATE_ERROR = "כבר קיים אירוע עם המספר הזה באותו תאריך."
+
 data class SameDayPoliceEventRow(
     val id: String,
     val shiftLeadId: String? = null,
     val isCancelled: Boolean = false,
+    val eventDate: String = "",
+    val policeEventId: String? = null,
 )
+
+fun sameDayPoliceEventIdCollides(
+    eventDate: String,
+    policeEventId: String,
+    currentEventId: String?,
+    existing: List<SameDayPoliceEventRow>,
+): Boolean {
+    val policeId = digitsOnly(policeEventId)
+    val date = eventDate.trim()
+    if (policeId.isEmpty() || date.isEmpty()) return false
+    return existing.any { row ->
+        if (row.isCancelled) return@any false
+        if (!currentEventId.isNullOrBlank() && row.id == currentEventId) return@any false
+        if (row.eventDate.isNotEmpty() && row.eventDate.trim() != date) return@any false
+        digitsOnly(row.policeEventId.orEmpty()) == policeId
+    }
+}
 
 /** Own same-day מספר אירוע after a create whose response never came back. */
 fun ownResumableEventId(

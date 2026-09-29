@@ -1764,6 +1764,7 @@ data class SameDayPoliceEventApiRow(
     val id: String,
     @SerialName("shift_lead_id") val shiftLeadId: String? = null,
     @SerialName("is_cancelled") val isCancelled: Boolean = false,
+    @SerialName("event_date") val eventDate: String = "",
     @SerialName("police_event_id") val policeEventId: String? = null,
 )
 
