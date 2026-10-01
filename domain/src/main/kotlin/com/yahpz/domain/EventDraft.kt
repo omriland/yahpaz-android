@@ -29,6 +29,13 @@ const val EVENT_DRAFT_LOCATION_ERROR = "יש לבחור או להזין מיקו
 const val EVENT_DRAFT_FORM_ERROR = "יש למלא תאריך וסוג אירוע כדי ליצור אירוע."
 const val EVENT_DRAFT_FORM_LOCATION_ERROR = "יש למלא תאריך, סוג אירוע ומיקום כדי ליצור אירוע."
 const val EVENT_DRAFT_SAVE_FAILED = "שמירת האירוע נכשלה. בדקו את החיבור ונסו שוב."
+
+/** Event-level complete is blocked until `events.ended_at` is set. */
+const val EVENT_DONE_NEEDS_END_ERROR = "לא ניתן להשלים אירוע ללא שעת סיום."
+
+/** Event-level complete is blocked until every assigned lead `total_km` is set. */
+const val EVENT_DONE_NEEDS_KM_ERROR =
+    "לא ניתן להשלים אירוע לפני הזנת קילומטרים לכל הכוננים."
 const val EVENT_DRAFT_SAVED = "האירוע נשמר."
 const val EVENT_NEW_TITLE = "אירוע חדש"
 const val EVENT_EDIT_TITLE = "עריכת אירוע"
@@ -270,6 +277,23 @@ fun deriveEventStatusFromDraft(responders: List<EventResponderDraft>): EventStat
     if (responders.all { it.status == ParticipationStatus.DONE }) return EventStatus.DONE
     if (responders.any { it.status == ParticipationStatus.DONE }) return EventStatus.PARTIAL
     return EventStatus.IN_PROGRESS
+}
+
+/**
+ * `guard_event_done_requirements` reads assigned `total_km` already in the
+ * database. The event row is written before responders, so a derived `done`
+ * must wait — otherwise filling the last KM 400s and the generic toast
+ * pretends it was a network error.
+ */
+fun eventStatusForRowWriteBeforeResponders(derived: EventStatus): EventStatus =
+    if (derived == EventStatus.DONE) EventStatus.PARTIAL else derived
+
+/** Map the Hebrew done-guard (and keep the generic save toast for anything else). */
+fun eventPersistFailure(message: String?): String {
+    val raw = message.orEmpty()
+    if (raw.contains(EVENT_DONE_NEEDS_KM_ERROR)) return EVENT_DONE_NEEDS_KM_ERROR
+    if (raw.contains(EVENT_DONE_NEEDS_END_ERROR)) return EVENT_DONE_NEEDS_END_ERROR
+    return EVENT_DRAFT_SAVE_FAILED
 }
 
 /** A new event with no responders is a draft; adding pending crew opens it for documentation. */

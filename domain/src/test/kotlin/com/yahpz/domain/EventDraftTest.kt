@@ -1,5 +1,6 @@
 package com.yahpz.domain
 
+import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -342,6 +343,43 @@ class EventDraftTest {
                 next = listOf(FillReadyNextRow("a", 8.0)),
             ),
         )
+    }
+
+    @Test
+    fun `done stays off the event row until assigned KM is written`() {
+        assertEquals(EventStatus.PARTIAL, eventStatusForRowWriteBeforeResponders(EventStatus.DONE))
+        assertEquals(EventStatus.PARTIAL, eventStatusForRowWriteBeforeResponders(EventStatus.PARTIAL))
+        assertEquals(EventStatus.IN_PROGRESS, eventStatusForRowWriteBeforeResponders(EventStatus.IN_PROGRESS))
+        assertEquals(EventStatus.DRAFT, eventStatusForRowWriteBeforeResponders(EventStatus.DRAFT))
+    }
+
+    @Test
+    fun `persist failure maps the Hebrew done-guard instead of a network toast`() {
+        assertEquals(
+            EVENT_DONE_NEEDS_KM_ERROR,
+            eventPersistFailure("P0001: $EVENT_DONE_NEEDS_KM_ERROR"),
+        )
+        assertEquals(EVENT_DONE_NEEDS_END_ERROR, eventPersistFailure(EVENT_DONE_NEEDS_END_ERROR))
+        assertEquals(EVENT_DRAFT_SAVE_FAILED, eventPersistFailure("permission denied"))
+        assertEquals(EVENT_DRAFT_SAVE_FAILED, eventPersistFailure(null))
+        assertEquals(
+            "לא ניתן להשלים אירוע לפני הזנת קילומטרים לכל הכוננים.",
+            EVENT_DONE_NEEDS_KM_ERROR,
+        )
+        assertEquals("לא ניתן להשלים אירוע ללא שעת סיום.", EVENT_DONE_NEEDS_END_ERROR)
+    }
+
+    @Test
+    fun `unit event writes deferred status then promotes after responders`() {
+        val api = listOf(
+            File("../app/src/main/java/com/yahpz/responder/YahpazAPI.kt"),
+            File("app/src/main/java/com/yahpz/responder/YahpazAPI.kt"),
+        ).first { it.exists() }.readText()
+        assertTrue(api.contains("eventStatusForRowWriteBeforeResponders(nextStatus)"))
+        val sync = api.indexOf("syncEventResponders")
+        val promote = api.lastIndexOf("promoteEventToDoneIfNeeded")
+        assertTrue(sync >= 0 && promote > sync)
+        assertTrue(api.contains("EventStatus.DONE.raw"))
     }
 
     @Test

@@ -1394,6 +1394,12 @@ data class EventCancelWrite(
 )
 
 @Serializable
+data class EventStatusPromoteWrite(
+    val status: String,
+    @SerialName("updated_at") val updatedAt: String,
+)
+
+@Serializable
 data class EventFormTreatedRow(
     @SerialName("vehicle_kind_id") val vehicleKindId: String,
     val quantity: Int = 0,

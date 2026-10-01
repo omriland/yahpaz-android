@@ -108,6 +108,8 @@ import com.yahpz.domain.sameDayPoliceEventIdCollides
 import com.yahpz.domain.SameDayPoliceEventRow
 import com.yahpz.domain.deriveEventStatusFromDraft
 import com.yahpz.domain.eventDraftStatus
+import com.yahpz.domain.eventPersistFailure
+import com.yahpz.domain.eventStatusForRowWriteBeforeResponders
 import com.yahpz.domain.eventsByResponderReportRows
 import com.yahpz.domain.isOvernightEnd
 import com.yahpz.domain.leadKmForSave
@@ -1483,6 +1485,7 @@ object YahpazAPI {
         )?.let { return EventWriteOutcome(error = it) }
         return try {
             val nextStatus = deriveEventStatusFromDraft(draft.responders)
+            val rowStatus = eventStatusForRowWriteBeforeResponders(nextStatus)
             val locationPayload = buildLocationPayload(draft.locationPin)
             val callsign = resolvePatrolCallsign(
                 draft.patrolCallsignPrefix,
@@ -1514,7 +1517,7 @@ object YahpazAPI {
                     station = stationForSave(districts, draft.districtId, draft.station),
                     notes = draft.notes.nilIfEmpty(),
                     busLane = draft.busLane,
-                    status = nextStatus.raw,
+                    status = rowStatus.raw,
                     shiftLeadId = mainLeadId,
                     updatedAt = Instant.now().toString(),
                 ),
@@ -1530,6 +1533,9 @@ object YahpazAPI {
                 eventStartedAt = eventStartedAt,
                 eventEndedAt = eventEndedAt,
             )?.let { return EventWriteOutcome(error = it) }
+            promoteEventToDoneIfNeeded(inserted.id, nextStatus)?.let {
+                return EventWriteOutcome(error = it)
+            }
             syncEventSecondaryLeads(
                 eventId = inserted.id,
                 desired = draft.secondaryLeads,
@@ -1707,6 +1713,7 @@ object YahpazAPI {
         )?.let { return it }
         return try {
             val nextStatus = deriveEventStatusFromDraft(draft.responders)
+            val rowStatus = eventStatusForRowWriteBeforeResponders(nextStatus)
             val locationPayload = buildLocationPayload(draft.locationPin)
             val callsign = resolvePatrolCallsign(
                 draft.patrolCallsignPrefix,
@@ -1739,7 +1746,7 @@ object YahpazAPI {
                     notes = draft.notes.nilIfEmpty(),
                     isCancelled = draft.isCancelled,
                     busLane = draft.busLane,
-                    status = nextStatus.raw,
+                    status = rowStatus.raw,
                     shiftLeadId = mainLeadId,
                     updatedAt = Instant.now().toString(),
                 ),
@@ -1757,6 +1764,7 @@ object YahpazAPI {
                 eventStartedAt = eventStartedAt,
                 eventEndedAt = eventEndedAt,
             )?.let { return it }
+            promoteEventToDoneIfNeeded(eventId, nextStatus)?.let { return it }
             syncEventSecondaryLeads(
                 eventId = eventId,
                 desired = draft.secondaryLeads,
@@ -1818,7 +1826,27 @@ object YahpazAPI {
         return if (raw.contains(POLICE_EVENT_ID_DUPLICATE_ERROR) || isUniqueViolation(raw)) {
             POLICE_EVENT_ID_DUPLICATE_ERROR
         } else {
-            EVENT_DRAFT_SAVE_FAILED
+            eventPersistFailure(raw)
+        }
+    }
+
+    private suspend fun promoteEventToDoneIfNeeded(
+        eventId: String,
+        nextStatus: EventStatus,
+    ): String? {
+        if (nextStatus != EventStatus.DONE) return null
+        return try {
+            client.from("events").update(
+                EventStatusPromoteWrite(
+                    status = EventStatus.DONE.raw,
+                    updatedAt = Instant.now().toString(),
+                ),
+            ) {
+                filter { eq("id", eventId) }
+            }
+            null
+        } catch (error: Exception) {
+            policeEventIdDuplicateOrSaveFailed(error)
         }
     }
 
