@@ -26,6 +26,9 @@ import com.yahpz.domain.EVENT_DRAFT_PARTIAL_SAVED
 import com.yahpz.domain.EVENT_DRAFT_SAVED
 import com.yahpz.domain.FEEDBACK_SENT
 import com.yahpz.domain.EventDraft
+import com.yahpz.domain.forPersistCompare
+import com.yahpz.domain.hasDetailBeyondOpen
+import com.yahpz.domain.validateEventDraftPartial
 import com.yahpz.domain.EventWriteOutcome
 import com.yahpz.domain.InviteDraft
 import com.yahpz.domain.USER_DELETED
@@ -56,12 +59,15 @@ import com.yahpz.domain.androidSessionRpcParams
 import com.yahpz.domain.parseTrackToken
 import com.yahpz.domain.shouldReportAndroidSession
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 enum class AppTab { INBOX, SHIFTS, CONTACTS, MAP, UNIT_EVENTS, UNIT_SHIFTS, TOOLS, REPORTS, PROFILE }
 
@@ -744,23 +750,34 @@ class AppModel : ViewModel() {
         }
     }
 
+    private val eventWriteMutex = Mutex()
+    private val autosavedEventIds = mutableMapOf<String, String>()
+
     suspend fun createUnitEvent(
         draft: EventDraft,
         allowPartial: Boolean = false,
         stayOnForm: Boolean = false,
-    ): EventWriteOutcome {
+        quiet: Boolean = false,
+        formSession: String? = null,
+    ): EventWriteOutcome = surviveNavigation {
         val outcome = YahpazAPI.createUnitEvent(
             draft = draft,
             districts = _state.value.lookups.districts,
             vehicleKinds = _state.value.lookups.vehicleKinds,
             allowPartial = allowPartial,
         )
-        if (outcome.error != null) return outcome
+        if (outcome.error != null) return@surviveNavigation outcome
+        val createdId = outcome.eventId
+        if (formSession != null && createdId != null) {
+            autosavedEventIds[formSession] = createdId
+        }
         reloadUnitEvents()
         viewModelScope.launch { reloadEvents() }
-        showToast(if (allowPartial) EVENT_DRAFT_PARTIAL_SAVED else EVENT_DRAFT_SAVED, StampTone.DONE)
-        if (!stayOnForm) setTab(AppTab.UNIT_EVENTS)
-        return outcome
+        if (!quiet) {
+            showToast(if (allowPartial) EVENT_DRAFT_PARTIAL_SAVED else EVENT_DRAFT_SAVED, StampTone.DONE)
+        }
+        if (!stayOnForm && !quiet) setTab(AppTab.UNIT_EVENTS)
+        outcome
     }
 
     suspend fun updateUnitEvent(
@@ -770,7 +787,8 @@ class AppModel : ViewModel() {
         allowPartial: Boolean = false,
         stayOnForm: Boolean = false,
         previousDraft: EventDraft? = null,
-    ): String? {
+        quiet: Boolean = false,
+    ): String? = surviveNavigation {
         YahpazAPI.updateUnitEvent(
             eventId = eventId,
             draft = draft,
@@ -781,12 +799,84 @@ class AppModel : ViewModel() {
             previousIsCancelled = previousIsCancelled,
             allowPartial = allowPartial,
             previousDraft = previousDraft,
-        )?.let { return it }
+        )?.let { return@surviveNavigation it }
         reloadUnitEvents()
         viewModelScope.launch { reloadEvents() }
-        showToast(if (allowPartial) EVENT_DRAFT_PARTIAL_SAVED else EVENT_DRAFT_SAVED, StampTone.DONE)
-        if (!stayOnForm) setTab(AppTab.UNIT_EVENTS)
-        return null
+        if (!quiet) {
+            showToast(if (allowPartial) EVENT_DRAFT_PARTIAL_SAVED else EVENT_DRAFT_SAVED, StampTone.DONE)
+        }
+        if (!stayOnForm && !quiet) setTab(AppTab.UNIT_EVENTS)
+        null
+    }
+
+    /**
+     * Last keystrokes after the form is gone. Serialized with the other event
+     * writes so an older snapshot cannot land on top of a newer one.
+     */
+    fun flushEventForm(
+        formSession: String,
+        eventId: String?,
+        draft: EventDraft,
+        previousDraft: EventDraft?,
+        previousIsCancelled: Boolean,
+        replaceExisting: Boolean,
+    ) {
+        viewModelScope.launch {
+            eventWriteMutex.withLock {
+                val target = eventId ?: autosavedEventIds[formSession]
+                if (target == null) {
+                    if (!draft.hasDetailBeyondOpen()) return@withLock
+                    if (!validateEventDraftPartial(draft).isEmpty) return@withLock
+                    val outcome = YahpazAPI.createUnitEvent(
+                        draft = draft,
+                        districts = _state.value.lookups.districts,
+                        vehicleKinds = _state.value.lookups.vehicleKinds,
+                        allowPartial = true,
+                    )
+                    val createdId = outcome.eventId
+                    if (outcome.error == null && createdId != null) {
+                        autosavedEventIds[formSession] = createdId
+                        reloadUnitEvents()
+                    }
+                    return@withLock
+                }
+                if (previousDraft == null && !replaceExisting) return@withLock
+                if (previousDraft != null && previousDraft.forPersistCompare() == draft.forPersistCompare()) {
+                    return@withLock
+                }
+                val error = YahpazAPI.updateUnitEvent(
+                    eventId = target,
+                    draft = draft,
+                    districts = _state.value.lookups.districts,
+                    vehicleKinds = _state.value.lookups.vehicleKinds,
+                    viewerIsAdmin = _state.value.canManageUnit,
+                    viewerRoles = _state.value.roles,
+                    previousIsCancelled = previousIsCancelled,
+                    allowPartial = true,
+                    previousDraft = previousDraft,
+                )
+                if (error == null) reloadUnitEvents()
+            }
+        }
+    }
+
+    /**
+     * The form's coroutine dies when the lead leaves the screen. This one does
+     * not, so the last keystrokes still reach the server.
+     */
+    private suspend fun <T> surviveNavigation(block: suspend () -> T): T {
+        val gate = CompletableDeferred<T>()
+        viewModelScope.launch {
+            try {
+                eventWriteMutex.withLock { gate.complete(block()) }
+            } catch (error: CancellationException) {
+                gate.cancel(error)
+                throw error
+            } catch (error: Throwable) {
+                gate.completeExceptionally(error)
+            }
+        }
+        return gate.await()
     }
 
     suspend fun deleteUnitEvent(eventId: String): String? {

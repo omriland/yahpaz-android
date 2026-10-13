@@ -36,6 +36,11 @@ import com.yahpz.domain.EVENT_DRAFT_FORM_ERROR
 import com.yahpz.domain.EVENT_DRAFT_SAVE_FAILED
 import com.yahpz.domain.EVENT_SELF_ASSIGN_ON_CREATE_ERROR
 import com.yahpz.domain.ASSIGNED_VOLUNTEER_EVENT_EDIT_ERROR
+import com.yahpz.domain.changedPersistColumns
+import com.yahpz.domain.eventPersistColumns
+import com.yahpz.domain.responderLeadPatch
+import com.yahpz.domain.secondaryLeadsUnchanged
+import com.yahpz.domain.shouldRewriteTreatedVehicles
 import com.yahpz.domain.EventDraft
 import com.yahpz.domain.EventWriteOutcome
 import com.yahpz.domain.blocksAssignedVolunteerEdit
@@ -195,6 +200,11 @@ import com.yahpz.domain.validateEventDraftPartial
 import com.yahpz.domain.validateInviteDraft
 import com.yahpz.domain.validateResponderFillDraft
 import com.yahpz.domain.validateShiftDraft
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.Email
@@ -1528,6 +1538,7 @@ object YahpazAPI {
                 eventId = inserted.id,
                 eventDate = eventDate,
                 responders = draft.responders,
+                previousResponders = null,
                 vehicleKinds = vehicleKinds,
                 isCancelled = draft.isCancelled,
                 eventStartedAt = eventStartedAt,
@@ -1714,63 +1725,61 @@ object YahpazAPI {
         return try {
             val nextStatus = deriveEventStatusFromDraft(draft.responders)
             val rowStatus = eventStatusForRowWriteBeforeResponders(nextStatus)
-            val locationPayload = buildLocationPayload(draft.locationPin)
-            val callsign = resolvePatrolCallsign(
-                draft.patrolCallsignPrefix,
-                draft.patrolCallsignNumber,
-                draft.patrolCallsign,
-            )
             val overnight = isOvernightEnd(draft.startTime, draft.endTime)
             val eventStartedAt = wallTimestamp(eventDate, draft.startTime, 0)
             val eventEndedAt = wallTimestamp(eventDate, draft.endTime, if (overnight) 1 else 0)
-            val updated = client.from("events").update(
-                EventUpdateWrite(
-                    eventDate = eventDate,
-                    policeEventId = draft.policeEventId.nilIfEmpty(),
-                    districtId = draft.districtId.nilIfEmpty(),
-                    patrolCallsign = formatPatrolCallsign(callsign.prefix, callsign.number).nilIfEmpty(),
-                    patrolCallsignPrefix = callsign.prefix.nilIfEmpty(),
-                    patrolCallsignNumber = callsign.number.nilIfEmpty(),
-                    startedAt = eventStartedAt,
-                    endedAt = eventEndedAt,
-                    eventTypeId = draft.eventTypeId.nilIfEmpty(),
-                    roadId = draft.roadId.nilIfEmpty(),
-                    location = locationPayload.locationOrNull(),
-                    locationPlaceId = locationPayload.locationPlaceId,
-                    locationLat = locationPayload.locationLat,
-                    locationLng = locationPayload.locationLng,
-                    locationPinSource = locationPayload.locationPinSource,
-                    locationPinnedAt = locationPayload.locationPinnedAt,
-                    locationPinnedBy = locationPayload.locationPinnedBy,
-                    station = stationForSave(districts, draft.districtId, draft.station),
-                    notes = draft.notes.nilIfEmpty(),
-                    isCancelled = draft.isCancelled,
-                    busLane = draft.busLane,
-                    status = rowStatus.raw,
-                    shiftLeadId = mainLeadId,
-                    updatedAt = Instant.now().toString(),
-                ),
-            ) {
-                filter { eq("id", eventId) }
-                select(Columns.raw("id"))
-            }.decodeList<IdRow>()
-            if (updated.isEmpty()) return "אין הרשאה לעדכן את האירוע."
+            val nextColumns = eventPersistColumns(draft, districts, mainLeadId).toMutableMap()
+            nextColumns["status"] = rowStatus.raw
+            val previousColumns = previousDraft?.let {
+                eventPersistColumns(it, districts, it.shiftLeadId.ifBlank { mainLeadId })
+            }
+            val eventPatch = if (previousColumns != null) {
+                changedPersistColumns(previousColumns, nextColumns)
+            } else {
+                nextColumns
+            }
+            if (eventPatch.isNotEmpty()) {
+                val updated = client.from("events").update(jsonColumns(eventPatch)) {
+                    filter { eq("id", eventId) }
+                    select(Columns.raw("id"))
+                }.decodeList<IdRow>()
+                if (updated.isEmpty()) return "אין הרשאה לעדכן את האירוע."
+            }
+            val previousStartedAt = previousDraft?.let {
+                val previousDate = normalizeReturnDate(it.eventDate) ?: it.eventDate
+                wallTimestamp(previousDate, it.startTime, 0)
+            }
+            val previousEndedAt = previousDraft?.let {
+                val previousDate = normalizeReturnDate(it.eventDate) ?: it.eventDate
+                val previousOvernight = isOvernightEnd(it.startTime, it.endTime)
+                wallTimestamp(previousDate, it.endTime, if (previousOvernight) 1 else 0)
+            }
             syncEventResponders(
                 eventId = eventId,
                 eventDate = eventDate,
                 responders = draft.responders,
+                previousResponders = previousDraft?.responders,
                 vehicleKinds = vehicleKinds,
                 isCancelled = draft.isCancelled,
                 eventStartedAt = eventStartedAt,
                 eventEndedAt = eventEndedAt,
+                previousStartedAt = previousStartedAt,
+                previousEndedAt = previousEndedAt,
             )?.let { return it }
             promoteEventToDoneIfNeeded(eventId, nextStatus)?.let { return it }
-            syncEventSecondaryLeads(
-                eventId = eventId,
-                desired = draft.secondaryLeads,
-                creatorSecondary = null,
-                mainLeadId = mainLeadId,
-            )
+            if (
+                previousDraft != null &&
+                secondaryLeadsUnchanged(previousDraft.secondaryLeads, draft.secondaryLeads)
+            ) {
+                null
+            } else {
+                syncEventSecondaryLeads(
+                    eventId = eventId,
+                    desired = draft.secondaryLeads,
+                    creatorSecondary = null,
+                    mainLeadId = mainLeadId,
+                )
+            }
         } catch (error: Exception) {
             policeEventIdDuplicateOrSaveFailed(error)
         }
@@ -1909,14 +1918,32 @@ object YahpazAPI {
         return null
     }
 
+    private fun jsonColumns(columns: Map<String, Any?>): JsonObject = buildJsonObject {
+        columns.forEach { (key, value) -> put(key, jsonColumn(value)) }
+        put("updated_at", JsonPrimitive(Instant.now().toString()))
+    }
+
+    private fun jsonColumn(value: Any?): JsonElement = when (value) {
+        null -> JsonNull
+        is Boolean -> JsonPrimitive(value)
+        is Int -> JsonPrimitive(value)
+        is Long -> JsonPrimitive(value)
+        is Double -> JsonPrimitive(value)
+        is String -> JsonPrimitive(value)
+        else -> JsonPrimitive(value.toString())
+    }
+
     private suspend fun syncEventResponders(
         eventId: String,
         eventDate: String,
         responders: List<EventResponderDraft>,
+        previousResponders: List<EventResponderDraft>?,
         vehicleKinds: List<LookupOption>,
         isCancelled: Boolean,
         eventStartedAt: String?,
         eventEndedAt: String?,
+        previousStartedAt: String? = null,
+        previousEndedAt: String? = null,
     ): String? {
         val existing = client.from("event_responders")
             .select(Columns.raw("id, responder_id, status, total_km, ended_at")) {
@@ -1938,24 +1965,24 @@ object YahpazAPI {
             }
             val assignmentId = responder.assignmentId.ifEmpty { null }
                 ?: existingByResponder[responder.responderId]
-            val now = Instant.now().toString()
-            val existingEndedAt = existing.firstOrNull {
-                it.id == assignmentId || it.responderId == responder.responderId
-            }?.endedAt
-            val responderEndedAt = eventEndedAt ?: existingEndedAt
+            val previousRow = previousResponders?.firstOrNull { it.responderId == responder.responderId }
+            val leadPatch = responderLeadPatch(
+                previous = previousRow,
+                next = responder,
+                startedAt = eventStartedAt,
+                endedAt = eventEndedAt,
+                previousStartedAt = previousStartedAt,
+                previousEndedAt = previousEndedAt,
+            )
             val resolvedId = if (assignmentId != null) {
-                client.from("event_responders").update(
-                    EventResponderLeadWrite(
-                        startedAt = eventStartedAt,
-                        endedAt = responderEndedAt,
-                        totalKm = km,
-                        emergencyMeans = responder.emergencyMeans,
-                        updatedAt = now,
-                    ),
-                ) {
-                    filter { eq("id", assignmentId) }
-                    select(Columns.raw("id"))
-                }.decodeList<IdRow>().firstOrNull()?.id ?: assignmentId
+                if (leadPatch.isEmpty()) {
+                    assignmentId
+                } else {
+                    client.from("event_responders").update(jsonColumns(leadPatch)) {
+                        filter { eq("id", assignmentId) }
+                        select(Columns.raw("id"))
+                    }.decodeList<IdRow>().firstOrNull()?.id ?: assignmentId
+                }
             } else {
                 client.from("event_responders").insert(
                     EventResponderInsert(
@@ -1972,6 +1999,9 @@ object YahpazAPI {
                 }.decodeSingle<IdRow>().id
             }
             nextKmRows += FillReadyNextRow(assignmentId = resolvedId, totalKm = km)
+            val rewriteTreated = isCancelled ||
+                shouldRewriteTreatedVehicles(previousRow?.treated, responder.treated)
+            if (!rewriteTreated) continue
             client.from("event_treated_vehicles").delete {
                 filter { eq("event_responder_id", resolvedId) }
             }

@@ -383,6 +383,53 @@ class EventDraftTest {
     }
 
     @Test
+    fun `kilometer edit does not rewrite the rest of the event`() {
+        val previous = draft().copy(
+            policeEventId = "3207",
+            location = "מחלף גלילות",
+            notes = "רכב תקוע בנתיב",
+            startTime = "14:05",
+            shiftLeadId = "lead-1",
+            responders = listOf(
+                EventResponderDraft(responderId = "user-1", assignmentId = "a1", totalKm = "", hasVehicle = true),
+            ),
+        )
+        val next = previous.copy(
+            responders = listOf(previous.responders[0].copy(totalKm = "42")),
+        )
+        val patch = changedPersistColumns(
+            eventPersistColumns(previous, districts, "lead-1"),
+            eventPersistColumns(next, districts, "lead-1"),
+        )
+        assertTrue(patch.isEmpty())
+        assertEquals(
+            mapOf("total_km" to 42.0),
+            responderLeadPatch(
+                previous = previous.responders[0],
+                next = next.responders[0],
+                startedAt = "2026-10-12T14:05:00",
+                endedAt = null,
+                previousStartedAt = "2026-10-12T14:05:00",
+                previousEndedAt = null,
+            ),
+        )
+        assertFalse(
+            shouldRewriteTreatedVehicles(
+                listOf(TreatedVehicleDraft("car", 2)),
+                listOf(TreatedVehicleDraft("car", 2)),
+            ),
+        )
+        assertFalse(shouldRewriteTreatedVehicles(null, emptyList()))
+        val cleared = changedPersistColumns(
+            eventPersistColumns(previous, districts, "lead-1"),
+            eventPersistColumns(previous.copy(location = "", notes = ""), districts, "lead-1"),
+        )
+        assertEquals(null, cleared["location"])
+        assertEquals(null, cleared["notes"])
+        assertFalse(cleared.containsKey("police_event_id"))
+    }
+
+    @Test
     fun `תחנה saves only on the system שלוחה`() {
         assertEquals("איילון", stationForSave(districts, "d-system", "  איילון  "))
         assertNull(stationForSave(districts, "d-system", "   "))

@@ -22,6 +22,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -81,6 +82,7 @@ import com.yahpz.domain.foreignEventEditLeadName
 import com.yahpz.domain.foreignEventEditTitle
 import com.yahpz.domain.isForeignShiftLeadEvent
 import com.yahpz.domain.EventDraftErrors
+import com.yahpz.domain.forPersistCompare
 import com.yahpz.domain.EventResponderDraft
 import com.yahpz.domain.LookupOption
 import com.yahpz.domain.NO_VEHICLE_KM_PLACEHOLDER
@@ -97,7 +99,9 @@ import com.yahpz.domain.createIncludesSelfAssign
 import com.yahpz.domain.eventDraftSummary
 import com.yahpz.domain.isSelfAssignDisabledOnCreate
 import com.yahpz.domain.formatPatrolCallsign
+import com.yahpz.domain.hasDetailBeyondOpen
 import com.yahpz.domain.isEventEditAgeLocked
+import com.yahpz.domain.leadKmForSave
 import com.yahpz.domain.israelNowTime
 import com.yahpz.domain.israelToday
 import com.yahpz.domain.patrolCallsignNumberForInput
@@ -111,6 +115,7 @@ import com.yahpz.domain.treatedQuantity
 import com.yahpz.domain.updateEventResponder
 import com.yahpz.domain.validateEventDraft
 import com.yahpz.domain.validateEventDraftPartial
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 const val NEW_EVENT_TITLE = EVENT_NEW_TITLE
@@ -162,6 +167,20 @@ fun EventFormScreen(
     var detailResponderId by remember { mutableStateOf<String?>(null) }
     var removeResponderId by remember { mutableStateOf<String?>(null) }
     var createdEventId by remember { mutableStateOf<String?>(null) }
+    var quietSaving by remember { mutableStateOf(false) }
+    var quietPending by remember { mutableStateOf(false) }
+    var pendingSave by remember { mutableStateOf<Boolean?>(null) }
+    val formSession = remember { java.util.UUID.randomUUID().toString() }
+    val leaveFlush = remember {
+        object {
+            var eventId: String? = null
+            var draft: EventDraft? = null
+            var previous: EventDraft? = null
+            var previousCancelled: Boolean = false
+            var replaceExisting: Boolean = false
+            var skip: Boolean = true
+        }
+    }
 
     LaunchedEffect(ui.userId) {
         if (ui.lookups.isEmpty && !ui.lookupsLoading) app.reloadLookups()
@@ -274,60 +293,132 @@ fun EventFormScreen(
             isForeignShiftLeadEvent(ui.userId, shiftLeadId) &&
             !foreignEditAcked
 
-    fun persist(allowPartial: Boolean) {
-        if (deleting || saving) return
+    fun persist(allowPartial: Boolean, quiet: Boolean = false) {
+        if (deleting) return
+        if (saving || quietSaving) {
+            if (quiet) quietPending = true else pendingSave = allowPartial
+            return
+        }
         if (assignedBlocked) {
-            formError = ASSIGNED_VOLUNTEER_EVENT_EDIT_ERROR
+            if (!quiet) formError = ASSIGNED_VOLUNTEER_EVENT_EDIT_ERROR
             return
         }
         if (editing && isEventEditAgeLocked(createdAt, ui.roles)) {
-            formError = EVENT_EDIT_LOCKED_TOOLTIP
+            if (!quiet) formError = EVENT_EDIT_LOCKED_TOOLTIP
             return
         }
         if (isForeignShiftLeadEvent(ui.userId, shiftLeadId) && !foreignEditAcked) return
         val current = draft()
         if (!editing && createIncludesSelfAssign(ui.userId.orEmpty(), current.responders)) {
-            formError = EVENT_SELF_ASSIGN_ON_CREATE_ERROR
+            if (!quiet) formError = EVENT_SELF_ASSIGN_ON_CREATE_ERROR
             return
         }
-        val next = if (allowPartial) {
+        if (
+            current.responders.any { row ->
+                row.hasVehicle && row.totalKm.isNotBlank() &&
+                    leadKmForSave(row.hasVehicle, row.totalKm) == null
+            }
+        ) {
+            if (!quiet) formError = "קילומטרים חייבים להיות מספר."
+            return
+        }
+        val next = if (allowPartial || quiet) {
             validateEventDraftPartial(current)
         } else {
             validateEventDraft(current, ui.lookups.districts)
         }
-        errors = next
         if (!next.isEmpty) {
-            formError = next.eventDate ?: next.formMessage
+            if (!quiet) {
+                errors = next
+                formError = next.eventDate ?: next.formMessage
+            }
             return
         }
-        formError = null
+        if (!quiet) {
+            errors = next
+            formError = null
+        }
         scope.launch {
-            saving = true
+            if (quiet) quietSaving = true else saving = true
             val existingId = eventId ?: createdEventId
             if (existingId != null) {
-                formError = app.updateUnitEvent(
+                val error = app.updateUnitEvent(
                     eventId = existingId,
                     draft = current,
                     previousIsCancelled = previousIsCancelled,
-                    allowPartial = allowPartial,
+                    allowPartial = allowPartial || quiet,
                     previousDraft = persistedDraft,
-                    stayOnForm = allowPartial && eventId == null,
+                    stayOnForm = (allowPartial && eventId == null) || quiet,
+                    quiet = quiet,
                 )
-                if (formError == null) persistedDraft = current
+                if (!quiet) formError = error
+                if (error == null) persistedDraft = current
             } else {
                 val outcome = app.createUnitEvent(
                     current,
-                    allowPartial = allowPartial,
-                    stayOnForm = allowPartial,
+                    allowPartial = allowPartial || quiet,
+                    stayOnForm = allowPartial || quiet,
+                    quiet = quiet,
+                    formSession = formSession,
                 )
-                formError = outcome.error
-                if (outcome.error == null && allowPartial) {
+                if (!quiet) formError = outcome.error
+                if (outcome.error == null && (allowPartial || quiet)) {
                     createdEventId = outcome.eventId
                     persistedDraft = current
                 }
             }
-            saving = false
+            if (quiet) quietSaving = false else saving = false
+            val explicit = pendingSave
+            if (explicit != null) {
+                pendingSave = null
+                quietPending = false
+                persist(allowPartial = explicit, quiet = false)
+            } else if (quietPending) {
+                quietPending = false
+                persist(allowPartial = true, quiet = true)
+            }
         }
+    }
+
+    val autosaveDraft = draft()
+    leaveFlush.eventId = eventId ?: createdEventId
+    leaveFlush.draft = autosaveDraft
+    leaveFlush.previous = persistedDraft
+    leaveFlush.previousCancelled = previousIsCancelled
+    leaveFlush.replaceExisting = eventId == null
+    leaveFlush.skip = assignedBlocked ||
+        foreignEditPending ||
+        (editing && !loaded) ||
+        (editing && isEventEditAgeLocked(createdAt, ui.roles))
+
+    DisposableEffect(formSession) {
+        onDispose {
+            val snapshot = leaveFlush.draft ?: return@onDispose
+            if (leaveFlush.skip) return@onDispose
+            app.flushEventForm(
+                formSession = formSession,
+                eventId = leaveFlush.eventId,
+                draft = snapshot,
+                previousDraft = leaveFlush.previous,
+                previousIsCancelled = leaveFlush.previousCancelled,
+                replaceExisting = leaveFlush.replaceExisting,
+            )
+        }
+    }
+
+    LaunchedEffect(autosaveDraft, loaded, foreignEditAcked, assignedBlocked) {
+        if (editing && !loaded) return@LaunchedEffect
+        if (assignedBlocked || foreignEditPending) return@LaunchedEffect
+        if (editing && isEventEditAgeLocked(createdAt, ui.roles)) return@LaunchedEffect
+        if (eventId == null && createdEventId == null && !autosaveDraft.hasDetailBeyondOpen()) {
+            return@LaunchedEffect
+        }
+        val stored = persistedDraft
+        if (stored != null && stored.forPersistCompare() == autosaveDraft.forPersistCompare()) {
+            return@LaunchedEffect
+        }
+        delay(800)
+        persist(allowPartial = true, quiet = true)
     }
 
     val deleteViewer = CockpitDeleteViewer(userId = ui.userId, isAdmin = ui.canAdmin)
@@ -628,6 +719,14 @@ fun EventFormScreen(
                     )
                 }
                 formError?.let { Text(it, style = TypeScale.caption, color = FieldTheme.alert) }
+                if (formError == null && (eventId != null || createdEventId != null)) {
+                    val pending = persistedDraft?.forPersistCompare() != autosaveDraft.forPersistCompare()
+                    Text(
+                        if (saving || quietSaving || pending) "שומר…" else "השינויים נשמרים אוטומטית.",
+                        style = TypeScale.caption,
+                        color = FieldTheme.textMuted,
+                    )
+                }
                 PrimaryButton(
                     title = eventFormPrimarySaveTitle(editing),
                     busy = saving,

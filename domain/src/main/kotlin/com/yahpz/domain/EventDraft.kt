@@ -455,3 +455,138 @@ fun ownResumableEventId(
     val mine = existing.filter { !it.isCancelled && it.shiftLeadId == viewerLeadId }
     return mine.singleOrNull()?.id
 }
+
+private fun String.nilIfBlank(): String? = trim().ifEmpty { null }
+
+/**
+ * Columns an event save is allowed to write. A later edit sends only the keys
+ * that differ, so entering kilometers cannot null location, notes, or anything
+ * this form did not change.
+ */
+fun eventPersistColumns(
+    draft: EventDraft,
+    districts: List<LookupOption>,
+    mainLeadId: String,
+): Map<String, Any?> {
+    val locationPayload = buildLocationPayload(draft.locationPin)
+    val callsign = resolvePatrolCallsign(
+        draft.patrolCallsignPrefix,
+        draft.patrolCallsignNumber,
+        draft.patrolCallsign,
+    )
+    val eventDate = normalizeReturnDate(draft.eventDate) ?: draft.eventDate.trim()
+    val overnight = isOvernightEnd(draft.startTime, draft.endTime)
+    val prefix = patrolCallsignPrefixForInput(callsign.prefix).trim().nilIfBlank()
+    val number = patrolCallsignNumberForInput(callsign.number).nilIfBlank()
+    val rowStatus = eventStatusForRowWriteBeforeResponders(
+        deriveEventStatusFromDraft(draft.responders),
+    )
+    return mapOf(
+        "event_date" to eventDate,
+        "police_event_id" to draft.policeEventId.nilIfBlank(),
+        "district_id" to draft.districtId.nilIfBlank(),
+        "patrol_callsign" to formatPatrolCallsign(prefix, number).nilIfBlank(),
+        "patrol_callsign_prefix" to prefix,
+        "patrol_callsign_number" to number,
+        "started_at" to wallTimestamp(eventDate, draft.startTime, 0),
+        "ended_at" to wallTimestamp(eventDate, draft.endTime, if (overnight) 1 else 0),
+        "event_type_id" to draft.eventTypeId.nilIfBlank(),
+        "road_id" to draft.roadId.nilIfBlank(),
+        "location" to locationPayload.locationOrNull(),
+        "location_place_id" to locationPayload.locationPlaceId,
+        "location_lat" to locationPayload.locationLat,
+        "location_lng" to locationPayload.locationLng,
+        "location_pin_source" to locationPayload.locationPinSource,
+        "location_pinned_at" to locationPayload.locationPinnedAt,
+        "location_pinned_by" to locationPayload.locationPinnedBy,
+        "station" to stationForSave(districts, draft.districtId, draft.station),
+        "notes" to draft.notes.nilIfBlank(),
+        "is_cancelled" to draft.isCancelled,
+        "bus_lane" to draft.busLane,
+        "status" to rowStatus.raw,
+        "shift_lead_id" to mainLeadId,
+    )
+}
+
+/** Equal blanks stay out of the patch so they cannot null a stored column. */
+fun changedPersistColumns(
+    previous: Map<String, Any?>,
+    next: Map<String, Any?>,
+): Map<String, Any?> {
+    val keys = previous.keys + next.keys
+    return keys.mapNotNull { key ->
+        val before = previous[key]
+        val after = next[key]
+        if (before == after) null else key to after
+    }.toMap()
+}
+
+fun shouldRewriteTreatedVehicles(
+    previous: List<TreatedVehicleDraft>?,
+    next: List<TreatedVehicleDraft>,
+): Boolean {
+    fun key(rows: List<TreatedVehicleDraft>) =
+        rows.filter { it.quantity > 0 }
+            .map { "${it.vehicleKindId}:${it.quantity}" }
+            .sorted()
+            .joinToString("|")
+    val nextKey = key(next)
+    if (previous == null) return nextKey.isNotEmpty()
+    return key(previous) != nextKey
+}
+
+fun responderLeadPatch(
+    previous: EventResponderDraft?,
+    next: EventResponderDraft,
+    startedAt: String?,
+    endedAt: String?,
+    previousStartedAt: String?,
+    previousEndedAt: String?,
+): Map<String, Any?> {
+    val km = leadKmForSave(next.hasVehicle, next.totalKm)
+    if (previous == null) {
+        return buildMap {
+            put("started_at", startedAt)
+            if (endedAt != null) put("ended_at", endedAt)
+            put("total_km", km)
+            put("emergency_means", next.emergencyMeans)
+        }
+    }
+    val previousKm = leadKmForSave(previous.hasVehicle, previous.totalKm)
+    return buildMap {
+        if (previousKm != km) put("total_km", km)
+        if (previous.emergencyMeans != next.emergencyMeans) put("emergency_means", next.emergencyMeans)
+        if (previousStartedAt != startedAt) put("started_at", startedAt)
+        if (endedAt != null && previousEndedAt != endedAt) put("ended_at", endedAt)
+    }
+}
+
+fun secondaryLeadsUnchanged(
+    previous: List<SecondaryLead>?,
+    next: List<SecondaryLead>,
+): Boolean {
+    fun key(rows: List<SecondaryLead>) =
+        rows.map { "${it.userId}:${if (it.locked) 1 else 0}" }.sorted().joinToString("|")
+    if (previous == null) return next.isEmpty()
+    return key(previous) == key(next)
+}
+
+/**
+ * True once the lead has typed something past the prefilled date and start
+ * time. Opening "אירוע חדש" must not insert a row by itself.
+ */
+fun EventDraft.hasDetailBeyondOpen(): Boolean =
+    policeEventId.isNotBlank() ||
+        patrolCallsignPrefix.isNotBlank() ||
+        patrolCallsignNumber.isNotBlank() ||
+        endTime.isNotBlank() ||
+        eventTypeId.isNotBlank() ||
+        roadId.isNotBlank() ||
+        districtId.isNotBlank() ||
+        location.isNotBlank() ||
+        station.isNotBlank() ||
+        notes.isNotBlank() ||
+        responders.isNotEmpty() ||
+        secondaryLeads.isNotEmpty() ||
+        isCancelled ||
+        busLane
