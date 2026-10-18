@@ -439,4 +439,29 @@ class EventDraftTest {
         val long = "א".repeat(STATION_MAX_LENGTH + 10)
         assertEquals(STATION_MAX_LENGTH, stationForSave(districts, "d-system", long)?.length)
     }
+
+    @Test
+    fun `persistedEventDraftForRow keeps null event ended_at dirty when UI falls back to responder end time`() {
+        val uiDraft = draft().copy(
+            eventDate = "16.10.2026",
+            policeEventId = "8005",
+            startTime = "18:53",
+            endTime = "19:37",
+            shiftLeadId = "lead-hila",
+        )
+        val persisted = persistedEventDraftForRow(
+            uiDraft = uiDraft,
+            storedStartedAt = "2026-10-16T18:53:00",
+            storedEndedAt = null,
+            responderStartedAts = listOf("2026-10-16T18:53:00"),
+            shiftLeadId = "lead-hila",
+        )
+        assertEquals("", persisted.endTime)
+        assertFalse(persisted.forPersistCompare() == uiDraft.forPersistCompare())
+        val patch = changedPersistColumns(
+            eventPersistColumns(persisted, districts, "lead-hila"),
+            eventPersistColumns(uiDraft, districts, "lead-hila"),
+        )
+        assertEquals("2026-10-16T19:37:00", patch["ended_at"])
+    }
 }

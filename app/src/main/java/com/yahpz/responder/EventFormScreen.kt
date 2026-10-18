@@ -252,7 +252,8 @@ fun EventFormScreen(
         try {
             val detail = YahpazAPI.fetchEventFormDetail(eventId)
             val vehicles = YahpazAPI.fetchVehiclesForResponders(detail.responders.map { it.responderId })
-            val draft = detail.toDraft(vehicles.map { it.userId }.toSet())
+            val ownerIds = vehicles.map { it.userId }.toSet()
+            val draft = detail.toDraft(ownerIds)
             eventDate = draft.eventDate
             policeEventId = draft.policeEventId
             patrolCallsignPrefix = draft.patrolCallsignPrefix
@@ -274,10 +275,7 @@ fun EventFormScreen(
             shiftLeadName = detail.shiftLead?.fullName.orEmpty()
             shiftLeadCallsign = detail.shiftLead?.callsign.orEmpty()
             secondaryLeads = draft.secondaryLeads
-            persistedDraft = draft.copy(
-                shiftLeadId = detail.shiftLeadId.orEmpty(),
-                secondaryLeads = draft.secondaryLeads,
-            )
+            persistedDraft = detail.toPersistedDraft(ownerIds)
             foreignEditAcked = false
             assignedBlocked = draft.blocksAssignedVolunteerEdit(ui.userId)
             loaded = true

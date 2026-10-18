@@ -64,6 +64,7 @@ import com.yahpz.domain.returnDateToInput
 import com.yahpz.domain.toTimeInput
 import com.yahpz.domain.formatPatrolCallsign
 import com.yahpz.domain.israelNowTime
+import com.yahpz.domain.persistedEventDraftForRow
 import com.yahpz.domain.resolvePatrolCallsign
 import com.yahpz.domain.FuelQuarterRow as DomainFuelQuarterRow
 import com.yahpz.domain.formatDate
@@ -1476,6 +1477,15 @@ data class EventFormDetail(
         secondaryLeads = secondaryLeads.map { it.asDomain() },
     )
     }
+
+    fun toPersistedDraft(vehicleOwnerIds: Set<String>): EventDraft =
+        persistedEventDraftForRow(
+            uiDraft = toDraft(vehicleOwnerIds),
+            storedStartedAt = startedAt,
+            storedEndedAt = endedAt,
+            responderStartedAts = responders.map { it.startedAt },
+            shiftLeadId = shiftLeadId.orEmpty(),
+        )
 }
 
 @Serializable

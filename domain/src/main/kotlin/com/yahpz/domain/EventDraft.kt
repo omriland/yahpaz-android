@@ -151,6 +151,28 @@ fun EventDraft.forPersistCompare(): EventDraft = copy(
     secondaryLeads = secondaryLeads.map { it.copy(addedAt = null) },
 )
 
+/**
+ * Baseline representing what is stored on the `events` row. When `events.ended_at`
+ * (or `events.started_at`) is NULL in the DB and `toDraft` pre-filled the input
+ * from a responder's timestamp, `persistedDraft` keeps the stored DB value (`""`)
+ * so saving/autosaving persists the pre-filled time to `events`.
+ */
+fun persistedEventDraftForRow(
+    uiDraft: EventDraft,
+    storedStartedAt: String?,
+    storedEndedAt: String?,
+    responderStartedAts: List<String?>,
+    shiftLeadId: String,
+): EventDraft {
+    val storedStart = toTimeInput(storedStartedAt)
+    val responderHasStart = responderStartedAts.any { toTimeInput(it).isNotEmpty() }
+    return uiDraft.copy(
+        startTime = if (storedStart.isNotEmpty() || responderHasStart) storedStart else uiDraft.startTime,
+        endTime = toTimeInput(storedEndedAt),
+        shiftLeadId = shiftLeadId,
+    )
+}
+
 data class EventDraftErrors(
     val eventDate: String? = null,
     val eventType: String? = null,
