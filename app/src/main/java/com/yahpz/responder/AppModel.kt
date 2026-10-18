@@ -90,6 +90,7 @@ fun appTabForMobileView(view: String): AppTab = when (view) {
 
 data class AppUiState(
     val booting: Boolean = true,
+    val installedFromPlay: Boolean = false,
     val forceUpdate: ForceUpdateRequired? = null,
     val optionalUpdate: OptionalUpdateAvailable? = null,
     val userId: String? = null,
@@ -175,15 +176,15 @@ class AppModel : ViewModel() {
         skippedOptionalVersionCode: Int = 0,
     ) {
         viewModelScope.launch {
-            _state.update { it.copy(booting = true) }
+            _state.update { it.copy(booting = true, installedFromPlay = installedFromPlay) }
             var optionalUpdate: OptionalUpdateAvailable? = null
+            val check = checkSideloadUpdates(BuildConfig.VERSION_CODE)
+            if (check.force != null) {
+                _state.update { it.copy(forceUpdate = check.force, booting = false) }
+                reportAndroidSessionIfDue()
+                return@launch
+            }
             if (!installedFromPlay) {
-                val check = checkSideloadUpdates(BuildConfig.VERSION_CODE)
-                if (check.force != null) {
-                    _state.update { it.copy(forceUpdate = check.force, booting = false) }
-                    reportAndroidSessionIfDue()
-                    return@launch
-                }
                 optionalUpdate = check.optional?.takeIf {
                     it.latestVersionCode != skippedOptionalVersionCode
                 }
@@ -209,7 +210,13 @@ class AppModel : ViewModel() {
     }
 
     fun onForeground() {
-        viewModelScope.launch { reportAndroidSessionIfDue() }
+        viewModelScope.launch {
+            reportAndroidSessionIfDue()
+            val check = checkSideloadUpdates(BuildConfig.VERSION_CODE)
+            if (check.force != null && _state.value.forceUpdate == null) {
+                _state.update { it.copy(forceUpdate = check.force) }
+            }
+        }
     }
 
     fun applyIncomingUrl(url: String) {
@@ -981,6 +988,36 @@ class AppModel : ViewModel() {
         showToast(SHIFT_DRAFT_SAVED, StampTone.DONE)
         setTab(AppTab.UNIT_SHIFTS)
         return null
+    }
+
+    suspend fun autoSaveUnitShift(shiftId: String, draft: ShiftDraft): String? {
+        val error = YahpazAPI.updateUnitShift(shiftId, draft)
+        if (error == null) {
+            reloadUnitShifts()
+            viewModelScope.launch { reloadShifts() }
+        }
+        return error
+    }
+
+    fun flushShiftForm(shiftId: String, draft: ShiftDraft) {
+        viewModelScope.launch {
+            if (com.yahpz.domain.validateShiftDraft(draft).isEmpty) {
+                val error = YahpazAPI.updateUnitShift(shiftId, draft)
+                if (error == null) {
+                    reloadUnitShifts()
+                    reloadShifts()
+                }
+            }
+        }
+    }
+
+    fun flushFillDraft(fill: FillContext, draft: com.yahpz.domain.ResponderFillDraft) {
+        viewModelScope.launch {
+            val errors = com.yahpz.domain.validateResponderFillDraft(draft, com.yahpz.domain.FillMode.DRAFT)
+            if (errors.isEmpty) {
+                YahpazAPI.saveFill(fill, draft, complete = false)
+            }
+        }
     }
 
     suspend fun reloadFuelQuarter(year: Int, quarter: Int) {

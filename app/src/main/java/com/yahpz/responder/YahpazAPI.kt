@@ -689,22 +689,13 @@ object YahpazAPI {
     }
 
     suspend fun deleteUnitEvent(eventId: String): String? = try {
-        client.from("events").delete { filter { eq("id", eventId) } }
-        val stillThere = client.from("events").select(Columns.raw("id, shift_lead_id")) {
-            filter { eq("id", eventId) }
-            limit(1)
-        }.decodeList<EventOwnerRow>()
-        if (stillThere.isEmpty()) null
-        else {
-            val viewerId = sessionUserId()
-            val ownerId = stillThere.first().shiftLeadId
-            if (viewerId != null && ownerId != null && ownerId != viewerId) EVENT_DELETE_OTHER_LEAD
-            else EVENT_DELETE_FAILED
-        }
+        client.postgrest.rpc("delete_event", mapOf("p_event_id" to eventId))
+        null
     } catch (error: CancellationException) {
         throw error
-    } catch (_: Exception) {
-        EVENT_DELETE_FAILED
+    } catch (error: Exception) {
+        val raw = error.message.orEmpty()
+        if (raw.contains("אחמ״ש אחר")) EVENT_DELETE_OTHER_LEAD else EVENT_DELETE_FAILED
     }
 
     suspend fun fetchUnitEventDetailResponders(eventId: String): UnitEventDetailRespondersWrap =

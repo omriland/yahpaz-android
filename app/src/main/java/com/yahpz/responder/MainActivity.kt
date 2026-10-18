@@ -40,7 +40,13 @@ class MainActivity : ComponentActivity() {
                     ),
                     typography = yahpazTypography(),
                 ) {
-                    RootScreen(app, ui)
+                    RootScreen(
+                        app = app,
+                        ui = ui,
+                        onPlayUpdate = {
+                            playUpdate.startImmediateUpdate { PlayInstallSource.openPlayStore(this) }
+                        },
+                    )
                 }
             }
         }
@@ -49,7 +55,16 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         app.onForeground()
-        playUpdate.startIfAvailable()
+        if (app.state.value.forceUpdate != null) {
+            playUpdate.startImmediateUpdate { PlayInstallSource.openPlayStore(this) }
+        } else {
+            playUpdate.startIfAvailable()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        playUpdate.resumeIfInProgress()
     }
 
     override fun onStop() {

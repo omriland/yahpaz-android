@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -45,12 +46,45 @@ fun AvailabilityScreen(app: AppModel, ui: AppUiState, onSaved: () -> Unit = {}) 
     var returnDate by remember { mutableStateOf(returnDateToInput(ui.profile?.availableFrom.orEmpty())) }
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    var autoSaved by remember { mutableStateOf(false) }
     val locked = ui.impersonating
 
     LaunchedEffect(ui.profile?.id, ui.profile?.availability, ui.profile?.availableFrom) {
         ui.profile?.let {
             status = it.availability
             returnDate = returnDateToInput(it.availableFrom.orEmpty())
+        }
+    }
+
+    LaunchedEffect(status, returnDate) {
+        if (locked) return@LaunchedEffect
+        if (status == AvailabilityStatus.UNAVAILABLE && returnDate.isNotBlank()) {
+            kotlinx.coroutines.delay(800)
+            val iso = normalizeReturnDate(returnDate)
+            if (iso != null) {
+                val err = app.saveAvailability(status, returnDate)
+                if (err == null) {
+                    autoSaved = true
+                    error = null
+                }
+            }
+        }
+    }
+
+    fun selectStatus(next: AvailabilityStatus) {
+        if (locked || status == next) return
+        status = next
+        error = null
+        scope.launch {
+            busy = true
+            val dateArg = if (next == AvailabilityStatus.UNAVAILABLE && returnDate.isNotBlank()) returnDate else null
+            val err = app.saveAvailability(next, dateArg)
+            busy = false
+            if (err == null) {
+                autoSaved = true
+            } else {
+                error = err
+            }
         }
     }
 
@@ -65,6 +99,7 @@ fun AvailabilityScreen(app: AppModel, ui: AppUiState, onSaved: () -> Unit = {}) 
         modifier = Modifier
             .fillMaxWidth()
             .background(FieldTheme.page)
+            .imePadding()
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -100,14 +135,14 @@ fun AvailabilityScreen(app: AppModel, ui: AppUiState, onSaved: () -> Unit = {}) 
                 label = "זמין",
                 selected = status == AvailabilityStatus.AVAILABLE,
                 enabled = !locked,
-                onClick = { status = AvailabilityStatus.AVAILABLE },
+                onClick = { selectStatus(AvailabilityStatus.AVAILABLE) },
                 modifier = Modifier.weight(1f),
             )
             AvailabilityChoice(
                 label = "לא זמין",
                 selected = status == AvailabilityStatus.UNAVAILABLE,
                 enabled = !locked,
-                onClick = { status = AvailabilityStatus.UNAVAILABLE },
+                onClick = { selectStatus(AvailabilityStatus.UNAVAILABLE) },
                 modifier = Modifier.weight(1f),
             )
         }
@@ -118,6 +153,9 @@ fun AvailabilityScreen(app: AppModel, ui: AppUiState, onSaved: () -> Unit = {}) 
                 onValueChange = { if (!locked) returnDate = it },
             )
             Text("ניתן לבחור רק תאריך עתידי", style = TypeScale.caption, color = FieldTheme.textMuted)
+        }
+        if (autoSaved && error == null) {
+            Text("השינויים נשמרים אוטומטית.", style = TypeScale.caption, color = FieldTheme.done)
         }
         error?.let { Text(it, style = TypeScale.body, color = FieldTheme.alert) }
         PrimaryButton(

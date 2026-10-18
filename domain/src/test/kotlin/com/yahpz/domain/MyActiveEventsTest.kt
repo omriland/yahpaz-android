@@ -123,11 +123,10 @@ class MyActiveEventsTest {
     }
 
     @Test
-    fun `shift-lead can delete only their own unassigned event`() {
+    fun `shift-lead can delete their own event after the edit lock, even with responders`() {
         assertTrue(
             canDeleteUnassignedEvent(
                 canManageUnit = true,
-                responderCount = 0,
                 viewerIsAdmin = false,
                 viewerId = "lead-a",
                 shiftLeadId = "lead-a",
@@ -136,7 +135,6 @@ class MyActiveEventsTest {
         assertFalse(
             canDeleteUnassignedEvent(
                 canManageUnit = true,
-                responderCount = 0,
                 viewerIsAdmin = false,
                 viewerId = "lead-a",
                 shiftLeadId = "lead-b",
@@ -144,17 +142,7 @@ class MyActiveEventsTest {
         )
         assertFalse(
             canDeleteUnassignedEvent(
-                canManageUnit = true,
-                responderCount = 1,
-                viewerIsAdmin = false,
-                viewerId = "lead-a",
-                shiftLeadId = "lead-a",
-            ),
-        )
-        assertFalse(
-            canDeleteUnassignedEvent(
                 canManageUnit = false,
-                responderCount = 0,
                 viewerIsAdmin = false,
                 viewerId = "lead-a",
                 shiftLeadId = "lead-a",
@@ -163,11 +151,10 @@ class MyActiveEventsTest {
     }
 
     @Test
-    fun `admin can delete another lead's unassigned event`() {
+    fun `admin can delete another lead's event`() {
         assertTrue(
             canDeleteUnassignedEvent(
                 canManageUnit = true,
-                responderCount = 0,
                 viewerIsAdmin = true,
                 viewerId = "admin",
                 shiftLeadId = "lead-b",

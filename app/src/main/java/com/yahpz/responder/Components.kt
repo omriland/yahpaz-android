@@ -391,7 +391,13 @@ fun FormField(
                     onGo = { dismissKeyboard() },
                     onSearch = { dismissKeyboard() },
                     onSend = { dismissKeyboard() },
-                    onNext = { dismissKeyboard() },
+                    onNext = {
+                        if (imeAction == ImeAction.Next) {
+                            focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Down)
+                        } else {
+                            dismissKeyboard()
+                        }
+                    },
                 ),
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = FieldTheme.raised,

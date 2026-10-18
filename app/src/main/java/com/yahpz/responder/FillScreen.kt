@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -218,6 +219,10 @@ fun FillScreen(eventId: String, app: AppModel) {
 
     fun leaveFill() {
         persistLocalDraft()
+        val fill = latestContext
+        if (fill != null && !isReadOnly(fill)) {
+            app.flushFillDraft(fill, latestDraft)
+        }
         app.closeFill()
     }
 
@@ -288,16 +293,32 @@ fun FillScreen(eventId: String, app: AppModel) {
         FillDraftStore.rememberLive(fill.assignmentId, draft)
         delay(FILL_STASH_DEBOUNCE_MS)
         persistLocalDraft()
+        val errors = validateResponderFillDraft(draft, FillMode.DRAFT)
+        if (errors.isEmpty) {
+            runCatching {
+                YahpazAPI.saveFill(fill, draft, complete = false, unfinishedMediaDrafts)
+            }
+        }
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, context?.assignmentId) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) persistLocalDraft()
+            if (event == Lifecycle.Event.ON_STOP) {
+                persistLocalDraft()
+                val fill = latestContext
+                if (fill != null && !isReadOnly(fill)) {
+                    app.flushFillDraft(fill, latestDraft)
+                }
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             persistLocalDraft()
+            val fill = latestContext
+            if (fill != null && !isReadOnly(fill)) {
+                app.flushFillDraft(fill, latestDraft)
+            }
             lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
@@ -328,9 +349,9 @@ fun FillScreen(eventId: String, app: AppModel) {
                 if (fill != null && !isReadOnly(fill)) {
                     Text(
                         if (localSavedAt > 0L) {
-                            "נשמר במכשיר ${fillDraftSavedLabel(localSavedAt)}"
+                            "נשמר אוטומטית במכשיר ${fillDraftSavedLabel(localSavedAt)}"
                         } else {
-                            "הפרטים נשמרים במכשיר עד לשליחה."
+                            "הפרטים נשמרים אוטומטית במכשיר ובענן עד לשליחה."
                         },
                         style = TypeScale.caption,
                         color = FieldTheme.textMuted,
@@ -383,6 +404,7 @@ fun FillScreen(eventId: String, app: AppModel) {
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
+                            .imePadding()
                             .verticalScroll(rememberScrollState())
                             .padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp),

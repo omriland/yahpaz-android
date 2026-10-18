@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -67,9 +68,34 @@ fun ShiftFormScreen(
     var errors by remember { mutableStateOf(ShiftDraftErrors()) }
     var formError by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
+    var quietSaving by remember { mutableStateOf(false) }
+    var persistedDraft by remember { mutableStateOf<ShiftDraft?>(null) }
+
+    fun currentDraft() = ShiftDraft(
+        shiftDate = shiftDate,
+        shiftKind = shiftKind,
+        vehicleType = vehicleType,
+        notes = notes,
+        responderIds = responderIds,
+        personalVehicleId = personalVehicleId,
+    )
 
     LaunchedEffect(ui.userId) {
         if (ui.assignableProfiles.isEmpty() && !ui.lookupsLoading) app.reloadLookups()
+    }
+
+    LaunchedEffect(Unit) {
+        if (!editing) {
+            val stashed = ShiftDraftStore.read()
+            if (stashed != null) {
+                shiftDate = stashed.draft.shiftDate.ifBlank { shiftDate }
+                shiftKind = stashed.draft.shiftKind
+                vehicleType = stashed.draft.vehicleType
+                personalVehicleId = stashed.draft.personalVehicleId
+                notes = stashed.draft.notes
+                responderIds = stashed.draft.responderIds
+            }
+        }
     }
 
     LaunchedEffect(shiftId) {
@@ -85,10 +111,55 @@ fun ShiftFormScreen(
             personalVehicleId = draft.personalVehicleId
             notes = draft.notes
             responderIds = draft.responderIds
+            persistedDraft = draft
             loaded = true
         } catch (_: Exception) {
             loadFailed = true
             loaded = true
+        }
+    }
+
+    val current = currentDraft()
+
+    // For new shifts: auto-stash locally on change
+    LaunchedEffect(current) {
+        if (!editing) {
+            if (shiftKind.isNotBlank() || vehicleType.isNotBlank() || notes.isNotBlank() || responderIds.isNotEmpty()) {
+                kotlinx.coroutines.delay(600)
+                ShiftDraftStore.stash(current)
+            }
+        }
+    }
+
+    // For editing shifts: auto-save to server debounced when valid and changed
+    LaunchedEffect(current, loaded) {
+        if (!editing || !loaded) return@LaunchedEffect
+        val stored = persistedDraft ?: return@LaunchedEffect
+        if (stored == current) return@LaunchedEffect
+        val validation = validateShiftDraft(current)
+        if (!validation.isEmpty) return@LaunchedEffect
+        kotlinx.coroutines.delay(800)
+        quietSaving = true
+        val error = app.autoSaveUnitShift(shiftId, current)
+        quietSaving = false
+        if (error == null) {
+            persistedDraft = current
+        }
+    }
+
+    androidx.compose.runtime.DisposableEffect(shiftId) {
+        onDispose {
+            if (!editing) {
+                val draft = currentDraft()
+                if (draft.shiftKind.isNotBlank() || draft.vehicleType.isNotBlank() || draft.notes.isNotBlank() || draft.responderIds.isNotEmpty()) {
+                    ShiftDraftStore.stash(draft)
+                }
+            } else if (loaded) {
+                val draft = currentDraft()
+                if (draft != persistedDraft) {
+                    app.flushShiftForm(shiftId, draft)
+                }
+            }
         }
     }
 
@@ -128,6 +199,7 @@ fun ShiftFormScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(FieldTheme.page)
+            .imePadding()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp)
             .padding(top = 12.dp),
@@ -212,6 +284,22 @@ fun ShiftFormScreen(
                     minHeight = 96,
                 )
                 formError?.let { Text(it, style = TypeScale.caption, color = FieldTheme.alert) }
+                if (formError == null) {
+                    if (editing && loaded) {
+                        val pending = persistedDraft != current
+                        Text(
+                            if (saving || quietSaving || pending) "שומר…" else "השינויים נשמרים אוטומטית.",
+                            style = TypeScale.caption,
+                            color = FieldTheme.textMuted,
+                        )
+                    } else if (!editing && (shiftKind.isNotBlank() || vehicleType.isNotBlank() || notes.isNotBlank() || responderIds.isNotEmpty())) {
+                        Text(
+                            "הטיוטה נשמרת אוטומטית במכשיר.",
+                            style = TypeScale.caption,
+                            color = FieldTheme.textMuted,
+                        )
+                    }
+                }
                 PrimaryButton(
                     title = SHIFT_SAVE_TITLE,
                     busy = saving,
@@ -233,11 +321,14 @@ fun ShiftFormScreen(
                         formError = null
                         scope.launch {
                             saving = true
-                            formError = if (shiftId != null) {
+                            val err = if (shiftId != null) {
                                 app.updateUnitShift(shiftId, draft)
                             } else {
-                                app.createUnitShift(draft)
+                                val createdErr = app.createUnitShift(draft)
+                                if (createdErr == null) ShiftDraftStore.clear()
+                                createdErr
                             }
+                            formError = err
                             saving = false
                         }
                     },

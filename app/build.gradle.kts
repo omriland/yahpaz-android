@@ -22,14 +22,14 @@ val mapsApiKey = localProperties.getProperty("MAPS_API_KEY").orEmpty()
 
 android {
     namespace = "com.yahpz.responder"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.yahpz.responder"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 54
-        versionName = "0.3.43"
+        targetSdk = 36
+        versionCode = 60
+        versionName = "0.3.46"
         manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
         buildConfigField("String", "MAPS_API_KEY", "\"${mapsApiKey.replace("\"", "\\\"")}\"")
     }
@@ -115,4 +115,19 @@ dependencies {
     implementation(libs.play.services.maps)
     implementation(libs.android.maps.utils)
     implementation(libs.places)
+}
+
+tasks.matching { it.name == "processApplicationManifestReleaseForBundle" }.configureEach {
+    doLast {
+        val manifestDir = layout.buildDirectory.dir("intermediates/bundle_manifest/release/processApplicationManifestReleaseForBundle").get().asFile
+        val manifestFile = File(manifestDir, "AndroidManifest.xml")
+        if (manifestFile.exists()) {
+            val original = manifestFile.readText()
+            val stripped = original.replace(
+                Regex("""<uses-permission\s+android:name="android\.permission\.REQUEST_INSTALL_PACKAGES"\s*/>\s*"""),
+                ""
+            )
+            manifestFile.writeText(stripped)
+        }
+    }
 }

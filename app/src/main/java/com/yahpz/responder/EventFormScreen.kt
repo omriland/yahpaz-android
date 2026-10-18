@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -53,7 +54,12 @@ import com.yahpz.domain.EVENT_CANCELLED_LABEL
 import com.yahpz.domain.EVENT_EDIT_LOAD_FAILED
 import com.yahpz.domain.EVENT_EDIT_TITLE
 import com.yahpz.domain.EVENT_NEW_TITLE
+import com.yahpz.domain.EVENT_DELETE_ACTION
+import com.yahpz.domain.EVENT_DELETE_CONFIRM
+import com.yahpz.domain.EVENT_DELETE_CONFIRM_WITH_RESPONDERS
+import com.yahpz.domain.EVENT_DELETE_TITLE
 import com.yahpz.domain.EVENT_EDIT_LOCKED_TOOLTIP
+import com.yahpz.domain.canDeleteUnassignedEvent
 import com.yahpz.domain.EVENT_FORM_DETAILS_SECTION
 import com.yahpz.domain.EVENT_FORM_LEADS_SECTION
 import com.yahpz.domain.EVENT_FORM_RESPONDERS_SECTION
@@ -213,6 +219,31 @@ fun EventFormScreen(
         deleteHint = null
     }
 
+    LaunchedEffect(Unit) {
+        if (!editing && createdEventId == null) {
+            val stashed = EventDraftStore.read()
+            if (stashed != null && stashed.draft.hasDetailBeyondOpen()) {
+                val d = stashed.draft
+                eventDate = d.eventDate.ifBlank { eventDate }
+                policeEventId = d.policeEventId
+                patrolCallsignPrefix = d.patrolCallsignPrefix
+                patrolCallsignNumber = d.patrolCallsignNumber
+                startTime = d.startTime.ifBlank { startTime }
+                endTime = d.endTime
+                eventTypeId = d.eventTypeId
+                roadId = d.roadId
+                districtId = d.districtId
+                locationPin = d.locationPin
+                station = d.station
+                notes = d.notes
+                responders = d.responders
+                isCancelled = d.isCancelled
+                busLane = d.busLane
+                secondaryLeads = d.secondaryLeads
+            }
+        }
+    }
+
     LaunchedEffect(eventId) {
         if (eventId == null) return@LaunchedEffect
         loaded = false
@@ -365,6 +396,7 @@ fun EventFormScreen(
                 if (outcome.error == null && (allowPartial || quiet)) {
                     createdEventId = outcome.eventId
                     persistedDraft = current
+                    EventDraftStore.clear()
                 }
             }
             if (quiet) quietSaving = false else saving = false
@@ -394,6 +426,9 @@ fun EventFormScreen(
     DisposableEffect(formSession) {
         onDispose {
             val snapshot = leaveFlush.draft ?: return@onDispose
+            if (!editing && leaveFlush.eventId == null && snapshot.hasDetailBeyondOpen()) {
+                EventDraftStore.stash(snapshot)
+            }
             if (leaveFlush.skip) return@onDispose
             app.flushEventForm(
                 formSession = formSession,
@@ -410,8 +445,12 @@ fun EventFormScreen(
         if (editing && !loaded) return@LaunchedEffect
         if (assignedBlocked || foreignEditPending) return@LaunchedEffect
         if (editing && isEventEditAgeLocked(createdAt, ui.roles)) return@LaunchedEffect
-        if (eventId == null && createdEventId == null && !autosaveDraft.hasDetailBeyondOpen()) {
-            return@LaunchedEffect
+        if (eventId == null && createdEventId == null) {
+            if (autosaveDraft.hasDetailBeyondOpen()) {
+                EventDraftStore.stash(autosaveDraft)
+            } else {
+                return@LaunchedEffect
+            }
         }
         val stored = persistedDraft
         if (stored != null && stored.forPersistCompare() == autosaveDraft.forPersistCompare()) {
@@ -471,6 +510,7 @@ fun EventFormScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(FieldTheme.page)
+            .imePadding()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp)
             .padding(top = 12.dp),
@@ -489,11 +529,53 @@ fun EventFormScreen(
                 actionTitle = "חזרה",
                 onAction = onBack,
             )
-            editing && isEventEditAgeLocked(createdAt, ui.roles) -> EmptyState(
-                title = EVENT_EDIT_LOCKED_TOOLTIP,
-                actionTitle = "חזרה",
-                onAction = onBack,
-            )
+            editing && isEventEditAgeLocked(createdAt, ui.roles) -> Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                EmptyState(
+                    title = EVENT_EDIT_LOCKED_TOOLTIP,
+                    actionTitle = "חזרה",
+                    onAction = onBack,
+                )
+                if (canDeleteUnassignedEvent(ui.canManageUnit, ui.canAdmin, ui.userId, shiftLeadId)) {
+                    if (confirmDelete) {
+                        Text(
+                            if (responders.isNotEmpty()) {
+                                EVENT_DELETE_CONFIRM_WITH_RESPONDERS
+                            } else {
+                                EVENT_DELETE_CONFIRM
+                            },
+                            style = TypeScale.body,
+                            color = FieldTheme.textSecondary,
+                        )
+                        GhostButton(
+                            title = EVENT_DELETE_ACTION,
+                            danger = true,
+                            enabled = !deleting,
+                            onClick = {
+                                val id = eventId ?: return@GhostButton
+                                scope.launch {
+                                    deleting = true
+                                    val error = app.deleteUnitEvent(id)
+                                    deleting = false
+                                    if (error != null) {
+                                        formError = error
+                                        confirmDelete = false
+                                    } else {
+                                        onBack()
+                                    }
+                                }
+                            },
+                        )
+                    } else {
+                        GhostButton(
+                            title = EVENT_DELETE_TITLE,
+                            danger = true,
+                            onClick = { confirmDelete = true },
+                        )
+                    }
+                }
+            }
             foreignEditPending -> { /* confirm sheet below */ }
             ui.lookupsFailed && ui.lookups.isEmpty -> EmptyState(
                 title = "טעינת הרשימות נכשלה. בדקו את החיבור ונסו שוב.",
@@ -719,13 +801,21 @@ fun EventFormScreen(
                     )
                 }
                 formError?.let { Text(it, style = TypeScale.caption, color = FieldTheme.alert) }
-                if (formError == null && (eventId != null || createdEventId != null)) {
-                    val pending = persistedDraft?.forPersistCompare() != autosaveDraft.forPersistCompare()
-                    Text(
-                        if (saving || quietSaving || pending) "שומר…" else "השינויים נשמרים אוטומטית.",
-                        style = TypeScale.caption,
-                        color = FieldTheme.textMuted,
-                    )
+                if (formError == null) {
+                    if (eventId != null || createdEventId != null) {
+                        val pending = persistedDraft?.forPersistCompare() != autosaveDraft.forPersistCompare()
+                        Text(
+                            if (saving || quietSaving || pending) "שומר…" else "השינויים נשמרים אוטומטית.",
+                            style = TypeScale.caption,
+                            color = FieldTheme.textMuted,
+                        )
+                    } else if (autosaveDraft.hasDetailBeyondOpen()) {
+                        Text(
+                            if (saving || quietSaving) "שומר…" else "הטיוטה נשמרת אוטומטית במכשיר.",
+                            style = TypeScale.caption,
+                            color = FieldTheme.textMuted,
+                        )
+                    }
                 }
                 PrimaryButton(
                     title = eventFormPrimarySaveTitle(editing),

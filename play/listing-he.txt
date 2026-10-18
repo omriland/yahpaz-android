@@ -40,4 +40,11 @@ Phone: leave blank unless Play requires it
 Graphics
 High-res icon: play/assets/icon-512.png
 Feature graphic: play/assets/feature-graphic-1024x500.png
-Phone screenshots: at least 2 from a real device (1080x1920 or similar). Capture Inbox, Availability, and Login.
+Phone screenshots (1080x2400, no-alpha RGB / JPEG):
+- play/assets/screenshot-1-events.jpg (אירועים פעילים)
+- play/assets/screenshot-2-my-events.jpg (האירועים שלי)
+- play/assets/screenshot-3-event-form.jpg (טופס דיווח אירוע)
+- play/assets/screenshot-4-shifts.jpg (לוח משמרות יחידה)
+- play/assets/screenshot-5-shift-form.jpg (טופס משמרת חדשה)
+- play/assets/screenshot-6-profile.jpg (פרופיל מתנדב ורכבים)
+- play/assets/screenshot-7-availability.jpg (עדכון זמינות מהיר)

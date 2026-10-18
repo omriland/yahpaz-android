@@ -65,7 +65,11 @@ import com.yahpz.domain.splitMobileNav
 import kotlinx.coroutines.launch
 
 @Composable
-fun RootScreen(app: AppModel, ui: AppUiState) {
+fun RootScreen(
+    app: AppModel,
+    ui: AppUiState,
+    onPlayUpdate: () -> Unit = {},
+) {
     var feedbackOpen by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val trackBlocking = ui.trackToken != null && ui.fillEventId == null && !ui.mustChangePassword
@@ -85,7 +89,13 @@ fun RootScreen(app: AppModel, ui: AppUiState) {
         Box(Modifier.weight(1f).fillMaxSize()) {
         when {
             ui.booting -> SafeEdgeScreen { Booting() }
-            ui.forceUpdate != null -> SafeEdgeScreen { ForceUpdateScreen(ui.forceUpdate) }
+            ui.forceUpdate != null -> SafeEdgeScreen {
+                ForceUpdateScreen(
+                    update = ui.forceUpdate,
+                    installedFromPlay = ui.installedFromPlay,
+                    onPlayUpdate = onPlayUpdate,
+                )
+            }
             ui.trackToken != null && !ui.isSignedIn -> SafeEdgeScreen {
                 LiveTrackScreen(ui.trackToken, app::closeTrack)
             }
@@ -191,7 +201,11 @@ private fun Booting() {
 }
 
 @Composable
-private fun ForceUpdateScreen(update: ForceUpdateRequired) {
+private fun ForceUpdateScreen(
+    update: ForceUpdateRequired,
+    installedFromPlay: Boolean = false,
+    onPlayUpdate: () -> Unit = {},
+) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -217,11 +231,19 @@ private fun ForceUpdateScreen(update: ForceUpdateRequired) {
             } else {
                 Spacer(Modifier.height(24.dp))
             }
-            InAppUpdateActions(
-                apkUrl = update.apkUrl,
-                updateTitle = "הורדה והתקנה",
-                command = true,
-            )
+            if (installedFromPlay) {
+                PrimaryButton(
+                    title = "עדכון גרסה",
+                    command = true,
+                    onClick = onPlayUpdate,
+                )
+            } else {
+                InAppUpdateActions(
+                    apkUrl = update.apkUrl,
+                    updateTitle = "הורדה והתקנה",
+                    command = true,
+                )
+            }
         }
     }
 }

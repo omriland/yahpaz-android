@@ -14,6 +14,8 @@ class YahpazApplication : Application() {
         super.onCreate()
         ViewAsStore.init(this)
         FillDraftStore.init(this)
+        ShiftDraftStore.init(this)
+        EventDraftStore.init(this)
     }
 }
 

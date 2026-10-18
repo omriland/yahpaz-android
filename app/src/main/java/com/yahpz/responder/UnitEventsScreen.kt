@@ -59,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.yahpz.domain.EVENT_DELETE_ACTION
 import com.yahpz.domain.EVENT_DELETE_CONFIRM
+import com.yahpz.domain.EVENT_DELETE_CONFIRM_WITH_RESPONDERS
 import com.yahpz.domain.EVENT_DELETE_TITLE
 import com.yahpz.domain.EVENT_EDIT_LOCKED_TOOLTIP
 import com.yahpz.domain.EVENT_EDIT_TITLE
@@ -664,13 +665,20 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                 }
                 if (canDeleteUnassignedEvent(
                         ui.canManageUnit,
-                        current.responders.size,
                         ui.canAdmin,
                         ui.userId,
                         current.shiftLeadId,
                     )) {
                     if (confirmDelete) {
-                        Text(EVENT_DELETE_CONFIRM, style = TypeScale.body, color = FieldTheme.textSecondary)
+                        Text(
+                            if (current.responders.isNotEmpty()) {
+                                EVENT_DELETE_CONFIRM_WITH_RESPONDERS
+                            } else {
+                                EVENT_DELETE_CONFIRM
+                            },
+                            style = TypeScale.body,
+                            color = FieldTheme.textSecondary,
+                        )
                         GhostButton(
                             title = EVENT_DELETE_ACTION,
                             danger = true,

@@ -8,10 +8,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.lifecycle.viewModelScope
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -84,6 +86,7 @@ fun ProfileScreen(app: AppModel, ui: AppUiState) {
         modifier = Modifier
             .fillMaxSize()
             .background(FieldTheme.page)
+            .imePadding()
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -258,6 +261,26 @@ private fun VehiclesSection(
 
     fun patch(key: String, transform: (ProfileVehicleDraft) -> ProfileVehicleDraft) {
         drafts = drafts.map { if (it.key == key) transform(it) else it }
+    }
+
+    androidx.compose.runtime.DisposableEffect(editingKey) {
+        onDispose {
+            editingKey?.let { key ->
+                val v = drafts.find { it.key == key }
+                if (v != null && !v.archived && v.plate.isNotBlank() && v.model.isNotBlank()) {
+                    val fields = vehicleFieldsForSave(v.plate, v.model)
+                    if (fields !is VehicleFieldsError) {
+                        app.viewModelScope.launch {
+                            if (v.id == null) {
+                                app.createOwnVehicle(v.plate, v.model)
+                            } else {
+                                app.updateOwnVehicle(v.id, v.plate, v.model)
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     fun persist(key: String) {
