@@ -7,6 +7,14 @@ import org.junit.Test
 
 class UserFeedbackTest {
     @Test
+    fun publishesTheIsraeliSupportNumber() {
+        assertEquals("054-865-4223", SUPPORT_WHATSAPP_DISPLAY)
+        assertEquals("https://wa.me/972548654223", SUPPORT_WHATSAPP_HREF)
+        assertEquals("לתמיכה ישירה בוואטסאפ", SUPPORT_WHATSAPP_ACTION)
+        assertEquals("לשליחת פידבק או דיווח על תקלה", SUPPORT_FEEDBACK_ACTION)
+    }
+
+    @Test
     fun requiresKindAndContent() {
         assertEquals(
             FEEDBACK_KIND_ERROR,

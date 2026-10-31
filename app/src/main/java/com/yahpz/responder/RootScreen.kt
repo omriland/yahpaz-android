@@ -103,8 +103,8 @@ fun RootScreen(
             ui.mustChangePassword -> Box(Modifier.fillMaxSize()) {
                 SafeEdgeScreen { ProfileScreen(app, ui) }
                 if (showFeedbackFab) {
-                    FeedbackMiniFab(
-                        onClick = { feedbackOpen = true },
+                    SupportFab(
+                        onOpenFeedback = { feedbackOpen = true },
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
                             .navigationBarsPadding()
@@ -463,7 +463,7 @@ private fun MainTabs(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     if (showFeedbackFab) {
-                        FeedbackMiniFab(onClick = onOpenFeedback)
+                        SupportFab(onOpenFeedback = onOpenFeedback)
                     }
                     if (showCreate) {
                         when (contentTab) {

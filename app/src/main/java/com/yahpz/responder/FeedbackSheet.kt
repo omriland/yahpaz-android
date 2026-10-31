@@ -1,7 +1,9 @@
 package com.yahpz.responder
 
 import android.Manifest
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.MediaRecorder
 import android.net.Uri
@@ -10,7 +12,9 @@ import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
@@ -45,8 +50,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextDirection
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.yahpz.domain.FEEDBACK_ATTACH_ADD
@@ -59,6 +66,12 @@ import com.yahpz.domain.FEEDBACK_HIDE_UNTIL_REFRESH
 import com.yahpz.domain.FEEDBACK_KIND_BUG
 import com.yahpz.domain.FEEDBACK_KIND_SUGGESTION
 import com.yahpz.domain.FEEDBACK_LABEL
+import com.yahpz.domain.SUPPORT_FAB_LABEL
+import com.yahpz.domain.SUPPORT_FEEDBACK_ACTION
+import com.yahpz.domain.SUPPORT_WHATSAPP_ACTION
+import com.yahpz.domain.SUPPORT_WHATSAPP_DISPLAY
+import com.yahpz.domain.SUPPORT_WHATSAPP_FOOTER
+import com.yahpz.domain.SUPPORT_WHATSAPP_HREF
 import com.yahpz.domain.FEEDBACK_MIC_ERROR
 import com.yahpz.domain.FEEDBACK_RECORD_MAX_SECONDS
 import com.yahpz.domain.FeedbackPickedMeta
@@ -75,14 +88,90 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 @Composable
-fun FeedbackMiniFab(onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun FeedbackMiniFab(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    contentDescription: String = FEEDBACK_LABEL,
+) {
     FloatingActionButton(
         onClick = onClick,
         containerColor = FieldTheme.accent,
         contentColor = FieldTheme.textOnAccent,
         modifier = modifier.heightIn(min = 44.dp),
     ) {
-        Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = FEEDBACK_LABEL)
+        Icon(Icons.Outlined.ChatBubbleOutline, contentDescription = contentDescription)
+    }
+}
+
+fun openSupportWhatsapp(context: Context) {
+    try {
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(SUPPORT_WHATSAPP_HREF)))
+    } catch (_: ActivityNotFoundException) {
+        // https links open in a browser when WhatsApp is missing; this only fires if nothing can view the URL.
+    }
+}
+
+@Composable
+fun SupportFab(onOpenFeedback: () -> Unit, modifier: Modifier = Modifier) {
+    var menuOpen by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        if (menuOpen) {
+            SupportChoice(SUPPORT_WHATSAPP_ACTION) {
+                menuOpen = false
+                openSupportWhatsapp(context)
+            }
+            SupportChoice(SUPPORT_FEEDBACK_ACTION) {
+                menuOpen = false
+                onOpenFeedback()
+            }
+        }
+        FeedbackMiniFab(
+            onClick = { menuOpen = !menuOpen },
+            contentDescription = SUPPORT_FAB_LABEL,
+        )
+    }
+}
+
+@Composable
+private fun SupportChoice(label: String, onClick: () -> Unit) {
+    Text(
+        text = label,
+        style = TypeScale.body,
+        color = FieldTheme.textPrimary,
+        modifier = Modifier
+            .widthIn(max = 280.dp)
+            .heightIn(min = 44.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(FieldTheme.raised)
+            .border(1.dp, FieldTheme.hairline, RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    )
+}
+
+@Composable
+fun WhatsAppSupportLink() {
+    val context = LocalContext.current
+    TextButton(
+        onClick = { openSupportWhatsapp(context) },
+        modifier = Modifier.heightIn(min = 44.dp),
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(SUPPORT_WHATSAPP_FOOTER, style = TypeScale.caption, color = FieldTheme.textMuted)
+            Text(
+                SUPPORT_WHATSAPP_DISPLAY,
+                style = TypeScale.body.copy(textDirection = TextDirection.Ltr),
+                color = FieldTheme.textPrimary,
+            )
+        }
     }
 }
 

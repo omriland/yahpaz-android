@@ -143,6 +143,7 @@ fun ProfileScreen(app: AppModel, ui: AppUiState) {
                 )
             }
         }
+        WhatsAppSupportLink()
         PrivacyPolicyLink(onOpen = { app.openPrivacy() })
         GhostButton(title = "יציאה", onClick = { app.signOut() })
     }
