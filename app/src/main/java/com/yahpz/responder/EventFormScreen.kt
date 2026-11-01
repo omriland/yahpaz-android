@@ -93,6 +93,9 @@ import com.yahpz.domain.EventResponderDraft
 import com.yahpz.domain.LookupOption
 import com.yahpz.domain.NO_VEHICLE_KM_PLACEHOLDER
 import com.yahpz.domain.EVENT_STATION_LABEL
+import com.yahpz.domain.EVENT_TYPE_DETAIL_LABEL
+import com.yahpz.domain.EVENT_TYPE_DETAIL_MAX_LENGTH
+import com.yahpz.domain.isOtherEventTypeId
 import com.yahpz.domain.RESPONDERS_HELD_FOR_POLICE_ID_NOTE
 import com.yahpz.domain.eventReleasedToResponders
 import com.yahpz.domain.STATION_MAX_LENGTH
@@ -101,6 +104,7 @@ import com.yahpz.domain.districtNeedsStation
 import com.yahpz.domain.stationAfterDistrictChange
 import com.yahpz.domain.bumpTreatedVehicle
 import com.yahpz.domain.canToggleEventCancelled
+import com.yahpz.domain.respondersForEventCancelToggle
 import com.yahpz.domain.createIncludesSelfAssign
 import com.yahpz.domain.eventDraftSummary
 import com.yahpz.domain.isSelfAssignDisabledOnCreate
@@ -144,6 +148,7 @@ fun EventFormScreen(
     var endTime by remember { mutableStateOf("") }
     var createdAt by remember { mutableStateOf("") }
     var eventTypeId by remember { mutableStateOf("") }
+    var eventTypeDetail by remember { mutableStateOf("") }
     var roadId by remember { mutableStateOf("") }
     var districtId by remember { mutableStateOf("") }
     var locationPin by remember { mutableStateOf(LocationPinFields()) }
@@ -231,6 +236,7 @@ fun EventFormScreen(
                 startTime = d.startTime.ifBlank { startTime }
                 endTime = d.endTime
                 eventTypeId = d.eventTypeId
+                eventTypeDetail = d.eventTypeDetail
                 roadId = d.roadId
                 districtId = d.districtId
                 locationPin = d.locationPin
@@ -262,6 +268,7 @@ fun EventFormScreen(
             endTime = draft.endTime
             createdAt = draft.createdAt
             eventTypeId = draft.eventTypeId
+            eventTypeDetail = draft.eventTypeDetail
             roadId = draft.roadId
             districtId = draft.districtId
             locationPin = draft.locationPin
@@ -296,6 +303,7 @@ fun EventFormScreen(
         endTime = endTime,
         createdAt = createdAt,
         eventTypeId = eventTypeId,
+        eventTypeDetail = eventTypeDetail,
         roadId = roadId,
         districtId = districtId,
         location = locationPin.location,
@@ -582,17 +590,22 @@ fun EventFormScreen(
             )
             ui.lookups.isEmpty -> LoadingBlock("טוען רשימות…")
             else -> {
-                if (editing) {
-                    FormCheckbox(
-                        label = EVENT_CANCELLED_LABEL,
-                        checked = isCancelled,
-                        enabled = !isCancelled || ui.canManageUnit,
-                        onCheckedChange = { next ->
-                            formError = canToggleEventCancelled(next, ui.canManageUnit)
-                            if (formError == null) isCancelled = next
-                        },
-                    )
-                }
+                FormCheckbox(
+                    label = EVENT_CANCELLED_LABEL,
+                    checked = isCancelled,
+                    enabled = !isCancelled || ui.canManageUnit,
+                    onCheckedChange = { next ->
+                        formError = canToggleEventCancelled(next, ui.canManageUnit)
+                        if (formError == null) {
+                            isCancelled = next
+                            responders = respondersForEventCancelToggle(
+                                isCreate = !editing,
+                                nextCancelled = next,
+                                responders = responders,
+                            )
+                        }
+                    },
+                )
                 FormSectionHeading(EVENT_FORM_LEADS_SECTION)
                 EventShiftLeadsFields(
                     roles = ui.roles,
@@ -642,6 +655,14 @@ fun EventFormScreen(
                         ltr = true,
                         error = if (formError == POLICE_EVENT_ID_DUPLICATE_ERROR) formError else null,
                         modifier = Modifier.weight(1f),
+                    )
+                }
+                if (isOtherEventTypeId(eventTypeId, ui.lookups.eventTypes)) {
+                    FormField(
+                        label = EVENT_TYPE_DETAIL_LABEL,
+                        value = eventTypeDetail,
+                        onValueChange = { eventTypeDetail = it.take(EVENT_TYPE_DETAIL_MAX_LENGTH) },
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
                 FieldNote(field = EventFormFieldNoteId.PATROL_CALLSIGN)

@@ -772,6 +772,7 @@ class AppModel : ViewModel() {
             districts = _state.value.lookups.districts,
             vehicleKinds = _state.value.lookups.vehicleKinds,
             allowPartial = allowPartial,
+            eventTypes = _state.value.lookups.eventTypes,
         )
         if (outcome.error != null) return@surviveNavigation outcome
         val createdId = outcome.eventId
@@ -806,6 +807,7 @@ class AppModel : ViewModel() {
             previousIsCancelled = previousIsCancelled,
             allowPartial = allowPartial,
             previousDraft = previousDraft,
+            eventTypes = _state.value.lookups.eventTypes,
         )?.let { return@surviveNavigation it }
         reloadUnitEvents()
         viewModelScope.launch { reloadEvents() }
@@ -839,6 +841,7 @@ class AppModel : ViewModel() {
                         districts = _state.value.lookups.districts,
                         vehicleKinds = _state.value.lookups.vehicleKinds,
                         allowPartial = true,
+                        eventTypes = _state.value.lookups.eventTypes,
                     )
                     val createdId = outcome.eventId
                     if (outcome.error == null && createdId != null) {
@@ -861,6 +864,7 @@ class AppModel : ViewModel() {
                     previousIsCancelled = previousIsCancelled,
                     allowPartial = true,
                     previousDraft = previousDraft,
+                    eventTypes = _state.value.lookups.eventTypes,
                 )
                 if (error == null) reloadUnitEvents()
             }

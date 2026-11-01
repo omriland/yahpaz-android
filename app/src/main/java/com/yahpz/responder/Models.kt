@@ -1318,6 +1318,7 @@ data class EventInsert(
     @SerialName("started_at") val startedAt: String? = null,
     @SerialName("ended_at") val endedAt: String? = null,
     @SerialName("event_type_id") val eventTypeId: String? = null,
+    @SerialName("event_type_detail") val eventTypeDetail: String? = null,
     @SerialName("road_id") val roadId: String? = null,
     val location: String? = null,
     @EncodeDefault
@@ -1419,6 +1420,7 @@ data class EventFormDetail(
     @SerialName("ended_at") val endedAt: String? = null,
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("event_type_id") val eventTypeId: String? = null,
+    @SerialName("event_type_detail") val eventTypeDetail: String? = null,
     @SerialName("road_id") val roadId: String? = null,
     val location: String? = null,
     @SerialName("location_place_id") val locationPlaceId: String? = null,
@@ -1459,6 +1461,7 @@ data class EventFormDetail(
         endTime = toTimeInput(endedAt).ifEmpty { responderEnds.lastOrNull().orEmpty() },
         createdAt = createdAt.orEmpty(),
         eventTypeId = eventTypeId.orEmpty(),
+        eventTypeDetail = eventTypeDetail.orEmpty(),
         roadId = roadId.orEmpty(),
         districtId = districtId.orEmpty(),
         location = location.orEmpty(),

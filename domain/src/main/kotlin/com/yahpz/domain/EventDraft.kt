@@ -61,6 +61,10 @@ const val EVENT_DRAFT_PARTIAL_SAVED = "הטיוטה נשמרה."
 const val EVENT_PATROL_CALLSIGN_LABEL = PATROL_CALLSIGN_NUMBER_LABEL
 const val EVENT_STATION_LABEL = "תחנה"
 const val STATION_MAX_LENGTH = 80
+/** Closed-list name for "other" — shows the optional פירוט field. */
+const val OTHER_EVENT_TYPE_NAME = "אחר"
+const val EVENT_TYPE_DETAIL_LABEL = "פירוט"
+const val EVENT_TYPE_DETAIL_MAX_LENGTH = 80
 const val MY_ACTIVE_EVENTS_TITLE = "האירועים הפעילים שלי"
 const val MY_ACTIVE_EVENT_DISMISSED = "הוסר מהאירועים הפעילים."
 const val NO_VEHICLE_KM_PLACEHOLDER = "מתנדב ללא רכב"
@@ -104,6 +108,7 @@ data class EventDraft(
     val endTime: String = "",
     val createdAt: String = "",
     val eventTypeId: String = "",
+    val eventTypeDetail: String = "",
     val roadId: String = "",
     val districtId: String = "",
     val location: String = "",
@@ -215,6 +220,26 @@ fun stationAfterDistrictChange(
     currentStation: String,
 ): String = if (districtNeedsStation(districts, nextDistrictId)) currentStation else ""
 
+fun isOtherEventTypeName(name: String?): Boolean =
+    (name ?: "").trim() == OTHER_EVENT_TYPE_NAME
+
+fun isOtherEventTypeId(eventTypeId: String, eventTypes: List<LookupOption>): Boolean {
+    val name = eventTypes.firstOrNull { it.id == eventTypeId }?.name
+    return isOtherEventTypeName(name)
+}
+
+/** Trimmed פירוט when סוג אירוע is אחר; null otherwise, including an empty field. */
+fun eventTypeDetailForSave(
+    eventTypes: List<LookupOption>,
+    eventTypeId: String,
+    detail: String,
+): String? {
+    if (!isOtherEventTypeId(eventTypeId, eventTypes)) return null
+    val trimmed = detail.trim()
+    if (trimmed.isEmpty()) return null
+    return trimmed.take(EVENT_TYPE_DETAIL_MAX_LENGTH)
+}
+
 /** Draft save: date only, matching web `allowPartial`. */
 fun validateEventDraftPartial(draft: EventDraft): EventDraftErrors =
     EventDraftErrors(
@@ -294,8 +319,11 @@ fun fillReadyNotifyIds(
 ): List<String> = (assignmentIdsNewlyAssigned(previous, next) + assignmentIdsNewlySetKm(previous, next))
     .distinct()
 
-fun deriveEventStatusFromDraft(responders: List<EventResponderDraft>): EventStatus {
-    if (responders.isEmpty()) return EventStatus.DRAFT
+fun deriveEventStatusFromDraft(
+    responders: List<EventResponderDraft>,
+    isCancelled: Boolean = false,
+): EventStatus {
+    if (responders.isEmpty()) return if (isCancelled) EventStatus.DONE else EventStatus.DRAFT
     if (responders.all { it.status == ParticipationStatus.DONE }) return EventStatus.DONE
     if (responders.any { it.status == ParticipationStatus.DONE }) return EventStatus.PARTIAL
     return EventStatus.IN_PROGRESS
@@ -440,6 +468,18 @@ fun eventCancelToast(isCancelled: Boolean): String =
 fun canToggleEventCancelled(next: Boolean, canClearCancelled: Boolean): String? =
     if (!next && !canClearCancelled) EVENT_CANCEL_ADMIN_ONLY else null
 
+/**
+ * Create-form cancel uses the same `is_cancelled` flag as edit.
+ * The event is not saved yet, so the crew the form would attach is dropped.
+ * Edit keeps its responders.
+ */
+fun respondersForEventCancelToggle(
+    isCreate: Boolean,
+    nextCancelled: Boolean,
+    responders: List<EventResponderDraft>,
+): List<EventResponderDraft> =
+    if (isCreate && nextCancelled) emptyList() else responders
+
 const val POLICE_EVENT_ID_DUPLICATE_ERROR = "כבר קיים אירוע עם המספר הזה באותו תאריך."
 
 data class SameDayPoliceEventRow(
@@ -489,6 +529,7 @@ fun eventPersistColumns(
     draft: EventDraft,
     districts: List<LookupOption>,
     mainLeadId: String,
+    eventTypes: List<LookupOption> = emptyList(),
 ): Map<String, Any?> {
     val locationPayload = buildLocationPayload(draft.locationPin)
     val callsign = resolvePatrolCallsign(
@@ -501,7 +542,7 @@ fun eventPersistColumns(
     val prefix = patrolCallsignPrefixForInput(callsign.prefix).trim().nilIfBlank()
     val number = patrolCallsignNumberForInput(callsign.number).nilIfBlank()
     val rowStatus = eventStatusForRowWriteBeforeResponders(
-        deriveEventStatusFromDraft(draft.responders),
+        deriveEventStatusFromDraft(draft.responders, draft.isCancelled),
     )
     return mapOf(
         "event_date" to eventDate,
@@ -513,6 +554,7 @@ fun eventPersistColumns(
         "started_at" to wallTimestamp(eventDate, draft.startTime, 0),
         "ended_at" to wallTimestamp(eventDate, draft.endTime, if (overnight) 1 else 0),
         "event_type_id" to draft.eventTypeId.nilIfBlank(),
+        "event_type_detail" to eventTypeDetailForSave(eventTypes, draft.eventTypeId, draft.eventTypeDetail),
         "road_id" to draft.roadId.nilIfBlank(),
         "location" to locationPayload.locationOrNull(),
         "location_place_id" to locationPayload.locationPlaceId,
@@ -603,6 +645,7 @@ fun EventDraft.hasDetailBeyondOpen(): Boolean =
         patrolCallsignNumber.isNotBlank() ||
         endTime.isNotBlank() ||
         eventTypeId.isNotBlank() ||
+        eventTypeDetail.isNotBlank() ||
         roadId.isNotBlank() ||
         districtId.isNotBlank() ||
         location.isNotBlank() ||

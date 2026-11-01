@@ -210,6 +210,73 @@ class EventDraftTest {
     }
 
     @Test
+    fun `create form uses the edit cancel control and saves with no responders`() {
+        val form = listOf(
+            File("../app/src/main/java/com/yahpz/responder/EventFormScreen.kt"),
+            File("app/src/main/java/com/yahpz/responder/EventFormScreen.kt"),
+        ).first { it.exists() }.readText()
+        val checkbox = form.indexOf("label = EVENT_CANCELLED_LABEL")
+        assertTrue(checkbox > 0)
+        assertFalse(form.substring(checkbox - 80, checkbox).contains("if (editing)"))
+        assertTrue(form.contains("respondersForEventCancelToggle("))
+        assertTrue(form.contains("isCreate = !editing"))
+
+        val api = listOf(
+            File("../app/src/main/java/com/yahpz/responder/YahpazAPI.kt"),
+            File("app/src/main/java/com/yahpz/responder/YahpazAPI.kt"),
+        ).first { it.exists() }.readText()
+        assertTrue(api.contains("isCancelled = draft.isCancelled"))
+
+        val crew = listOf(EventResponderDraft(responderId = "r1"))
+        assertTrue(
+            respondersForEventCancelToggle(
+                isCreate = true,
+                nextCancelled = true,
+                responders = crew,
+            ).isEmpty(),
+        )
+        assertEquals(
+            crew,
+            respondersForEventCancelToggle(
+                isCreate = false,
+                nextCancelled = true,
+                responders = crew,
+            ),
+        )
+        assertEquals(
+            crew,
+            respondersForEventCancelToggle(
+                isCreate = true,
+                nextCancelled = false,
+                responders = crew,
+            ),
+        )
+
+        val cancelled = draft().copy(
+            isCancelled = true,
+            responders = emptyList(),
+            shiftLeadId = "lead-1",
+        )
+        val columns = eventPersistColumns(cancelled, districts, "lead-1")
+        assertEquals(true, columns["is_cancelled"])
+        assertEquals(EventStatus.PARTIAL.raw, columns["status"])
+        assertEquals(EventStatus.DONE, deriveEventStatusFromDraft(cancelled.responders, isCancelled = true))
+    }
+
+    @Test
+    fun `cancelled event with no responders is done`() {
+        assertEquals(EventStatus.DONE, deriveEventStatusFromDraft(emptyList(), isCancelled = true))
+        assertEquals(EventStatus.DRAFT, deriveEventStatusFromDraft(emptyList(), isCancelled = false))
+        assertEquals(
+            EventStatus.IN_PROGRESS,
+            deriveEventStatusFromDraft(
+                listOf(EventResponderDraft(responderId = "r1")),
+                isCancelled = true,
+            ),
+        )
+    }
+
+    @Test
     fun `event form copy matches the web`() {
         assertEquals("אירוע חדש", EVENT_NEW_TITLE)
         assertEquals("עריכת אירוע", EVENT_EDIT_TITLE)
@@ -427,6 +494,46 @@ class EventDraftTest {
         assertEquals(null, cleared["location"])
         assertEquals(null, cleared["notes"])
         assertFalse(cleared.containsKey("police_event_id"))
+    }
+
+    @Test
+    fun `פירוט is shown for event type אחר`() {
+        val types = listOf(
+            LookupOption("crash", "תאונה"),
+            LookupOption("other", OTHER_EVENT_TYPE_NAME),
+        )
+        assertEquals("פירוט", EVENT_TYPE_DETAIL_LABEL)
+        assertTrue(isOtherEventTypeName(" אחר "))
+        assertFalse(isOtherEventTypeName("תאונה"))
+        assertTrue(isOtherEventTypeId("other", types))
+        assertFalse(isOtherEventTypeId("crash", types))
+        assertFalse(isOtherEventTypeId("", types))
+        assertEquals("גרירה", eventTypeDetailForSave(types, "other", "  גרירה  "))
+        assertNull(eventTypeDetailForSave(types, "other", "   "))
+        assertNull(eventTypeDetailForSave(types, "crash", "גרירה"))
+        val long = "א".repeat(EVENT_TYPE_DETAIL_MAX_LENGTH + 10)
+        assertEquals(
+            EVENT_TYPE_DETAIL_MAX_LENGTH,
+            eventTypeDetailForSave(types, "other", long)?.length,
+        )
+        assertEquals(
+            "גרירה",
+            eventPersistColumns(
+                draft(typeId = "other").copy(eventTypeDetail = "גרירה"),
+                districts,
+                "lead-1",
+                types,
+            )["event_type_detail"],
+        )
+        assertNull(
+            eventPersistColumns(
+                draft(typeId = "crash").copy(eventTypeDetail = "גרירה"),
+                districts,
+                "lead-1",
+                types,
+            )["event_type_detail"],
+        )
+        assertTrue(EventDraft(eventDate = "2026-02-02", eventTypeDetail = "גרירה").hasDetailBeyondOpen())
     }
 
     @Test

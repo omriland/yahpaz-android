@@ -118,6 +118,7 @@ import com.yahpz.domain.eventStatusForRowWriteBeforeResponders
 import com.yahpz.domain.eventsByResponderReportRows
 import com.yahpz.domain.isOvernightEnd
 import com.yahpz.domain.leadKmForSave
+import com.yahpz.domain.eventTypeDetailForSave
 import com.yahpz.domain.stationForSave
 import com.yahpz.domain.FillReadyNextRow
 import com.yahpz.domain.FillReadyPreviousRow
@@ -1463,6 +1464,7 @@ object YahpazAPI {
         districts: List<LookupOption>,
         vehicleKinds: List<LookupOption>,
         allowPartial: Boolean = false,
+        eventTypes: List<LookupOption> = emptyList(),
     ): EventWriteOutcome {
         val errors = if (allowPartial) {
             validateEventDraftPartial(draft)
@@ -1485,7 +1487,7 @@ object YahpazAPI {
             currentEventId = null,
         )?.let { return EventWriteOutcome(error = it) }
         return try {
-            val nextStatus = deriveEventStatusFromDraft(draft.responders)
+            val nextStatus = deriveEventStatusFromDraft(draft.responders, draft.isCancelled)
             val rowStatus = eventStatusForRowWriteBeforeResponders(nextStatus)
             val locationPayload = buildLocationPayload(draft.locationPin)
             val callsign = resolvePatrolCallsign(
@@ -1507,6 +1509,7 @@ object YahpazAPI {
                     startedAt = eventStartedAt,
                     endedAt = eventEndedAt,
                     eventTypeId = draft.eventTypeId.nilIfEmpty(),
+                    eventTypeDetail = eventTypeDetailForSave(eventTypes, draft.eventTypeId, draft.eventTypeDetail),
                     roadId = draft.roadId.nilIfEmpty(),
                     location = locationPayload.locationOrNull(),
                     locationPlaceId = locationPayload.locationPlaceId,
@@ -1517,6 +1520,7 @@ object YahpazAPI {
                     locationPinnedBy = locationPayload.locationPinnedBy,
                     station = stationForSave(districts, draft.districtId, draft.station),
                     notes = draft.notes.nilIfEmpty(),
+                    isCancelled = draft.isCancelled,
                     busLane = draft.busLane,
                     status = rowStatus.raw,
                     shiftLeadId = mainLeadId,
@@ -1547,13 +1551,14 @@ object YahpazAPI {
             EventWriteOutcome(eventId = inserted.id)
         } catch (error: Exception) {
             EventWriteOutcome(
-                error = recoverOwnCreatedEvent(
+                error =                 recoverOwnCreatedEvent(
                     draft = draft,
                     eventDate = eventDate,
                     mainLeadId = mainLeadId,
                     districts = districts,
                     vehicleKinds = vehicleKinds,
                     allowPartial = allowPartial,
+                    eventTypes = eventTypes,
                 ) ?: policeEventIdDuplicateOrSaveFailed(error),
             )
         }
@@ -1566,6 +1571,7 @@ object YahpazAPI {
         districts: List<LookupOption>,
         vehicleKinds: List<LookupOption>,
         allowPartial: Boolean,
+        eventTypes: List<LookupOption>,
     ): String? {
         val policeId = digitsOnly(draft.policeEventId)
         if (policeId.isEmpty()) return null
@@ -1600,6 +1606,7 @@ object YahpazAPI {
             viewerRoles = emptyList(),
             previousIsCancelled = false,
             allowPartial = allowPartial,
+            eventTypes = eventTypes,
         )
     }
 
@@ -1658,7 +1665,7 @@ object YahpazAPI {
                 """
                 id, event_date, police_event_id, district_id, patrol_callsign,
                 patrol_callsign_prefix, patrol_callsign_number, started_at, ended_at, created_at,
-                event_type_id, road_id,
+                event_type_id, event_type_detail, road_id,
                 location, location_place_id, location_lat, location_lng, location_pin_source,
                 location_pinned_at, location_pinned_by,
                 station, notes, is_cancelled, bus_lane, status, shift_lead_id,
@@ -1684,6 +1691,7 @@ object YahpazAPI {
         previousIsCancelled: Boolean,
         allowPartial: Boolean = false,
         previousDraft: EventDraft? = null,
+        eventTypes: List<LookupOption> = emptyList(),
     ): String? {
         val errors = if (allowPartial) {
             validateEventDraftPartial(draft)
@@ -1714,15 +1722,15 @@ object YahpazAPI {
             currentEventId = eventId,
         )?.let { return it }
         return try {
-            val nextStatus = deriveEventStatusFromDraft(draft.responders)
+            val nextStatus = deriveEventStatusFromDraft(draft.responders, draft.isCancelled)
             val rowStatus = eventStatusForRowWriteBeforeResponders(nextStatus)
             val overnight = isOvernightEnd(draft.startTime, draft.endTime)
             val eventStartedAt = wallTimestamp(eventDate, draft.startTime, 0)
             val eventEndedAt = wallTimestamp(eventDate, draft.endTime, if (overnight) 1 else 0)
-            val nextColumns = eventPersistColumns(draft, districts, mainLeadId).toMutableMap()
+            val nextColumns = eventPersistColumns(draft, districts, mainLeadId, eventTypes).toMutableMap()
             nextColumns["status"] = rowStatus.raw
             val previousColumns = previousDraft?.let {
-                eventPersistColumns(it, districts, it.shiftLeadId.ifBlank { mainLeadId })
+                eventPersistColumns(it, districts, it.shiftLeadId.ifBlank { mainLeadId }, eventTypes)
             }
             val eventPatch = if (previousColumns != null) {
                 changedPersistColumns(previousColumns, nextColumns)
