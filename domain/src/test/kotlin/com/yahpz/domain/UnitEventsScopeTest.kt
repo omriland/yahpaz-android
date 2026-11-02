@@ -65,4 +65,22 @@ class UnitEventsScopeTest {
     fun `uses the locked Hebrew label`() {
         assertEquals("הצג אירועים שנוצרו על ידי אחרים", SHOW_OTHERS_CREATED_EVENTS_LABEL)
     }
+
+    @Test
+    fun `shift events chip reads הצג אירועים ממשמרות`() {
+        assertEquals("הצג אירועים ממשמרות", SHOW_SHIFT_EVENTS_LABEL)
+    }
+
+    @Test
+    fun `shift-born events are hidden until the chip is on`() {
+        val rows = listOf("a" to "manual", "b" to "shift", "c" to null)
+        assertEquals(
+            listOf("a", "c"),
+            filterShiftEvents(rows, showShiftEvents = false) { it.second }.map { it.first },
+        )
+        assertEquals(
+            listOf("a", "b", "c"),
+            filterShiftEvents(rows, showShiftEvents = true) { it.second }.map { it.first },
+        )
+    }
 }

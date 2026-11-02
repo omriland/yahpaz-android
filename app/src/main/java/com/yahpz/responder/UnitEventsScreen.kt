@@ -97,6 +97,10 @@ import com.yahpz.domain.visibleMyActiveIds
 import com.yahpz.domain.INCOMPLETE_EVENTS_HEADING
 import com.yahpz.domain.INCOMPLETE_NOTICE_MARK
 import com.yahpz.domain.SHOW_OTHERS_CREATED_EVENTS_LABEL
+import com.yahpz.domain.SHOW_SHIFT_EVENTS_LABEL
+import com.yahpz.domain.EVENT_ATTACHMENT_LABEL
+import androidx.compose.material.icons.outlined.AttachFile
+import com.yahpz.domain.filterShiftEvents
 import com.yahpz.domain.IncompleteField
 import com.yahpz.domain.LEAD_KM_VIEW_LABEL
 import com.yahpz.domain.incompleteLeadNoticeLabels
@@ -186,6 +190,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
         (ui.unitEvents + hiddenAuto).distinctBy { it.id }
             .filter { fieldsMatchQuery(it.unitSearchFields, trimmed) }
     }.filter { it.id !in activeVisibleIds }
+        .let { rows -> filterShiftEvents(rows, ui.showShiftEvents) { it.origin } }
         .sortedByDescending { it.eventDate }
     val (incompleteEvents, restEvents) = partitionIncompleteEvents(events) { it.asIncompleteSnapshot() }
 
@@ -244,32 +249,17 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                 onValueChange = { query = it },
                 placeholder = "אירוע, כביש, מיקום או אחמ״ש",
             )
+            ScopeSwitchRow(
+                label = SHOW_SHIFT_EVENTS_LABEL,
+                checked = ui.showShiftEvents,
+                onCheckedChange = { app.setShowShiftEvents(it) },
+            )
             if (shouldFilterUnitEventsToOwnCreated(ui.roles)) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 44.dp)
-                        .clickable { app.setShowOthersCreatedEvents(!ui.showOthersCreatedEvents) },
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text(
-                        SHOW_OTHERS_CREATED_EVENTS_LABEL,
-                        style = TypeScale.body,
-                        color = FieldTheme.textPrimary,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Switch(
-                        checked = ui.showOthersCreatedEvents,
-                        onCheckedChange = { app.setShowOthersCreatedEvents(it) },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = FieldTheme.textOnAccent,
-                            checkedTrackColor = FieldTheme.accent,
-                            uncheckedThumbColor = FieldTheme.raised,
-                            uncheckedTrackColor = FieldTheme.strong,
-                        ),
-                    )
-                }
+                ScopeSwitchRow(
+                    label = SHOW_OTHERS_CREATED_EVENTS_LABEL,
+                    checked = ui.showOthersCreatedEvents,
+                    onCheckedChange = { app.setShowOthersCreatedEvents(it) },
+                )
             }
             when {
                 ui.unitEventsFailed -> EmptyState(
@@ -719,6 +709,35 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
 }
 
 @Composable
+private fun ScopeSwitchRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 44.dp)
+            .clickable { onCheckedChange(!checked) },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(
+            label,
+            style = TypeScale.body,
+            color = FieldTheme.textPrimary,
+            modifier = Modifier.weight(1f),
+        )
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = FieldTheme.textOnAccent,
+                checkedTrackColor = FieldTheme.accent,
+                uncheckedThumbColor = FieldTheme.raised,
+                uncheckedTrackColor = FieldTheme.strong,
+            ),
+        )
+    }
+}
+
+@Composable
 private fun CatalogEventRow(
     event: EventListItem,
     draggingId: String?,
@@ -1019,7 +1038,17 @@ private fun UnitEventRow(
                     }
                 }
                 Column(horizontalAlignment = Alignment.End) {
-                    StampChip(stamp)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (event.hasImage) {
+                            Icon(
+                                Icons.Outlined.AttachFile,
+                                contentDescription = EVENT_ATTACHMENT_LABEL,
+                                tint = FieldTheme.textSecondary,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                        StampChip(stamp)
+                    }
                     if (boardActionTitle != null && onBoardAction != null) {
                         TextButton(
                             onClick = onBoardAction,

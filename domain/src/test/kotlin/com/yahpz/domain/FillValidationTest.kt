@@ -28,7 +28,7 @@ class FillValidationTest {
                 odometerStart = "100",
                 odometerEnd = "112",
                 route = "כביש 1",
-                treatmentDetail = "טיפול",
+                treatmentDetail = FULL_DETAIL,
             ),
             FillMode.COMPLETE,
             plates,
@@ -45,7 +45,7 @@ class FillValidationTest {
                 odometerStart = "100",
                 odometerEnd = "",
                 route = "כביש 1",
-                treatmentDetail = "טיפול",
+                treatmentDetail = FULL_DETAIL,
             ),
             FillMode.COMPLETE,
             plates,
@@ -62,7 +62,7 @@ class FillValidationTest {
                 odometerStart = "100",
                 odometerEnd = "115",
                 route = "כביש 1",
-                treatmentDetail = "טיפול",
+                treatmentDetail = FULL_DETAIL,
             ),
             FillMode.COMPLETE,
             plates,
@@ -79,7 +79,7 @@ class FillValidationTest {
                 odometerStart = "100",
                 odometerEnd = "112",
                 route = "כביש 1",
-                treatmentDetail = "טיפול",
+                treatmentDetail = FULL_DETAIL,
                 treatedPlatePending = "123",
             ),
             FillMode.COMPLETE,
@@ -108,7 +108,7 @@ class FillValidationTest {
                 odometerStart = "100",
                 odometerEnd = "112",
                 route = "כביש 1",
-                treatmentDetail = "טיפול",
+                treatmentDetail = FULL_DETAIL,
             ),
             FillMode.COMPLETE,
             plates,
@@ -138,7 +138,7 @@ class FillValidationTest {
                 odometerStart = "100",
                 odometerEnd = "112",
                 route = "כביש 1",
-                treatmentDetail = "טיפול",
+                treatmentDetail = FULL_DETAIL,
             ),
             FillMode.COMPLETE,
             plates,
@@ -187,7 +187,7 @@ class FillValidationTest {
                 odometerStart = "1",
                 odometerEnd = "2",
                 route = "כביש",
-                treatmentDetail = "טיפול",
+                treatmentDetail = FULL_DETAIL,
             ),
             FillMode.COMPLETE,
             plates,
@@ -272,5 +272,39 @@ class FillValidationTest {
                 eventStatus = EventStatus.IN_PROGRESS,
             ),
         )
+    }
+
+    @Test
+    fun `complete needs 40 trimmed characters of treatment detail`() {
+        assertEquals(TREATMENT_DETAIL_MIN_ERROR, treatmentDetailError("טיפול", FillMode.COMPLETE))
+        assertEquals(TREATMENT_DETAIL_MIN_ERROR, treatmentDetailError("   " + "א".repeat(39) + "   ", FillMode.COMPLETE))
+        assertNull(treatmentDetailError("א".repeat(40), FillMode.COMPLETE))
+        assertNull(treatmentDetailError("", FillMode.DRAFT))
+    }
+
+    @Test
+    fun `treatment detail counter shows trimmed count against 40`() {
+        assertEquals(TreatmentDetailCounter("0 מתוך 40", met = false), treatmentDetailCounter("  "))
+        assertEquals(TreatmentDetailCounter("40 מתוך 40", met = true), treatmentDetailCounter(" " + "ב".repeat(40)))
+    }
+
+    @Test
+    fun `odometer total is end minus start once both are numbers and in order`() {
+        assertEquals(42.0, odometerDelta("1000", "1042")!!, 0.0)
+        assertEquals(0.0, odometerDelta("5", "5")!!, 0.0)
+        assertNull(odometerDelta("1000", ""))
+        assertNull(odometerDelta("abc", "10"))
+        assertNull(odometerDelta("1042", "1000"))
+    }
+
+    @Test
+    fun `odometer range error only for a reversed pair`() {
+        assertEquals(ODOMETER_ORDER_ERROR, odometerRangeError("1042", "1000"))
+        assertNull(odometerRangeError("1000", "1042"))
+        assertNull(odometerRangeError("", "1000"))
+    }
+
+    private companion object {
+        val FULL_DETAIL = "טיפול ברכב תקוע בנתיב הימני, הוצב משולש וכוון התנועה עד לגרירה."
     }
 }

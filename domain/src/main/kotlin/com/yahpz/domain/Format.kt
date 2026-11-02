@@ -132,6 +132,17 @@ fun compareRoadNames(left: String, right: String): Int {
 fun <T> sortByRoadName(items: List<T>, name: (T) -> String): List<T> =
     items.sortedWith { left, right -> compareRoadNames(name(left), name(right)) }
 
+const val PASSWORD_RULES_TITLE = "הסיסמה צריכה לכלול:"
+
+/** The live checklist under סיסמה חדשה, in display order (matches the web login). */
+data class PasswordRuleCheck(val label: String, val met: Boolean)
+
+fun passwordRuleChecklist(password: String): List<PasswordRuleCheck> = listOf(
+    PasswordRuleCheck("8 תווים לפחות", password.length >= 8),
+    PasswordRuleCheck("אות גדולה באנגלית", password.contains(Regex("[A-Z]"))),
+    PasswordRuleCheck("תו מיוחד (למשל !)", password.contains(Regex("[^A-Za-z0-9]"))),
+)
+
 fun passwordStrengthError(password: String): String? {
     val missing = mutableListOf<String>()
     if (password.length < 8) missing += "8 תווים לפחות"

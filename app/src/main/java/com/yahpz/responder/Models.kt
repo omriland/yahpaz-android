@@ -5,6 +5,7 @@ import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.nullable
 import kotlinx.serialization.encoding.Decoder
@@ -15,6 +16,8 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
+import com.yahpz.domain.UserListDataGap
+import com.yahpz.domain.userListDataGap
 import com.yahpz.domain.AdminUserSearchInput
 import com.yahpz.domain.AdminUserSortKey
 import com.yahpz.domain.AssignableProfile
@@ -198,6 +201,8 @@ data class EventListItem(
     @SerialName("shift_lead_id") val shiftLeadId: String? = null,
     @SerialName("shift_id") val shiftId: String? = null,
     @SerialName("frozen_over_60km") val frozenOver60km: Boolean = false,
+    /** Set on the unit list from event_media; not a column. */
+    @Transient val hasImage: Boolean = false,
     @SerialName("frozen_suspicious_duplicate") val frozenSuspiciousDuplicate: Boolean = false,
     @SerialName("district")
     @Serializable(with = OptionalNamedSerializer::class)
@@ -627,6 +632,7 @@ data class ProfileRecord(
     val phone: String? = null,
     val active: Boolean = true,
     @SerialName("must_change_password") val mustChangePassword: Boolean = false,
+    @SerialName("volunteer_status") val volunteerStatus: String? = null,
     @Serializable(with = AvailabilityStatusSerializer::class)
     val availability: AvailabilityStatus = AvailabilityStatus.AVAILABLE,
     @SerialName("available_from") val availableFrom: String? = null,
@@ -692,6 +698,9 @@ data class AdminAddressRow(
     val kind: String = "",
     val label: String? = null,
     @SerialName("formatted_address") val formattedAddress: String = "",
+    @SerialName("place_id") val placeId: String? = null,
+    val lat: Double? = null,
+    val lng: Double? = null,
 )
 
 data class AdminVehicleItem(
@@ -705,6 +714,8 @@ data class AdminAddressItem(
     val kind: String,
     val label: String?,
     val formattedAddress: String,
+    /** A Google place with coordinates, i.e. a pin on the unit map. */
+    val onMap: Boolean = false,
 )
 
 data class AdminUserListItem(
@@ -726,6 +737,9 @@ data class AdminUserListItem(
 ) {
     val vehicleCount: Int
         get() = vehicles.count { !it.archived }
+
+    val dataGap: UserListDataGap?
+        get() = userListDataGap(volunteerStatus, vehicleCount > 0, addresses.any { it.onMap })
 
     val searchFields: ContactSearchFields
         get() = ContactSearchFields(fullName, callsign, email, phone)

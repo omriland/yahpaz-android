@@ -1,5 +1,13 @@
 package com.yahpz.responder
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
+import java.io.File
+import androidx.compose.material.icons.outlined.PhotoCamera
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -26,6 +34,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.Checkbox
@@ -54,6 +64,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -61,6 +73,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.yahpz.domain.EVENT_MEDIA_ADDED
+import com.yahpz.domain.EVENT_MEDIA_BAD_TYPE
+import com.yahpz.domain.EVENT_MEDIA_CAMERA_FAILED
+import com.yahpz.domain.EVENT_MEDIA_CAMERA_PERMISSION
+import com.yahpz.domain.EVENT_MEDIA_VIDEO_ADDED
+import com.yahpz.domain.EVENT_MEDIA_VIDEO_DELETED
+import com.yahpz.domain.EventMediaKind
+import com.yahpz.domain.eventMediaKind
+import com.yahpz.domain.isVideoMedia
+import com.yahpz.domain.rejectVideoFile
 import com.yahpz.domain.EVENT_MEDIA_CAP
 import com.yahpz.domain.EVENT_MEDIA_CAP_ERROR
 import com.yahpz.domain.EVENT_MEDIA_DELETED
@@ -91,6 +112,9 @@ private val cardShape = RoundedCornerShape(8.dp)
 private data class MediaDraft(
     val key: String,
     val uri: Uri,
+    val kind: EventMediaKind = EventMediaKind.IMAGE,
+    /** The picked video's type; photos are always uploaded as JPEG. */
+    val videoMimeType: String? = null,
     val takenWhen: EventMediaTakenWhen? = null,
     val treatedPlateIds: List<String> = emptyList(),
     val caption: String = "",
@@ -150,12 +174,49 @@ fun FillMediaTab(
         ActivityResultContracts.PickMultipleVisualMedia(maxItems = EVENT_MEDIA_CAP),
     ) { uris ->
         if (uris.isEmpty() || !addEnabled) return@rememberLauncherForActivityResult
-        drafts = drafts + uris.take(remaining).map { uri ->
-            MediaDraft(key = UUID.randomUUID().toString(), uri = uri)
+        val picked = uris.map { uri -> uri to context.contentResolver.getType(uri) }
+        val supported = picked.filter { (_, type) -> eventMediaKind(type) != null }
+        if (supported.size < picked.size) onToast(EVENT_MEDIA_BAD_TYPE, StampTone.PENDING)
+        drafts = drafts + supported.take(remaining).map { (uri, type) ->
+            val kind = eventMediaKind(type) ?: EventMediaKind.IMAGE
+            MediaDraft(
+                key = UUID.randomUUID().toString(),
+                uri = uri,
+                kind = kind,
+                videoMimeType = type.takeIf { kind == EventMediaKind.VIDEO },
+            )
         }
         scope.launch {
             plates = withContext(Dispatchers.IO) { YahpazAPI.listEventMediaPlates(eventId) }
         }
+    }
+
+    // The camera writes into a cache file that FileProvider shares with the camera app.
+    var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { saved ->
+        val uri = pendingCameraUri
+        pendingCameraUri = null
+        if (!saved || uri == null || !addEnabled) return@rememberLauncherForActivityResult
+        drafts = drafts + MediaDraft(key = UUID.randomUUID().toString(), uri = uri)
+        scope.launch {
+            plates = withContext(Dispatchers.IO) { YahpazAPI.listEventMediaPlates(eventId) }
+        }
+    }
+    fun launchCamera() {
+        val dir = File(context.cacheDir, "event_photos").apply { mkdirs() }
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            File(dir, "${UUID.randomUUID()}.jpg"),
+        )
+        pendingCameraUri = uri
+        runCatching { camera.launch(uri) }.onFailure {
+            pendingCameraUri = null
+            onToast(EVENT_MEDIA_CAMERA_FAILED, StampTone.PENDING)
+        }
+    }
+    val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) launchCamera() else onToast(EVENT_MEDIA_CAMERA_PERMISSION, StampTone.PENDING)
     }
 
     fun patchDraft(key: String, patch: MediaDraft.() -> MediaDraft) {
@@ -166,19 +227,20 @@ fun FillMediaTab(
         val draft = drafts.firstOrNull { it.key == key } ?: return
         patchDraft(key) { copy(uploading = true, error = null, takenWhen = takenWhen) }
         scope.launch {
-            val compressed = withContext(Dispatchers.IO) { compressEventImage(context, draft.uri) }
-            if (compressed is CompressEventImageResult.Error) {
-                patchDraft(key) { copy(uploading = false, error = compressed.message) }
+            val payload = withContext(Dispatchers.IO) { readUploadPayload(context, draft) }
+            if (payload is UploadPayload.Rejected) {
+                patchDraft(key) { copy(uploading = false, error = payload.message) }
                 return@launch
             }
-            val image = (compressed as CompressEventImageResult.Ok).image
+            val ready = payload as UploadPayload.Ready
             val latest = drafts.firstOrNull { it.key == key } ?: draft
             val result = withContext(Dispatchers.IO) {
                 YahpazAPI.uploadEventMedia(
                     eventId = eventId,
-                    jpegBytes = image.bytes,
-                    width = image.width,
-                    height = image.height,
+                    bytes = ready.bytes,
+                    mimeType = ready.mimeType,
+                    width = ready.width,
+                    height = ready.height,
                     takenWhen = takenWhen,
                     treatedPlateIds = latest.treatedPlateIds,
                     caption = latest.caption.trim().ifEmpty { null },
@@ -188,7 +250,8 @@ fun FillMediaTab(
                 is EventMediaWriteResult.Uploaded -> {
                     drafts = drafts.filterNot { it.key == key }
                     items = items + result.media
-                    onToast(EVENT_MEDIA_ADDED, StampTone.DONE)
+                    val added = if (draft.kind == EventMediaKind.VIDEO) EVENT_MEDIA_VIDEO_ADDED else EVENT_MEDIA_ADDED
+                    onToast(added, StampTone.DONE)
                 }
                 is EventMediaWriteResult.Error -> {
                     patchDraft(key) { copy(uploading = false, error = result.message) }
@@ -285,7 +348,7 @@ fun FillMediaTab(
                 TextButton(
                     onClick = {
                         picker.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
                         )
                     },
                     enabled = addEnabled,
@@ -301,7 +364,31 @@ fun FillMediaTab(
                         modifier = Modifier.padding(end = 8.dp),
                     )
                     Text(
-                        "הוספת תמונות",
+                        "הוספת תמונות וסרטונים",
+                        style = TypeScale.bodyStrong,
+                        color = if (addEnabled) FieldTheme.accent else FieldTheme.textMuted,
+                    )
+                }
+                TextButton(
+                    onClick = {
+                        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+                            PackageManager.PERMISSION_GRANTED
+                        if (granted) launchCamera() else cameraPermission.launch(Manifest.permission.CAMERA)
+                    },
+                    enabled = addEnabled,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 44.dp)
+                        .border(1.dp, FieldTheme.strong, fieldShape),
+                ) {
+                    Icon(
+                        Icons.Outlined.PhotoCamera,
+                        contentDescription = null,
+                        tint = if (addEnabled) FieldTheme.accent else FieldTheme.textMuted,
+                        modifier = Modifier.padding(end = 8.dp),
+                    )
+                    Text(
+                        "צילום תמונה",
                         style = TypeScale.bodyStrong,
                         color = if (addEnabled) FieldTheme.accent else FieldTheme.textMuted,
                     )
@@ -317,6 +404,7 @@ fun FillMediaTab(
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         val own = canWrite && viewerId != null && current.uploadedBy == viewerId
         val linked = plates.filter { it.id in current.treatedPlateIds }
+        val currentIsVideo = isVideoMedia(current.mimeType)
         ModalBottomSheet(
             onDismissRequest = {
                 if (!deleting && !savingEdit && !immersive) {
@@ -337,7 +425,11 @@ fun FillMediaTab(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
-                    if (confirmDelete) "למחוק את התמונה?" else eventMediaTakenWhenLabel(current.takenWhen),
+                    when {
+                        !confirmDelete -> eventMediaTakenWhenLabel(current.takenWhen)
+                        currentIsVideo -> "למחוק את הסרטון?"
+                        else -> "למחוק את התמונה?"
+                    },
                     style = TypeScale.section,
                     color = FieldTheme.textPrimary,
                 )
@@ -356,7 +448,10 @@ fun FillMediaTab(
                                     immersive = false
                                     viewer = null
                                     confirmDelete = false
-                                    onToast(EVENT_MEDIA_DELETED, StampTone.DONE)
+                                    onToast(
+                                        if (currentIsVideo) EVENT_MEDIA_VIDEO_DELETED else EVENT_MEDIA_DELETED,
+                                        StampTone.DONE,
+                                    )
                                 }
                                 is EventMediaWriteResult.Error -> onToast(result.message, StampTone.PENDING)
                                 is EventMediaWriteResult.Uploaded -> Unit
@@ -365,7 +460,10 @@ fun FillMediaTab(
                     })
                     GhostButton(title = "ביטול", enabled = !deleting, onClick = { confirmDelete = false })
                 } else {
-                    if (current.signedUrl != null) {
+                    val videoUrl = current.signedUrl.takeIf { currentIsVideo }
+                    if (videoUrl != null) {
+                        PlayVideoButton(url = videoUrl, mimeType = current.mimeType)
+                    } else if (current.signedUrl != null) {
                         AsyncImage(
                             model = current.signedUrl,
                             contentDescription = current.caption,
@@ -467,7 +565,7 @@ fun FillMediaTab(
             }
         }
         val signedUrl = current.signedUrl
-        if (immersive && signedUrl != null) {
+        if (immersive && signedUrl != null && !currentIsVideo) {
             ImmersiveImageViewer(
                 model = signedUrl,
                 contentDescription = current.caption,
@@ -492,17 +590,22 @@ private fun MediaBand(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 row.forEach { item ->
-                    AsyncImage(
-                        model = item.signedUrl,
-                        contentDescription = item.caption ?: heading,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .weight(1f)
-                            .aspectRatio(1f)
-                            .clip(fieldShape)
-                            .border(1.dp, FieldTheme.hairline, fieldShape)
-                            .clickable { onOpen(item) },
-                    )
+                    val tile = Modifier
+                        .weight(1f)
+                        .aspectRatio(1f)
+                        .clip(fieldShape)
+                        .border(1.dp, FieldTheme.hairline, fieldShape)
+                        .clickable { onOpen(item) }
+                    if (isVideoMedia(item.mimeType)) {
+                        VideoTile(contentDescription = "סרטון: ${item.caption ?: heading}", modifier = tile)
+                    } else {
+                        AsyncImage(
+                            model = item.signedUrl,
+                            contentDescription = item.caption ?: heading,
+                            contentScale = ContentScale.Crop,
+                            modifier = tile,
+                        )
+                    }
                 }
                 if (row.size == 1) Spacer(Modifier.weight(1f))
             }
@@ -529,15 +632,20 @@ private fun MediaDraftCard(
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Box {
-            AsyncImage(
-                model = draft.uri,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(4f / 3f)
-                    .clip(fieldShape),
-            )
+            val preview = Modifier
+                .fillMaxWidth()
+                .aspectRatio(4f / 3f)
+                .clip(fieldShape)
+            if (draft.kind == EventMediaKind.VIDEO) {
+                VideoTile(contentDescription = "סרטון", modifier = preview)
+            } else {
+                AsyncImage(
+                    model = draft.uri,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = preview,
+                )
+            }
             if (draft.uploading) {
                 Box(
                     modifier = Modifier
@@ -749,4 +857,74 @@ private fun ImmersiveImageViewer(
             }
         }
     }
+}
+
+private sealed class UploadPayload {
+    class Ready(val bytes: ByteArray, val mimeType: String, val width: Int?, val height: Int?) : UploadPayload()
+    class Rejected(val message: String) : UploadPayload()
+}
+
+/** Photos are compressed to JPEG; videos are read as picked after the 25 MB check. */
+private fun readUploadPayload(context: Context, draft: MediaDraft): UploadPayload {
+    if (draft.kind == EventMediaKind.VIDEO) {
+        val mimeType = draft.videoMimeType ?: return UploadPayload.Rejected(EVENT_MEDIA_BAD_TYPE)
+        val size = runCatching {
+            context.contentResolver.openAssetFileDescriptor(draft.uri, "r")?.use { it.length }
+        }.getOrNull() ?: -1L
+        // A provider that cannot report a size is checked after reading, below.
+        if (size > 0) rejectVideoFile(size)?.let { return UploadPayload.Rejected(it) }
+        val bytes = runCatching {
+            context.contentResolver.openInputStream(draft.uri)?.use { it.readBytes() }
+        }.getOrNull() ?: return UploadPayload.Rejected(EVENT_MEDIA_NETWORK)
+        rejectVideoFile(bytes.size.toLong())?.let { return UploadPayload.Rejected(it) }
+        return UploadPayload.Ready(bytes, mimeType, width = null, height = null)
+    }
+    return when (val compressed = compressEventImage(context, draft.uri)) {
+        is CompressEventImageResult.Error -> UploadPayload.Rejected(compressed.message)
+        is CompressEventImageResult.Ok -> UploadPayload.Ready(
+            compressed.image.bytes,
+            "image/jpeg",
+            compressed.image.width,
+            compressed.image.height,
+        )
+    }
+}
+
+/** Videos have no stored poster frame, so the tile is a dark frame with a play badge. */
+@Composable
+private fun VideoTile(contentDescription: String, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .background(Color(0xFF1F2328))
+            .semantics { this.contentDescription = contentDescription },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(FieldTheme.raised),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = FieldTheme.textPrimary)
+        }
+    }
+}
+
+/** Plays the video in the phone's own player; the signed link lasts an hour. */
+@Composable
+private fun PlayVideoButton(url: String, mimeType: String) {
+    val context = LocalContext.current
+    VideoTile(
+        contentDescription = "הפעלת הסרטון",
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(16f / 9f)
+            .clip(cardShape)
+            .clickable {
+                val intent = Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(url), mimeType)
+                runCatching { context.startActivity(intent) }
+            },
+    )
+    Text("הקישו כדי להפעיל את הסרטון", style = TypeScale.caption, color = FieldTheme.textMuted)
 }

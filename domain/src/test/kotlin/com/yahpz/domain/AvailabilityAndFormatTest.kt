@@ -153,4 +153,12 @@ class AvailabilityAndFormatTest {
         assertNull(isoDateToUtcMillis("32/13/2026"))
         assertNull(isoDateToUtcMillis("3012"))
     }
+
+    @Test
+    fun `password checklist ticks each rule as it is met`() {
+        assertEquals(listOf(false, false, false), passwordRuleChecklist("").map { it.met })
+        assertEquals(listOf(true, false, false), passwordRuleChecklist("longenough").map { it.met })
+        assertEquals(listOf(true, true, true), passwordRuleChecklist("Longenough!").map { it.met })
+        assertEquals("אות גדולה באנגלית", passwordRuleChecklist("")[1].label)
+    }
 }

@@ -2,6 +2,7 @@ package com.yahpz.responder
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.yahpz.domain.needsPersonalVehiclePrompt
 import com.yahpz.domain.IMPERSONATION_STARTED
 import com.yahpz.domain.IMPERSONATION_STOPPED
 import com.yahpz.domain.ROLE_PREVIEW_STARTED
@@ -98,6 +99,8 @@ data class AppUiState(
     val actualRoles: List<String> = emptyList(),
     val roles: List<String> = emptyList(),
     val impersonating: Boolean = false,
+    /** Once per app session: a volunteer with no active vehicle is asked to send their plate to support. */
+    val personalVehiclePromptOpen: Boolean = false,
     val impersonationName: String? = null,
     val impersonationCallsign: String? = null,
     val previewRole: String? = null,
@@ -120,6 +123,8 @@ data class AppUiState(
     val unitEventsFailed: Boolean = false,
     val unitEventsLoading: Boolean = false,
     val showOthersCreatedEvents: Boolean = false,
+    /** Off by default each session: shift-born events stay off the unit list. */
+    val showShiftEvents: Boolean = false,
     val unitShifts: List<ShiftListItem> = emptyList(),
     val unitShiftsFailed: Boolean = false,
     val unitShiftsLoading: Boolean = false,
@@ -338,6 +343,10 @@ class AppModel : ViewModel() {
         val id = YahpazAPI.sessionUserId() ?: return "הכניסה נכשלה. בדקו את החיבור ונסו שוב."
         return try {
             applySession(id)
+            // A forced password change clears the invite when the new password is saved.
+            if (!_state.value.mustChangePassword) {
+                viewModelScope.launch { YahpazAPI.clearInvitePendingAfterSignIn() }
+            }
             null
         } catch (error: CancellationException) {
             throw error
@@ -346,10 +355,26 @@ class AppModel : ViewModel() {
         }
     }
 
+    private var personalVehiclePromptShown = false
+
+    private fun maybeOpenPersonalVehiclePrompt() {
+        val s = _state.value
+        if (personalVehiclePromptShown || s.impersonating || s.mustChangePassword || s.vehiclesFailed) return
+        val activeVehicles = s.vehicles.count { !it.archived }
+        if (!needsPersonalVehiclePrompt(s.profile?.volunteerStatus, activeVehicles)) return
+        personalVehiclePromptShown = true
+        _state.update { it.copy(personalVehiclePromptOpen = true) }
+    }
+
+    fun dismissPersonalVehiclePrompt() {
+        _state.update { it.copy(personalVehiclePromptOpen = false) }
+    }
+
     fun signOut() {
         viewModelScope.launch {
             YahpazAPI.signOut()
             lastAndroidReportAtMs = null
+            personalVehiclePromptShown = false
             _state.value = AppUiState(booting = false)
         }
     }
@@ -524,6 +549,10 @@ class AppModel : ViewModel() {
         fetch = { YahpazAPI.fetchUnitContacts() },
     )
 
+    fun setShowShiftEvents(show: Boolean) {
+        _state.update { it.copy(showShiftEvents = show) }
+    }
+
     fun setShowOthersCreatedEvents(show: Boolean) {
         if (_state.value.showOthersCreatedEvents == show) return
         _state.update { it.copy(showOthersCreatedEvents = show, unitEvents = emptyList()) }
@@ -547,12 +576,14 @@ class AppModel : ViewModel() {
             val knownIds = (events.map { it.id } + active.map { it.id }).toSet()
             val pinnedIds = prefs.filter { it.kind == "pin" }.map { it.eventId }.toSet()
             val extra = YahpazAPI.fetchUnitEventsByIds((pinnedIds - knownIds).toList())
+            val withMedia = YahpazAPI.fetchEventIdsWithMedia((events + active + extra).map { it.id })
+            fun List<EventListItem>.markImages() = map { e -> if (e.id in withMedia) e.copy(hasImage = true) else e }
             _state.update {
                 it.copy(
-                    unitEvents = events,
-                    myActiveUnitEvents = active,
+                    unitEvents = events.markImages(),
+                    myActiveUnitEvents = active.markImages(),
                     myActiveEventPrefs = prefs,
-                    myActivePinnedEvents = extra,
+                    myActivePinnedEvents = extra.markImages(),
                     unitEventsFailed = false,
                 )
             }
@@ -1119,11 +1150,13 @@ class AppModel : ViewModel() {
                     vehiclesFailed = false,
                     fillEventId = null,
                     showOthersCreatedEvents = false,
+                    showShiftEvents = false,
                 )
             }
             reloadEvents()
             reloadShifts()
             reloadVehicles()
+            maybeOpenPersonalVehiclePrompt()
             // Secondary surfaces load in the background so boot is not blocked on them.
             viewModelScope.launch { reloadContacts() }
             if (managesUnit(visible)) {

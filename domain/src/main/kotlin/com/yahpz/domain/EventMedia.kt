@@ -3,19 +3,27 @@ package com.yahpz.domain
 const val EVENT_MEDIA_CAP = 20
 const val EVENT_MEDIA_CAPTION_MAX = 200
 const val EVENT_MEDIA_LEFTOVER_ERROR = "בחרו מתי צולמה כל תמונה."
-const val EVENT_MEDIA_CAP_ERROR = "ניתן לצרף עד 20 תמונות לאירוע."
+const val EVENT_MEDIA_CAP_ERROR = "ניתן לצרף עד 20 תמונות וסרטונים לאירוע."
 const val EVENT_MEDIA_CAPTION_ERROR = "התיאור קצר עד 200 תווים."
-const val EVENT_MEDIA_BAD_TYPE = "לא ניתן להעלות קובץ זה. בחרו תמונה."
+const val EVENT_MEDIA_BAD_TYPE = "לא ניתן להעלות קובץ זה. בחרו תמונה או סרטון."
 const val EVENT_MEDIA_TOO_LARGE = "הקובץ גדול מדי. בחרו תמונה אחרת."
 const val EVENT_MEDIA_COMPRESS_FAIL = "לא הצלחנו לדחוס את התמונה. נסו תמונה אחרת."
 const val EVENT_MEDIA_HEIC_FAIL =
     "לא הצלחנו לקרוא את התמונה. שמרו כ-JPEG או PNG ונסו שוב."
 const val EVENT_MEDIA_NETWORK = "ההעלאה נכשלה. נסו שוב."
+const val EVENT_MEDIA_CAMERA_PERMISSION = "נדרשת הרשאת מצלמה כדי לצלם תמונה."
+const val EVENT_MEDIA_CAMERA_FAILED = "לא הצלחנו לפתוח את המצלמה."
 const val EVENT_MEDIA_TITLE = "מדיה"
-const val EVENT_MEDIA_EMPTY = "אין תמונות לאירוע זה."
+/** Paperclip mark on the unit Events list when an event has media. */
+const val EVENT_ATTACHMENT_LABEL = "יש תמונה מצורפת"
+const val EVENT_MEDIA_EMPTY = "אין תמונות או סרטונים לאירוע זה."
 const val EVENT_MEDIA_ADDED = "התמונה נוספה"
 const val EVENT_MEDIA_UPDATED = "התמונה עודכנה"
 const val EVENT_MEDIA_DELETED = "התמונה נמחקה"
+const val EVENT_MEDIA_VIDEO_ADDED = "הסרטון נוסף"
+const val EVENT_MEDIA_VIDEO_DELETED = "הסרטון נמחק"
+const val EVENT_MEDIA_VIDEO_TOO_LARGE = "הסרטון ארוך מדי. ניתן לצרף סרטון קצר, עד 25MB."
+const val EVENT_MEDIA_VIDEO_MAX_BYTES = 25L * 1024 * 1024
 const val EVENT_MEDIA_TAB_LABEL = "מדיה"
 const val EVENT_MEDIA_DOCS_TAB_LABEL = "תיעוד"
 
@@ -87,7 +95,30 @@ fun groupMediaByTakenWhen(items: List<EventMedia>): EventMediaBands {
     )
 }
 
-fun eventMediaStoragePath(eventId: String, mediaId: String): String = "$eventId/$mediaId.jpg"
+/** Videos are stored as uploaded. Keep in sync with the event_media_type_and_size check. */
+private val EVENT_MEDIA_VIDEO_EXTENSIONS = mapOf(
+    "video/mp4" to "mp4",
+    "video/quicktime" to "mov",
+    "video/webm" to "webm",
+)
+
+enum class EventMediaKind { IMAGE, VIDEO }
+
+/** Any image is compressed to JPEG; only MP4, QuickTime and WebM videos are kept. */
+fun eventMediaKind(mimeType: String?): EventMediaKind? = when {
+    mimeType == null -> null
+    mimeType.startsWith("image/") -> EventMediaKind.IMAGE
+    mimeType in EVENT_MEDIA_VIDEO_EXTENSIONS -> EventMediaKind.VIDEO
+    else -> null
+}
+
+fun isVideoMedia(mimeType: String): Boolean = mimeType.startsWith("video/")
+
+fun rejectVideoFile(byteSize: Long): String? =
+    if (byteSize <= 0 || byteSize > EVENT_MEDIA_VIDEO_MAX_BYTES) EVENT_MEDIA_VIDEO_TOO_LARGE else null
+
+fun eventMediaStoragePath(eventId: String, mediaId: String, mimeType: String = "image/jpeg"): String =
+    "$eventId/$mediaId.${EVENT_MEDIA_VIDEO_EXTENSIONS[mimeType] ?: "jpg"}"
 
 fun mergeMediaPlates(
     responderKeyed: List<EventMediaPlateOption>,

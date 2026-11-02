@@ -128,6 +128,9 @@ fun RootScreen(
                 }
             }
         }
+        if (ui.personalVehiclePromptOpen && ui.isSignedIn && ui.forceUpdate == null && !ui.mustChangePassword) {
+            PersonalVehiclePromptSheet(onDismiss = app::dismissPersonalVehiclePrompt)
+        }
         ui.toast?.let { toast ->
             Box(
                 modifier = Modifier

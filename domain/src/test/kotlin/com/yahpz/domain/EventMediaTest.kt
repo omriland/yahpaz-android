@@ -111,4 +111,38 @@ class EventMediaTest {
         val b = EventMediaPlateOption("b", "123-45-678", null, null, null)
         assertEquals(listOf(a, b), mergeMediaPlates(listOf(a), listOf(a, b)))
     }
+
+    @Test
+    fun `video storage paths use the video extension`() {
+        assertEquals("e1/m1.mp4", eventMediaStoragePath("e1", "m1", "video/mp4"))
+        assertEquals("e1/m1.mov", eventMediaStoragePath("e1", "m1", "video/quicktime"))
+        assertEquals("e1/m1.webm", eventMediaStoragePath("e1", "m1", "video/webm"))
+        assertEquals("e1/m1.jpg", eventMediaStoragePath("e1", "m1", "image/jpeg"))
+    }
+
+    @Test
+    fun `media kind keeps images and the three video types only`() {
+        assertEquals(EventMediaKind.IMAGE, eventMediaKind("image/heic"))
+        assertEquals(EventMediaKind.VIDEO, eventMediaKind("video/mp4"))
+        assertEquals(EventMediaKind.VIDEO, eventMediaKind("video/quicktime"))
+        assertEquals(EventMediaKind.VIDEO, eventMediaKind("video/webm"))
+        assertNull(eventMediaKind("video/3gpp"))
+        assertNull(eventMediaKind(null))
+        assertTrue(isVideoMedia("video/mp4"))
+        assertFalse(isVideoMedia("image/jpeg"))
+    }
+
+    @Test
+    fun `videos up to 25 MB are accepted`() {
+        assertNull(rejectVideoFile(25L * 1024 * 1024))
+        assertEquals(EVENT_MEDIA_VIDEO_TOO_LARGE, rejectVideoFile(25L * 1024 * 1024 + 1))
+        assertEquals(EVENT_MEDIA_VIDEO_TOO_LARGE, rejectVideoFile(0))
+    }
+
+    @Test
+    fun `copy matches the web`() {
+        assertEquals("ניתן לצרף עד 20 תמונות וסרטונים לאירוע.", EVENT_MEDIA_CAP_ERROR)
+        assertEquals("אין תמונות או סרטונים לאירוע זה.", EVENT_MEDIA_EMPTY)
+        assertEquals("הסרטון ארוך מדי. ניתן לצרף סרטון קצר, עד 25MB.", EVENT_MEDIA_VIDEO_TOO_LARGE)
+    }
 }

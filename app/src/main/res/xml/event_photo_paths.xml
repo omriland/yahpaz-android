@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Camera shots for event media are written here, then compressed and uploaded. -->
+<paths>
+    <cache-path name="event_photos" path="event_photos/" />
+</paths>

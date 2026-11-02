@@ -1,5 +1,6 @@
 package com.yahpz.responder
 
+import com.yahpz.domain.isRecognizedMapAddress
 import com.yahpz.domain.AssignableProfile
 import com.yahpz.domain.HighwayJunctionCatalogRow
 import com.yahpz.domain.buildLocationPayload
@@ -490,11 +491,29 @@ object YahpazAPI {
         }
     }
 
+    /**
+     * A password sign-in means registration finished, so drop the invite marker
+     * (matches the web). Only touches a row that is still pending.
+     */
+    suspend fun clearInvitePendingAfterSignIn() {
+        val userId = sessionUserId() ?: return
+        runCatching {
+            client.from("profiles").update(
+                InviteClearRow(updatedAt = Instant.now().toString()),
+            ) {
+                filter {
+                    eq("id", userId)
+                    eq("invite_pending", true)
+                }
+            }
+        }
+    }
+
     suspend fun loadProfile(): Pair<ProfileRecord, List<String>> {
         val userId = sessionUserId() ?: throw APIException("יש להתחבר מחדש.")
         val profile = client.from("profiles").select(
             Columns.raw(
-                "id, full_name, email, callsign, phone, active, must_change_password, availability, available_from, lifetime_event_count, lifetime_km, lifetime_stats_updated_at",
+                "id, full_name, email, callsign, phone, active, must_change_password, volunteer_status, availability, available_from, lifetime_event_count, lifetime_km, lifetime_stats_updated_at",
             ),
         ) {
             filter { eq("id", userId) }
@@ -532,6 +551,19 @@ object YahpazAPI {
         }.decodeList<ShiftAssignmentIdRow>().map { it.shiftId }
         if (ids.isEmpty()) return emptyList()
         return fetchByIds(ids, "shifts", shiftListSelect)
+    }
+
+    /** Event ids that have at least one photo or video, in chunks of 100. */
+    suspend fun fetchEventIdsWithMedia(eventIds: List<String>): Set<String> {
+        val found = mutableSetOf<String>()
+        for (chunk in eventIds.filter { it.isNotEmpty() }.distinct().chunked(100)) {
+            runCatching {
+                client.from("event_media").select(Columns.raw("event_id")) {
+                    filter { isIn("event_id", chunk) }
+                }.decodeList<EventMediaEventIdRow>()
+            }.getOrNull()?.forEach { found += it.eventId }
+        }
+        return found
     }
 
     suspend fun fetchUnitContacts(): List<UnitContact> =
@@ -757,7 +789,7 @@ object YahpazAPI {
             .decodeList<AdminVehicleRow>()
             .groupBy { it.userId }
         val addressesByUser = client.from("user_addresses").select(
-            Columns.raw("user_id, kind, label, formatted_address"),
+            Columns.raw("user_id, kind, label, formatted_address, place_id, lat, lng"),
         ).decodeList<AdminAddressRow>().groupBy { it.userId }
         return profiles.map { row ->
             AdminUserListItem(
@@ -787,6 +819,7 @@ object YahpazAPI {
                         kind = it.kind,
                         label = it.label,
                         formattedAddress = it.formattedAddress,
+                        onMap = isRecognizedMapAddress(it.placeId, it.lat, it.lng),
                     )
                 },
             )
@@ -2511,11 +2544,13 @@ object YahpazAPI {
         return mergeMediaPlates(responderKeyed.mapNotNull { it.toOption() }, eventKeyed.mapNotNull { it.toOption() })
     }
 
+    /** A compressed JPEG photo, or an MP4 / QuickTime / WebM video stored as picked. */
     suspend fun uploadEventMedia(
         eventId: String,
-        jpegBytes: ByteArray,
-        width: Int,
-        height: Int,
+        bytes: ByteArray,
+        mimeType: String,
+        width: Int?,
+        height: Int?,
         takenWhen: EventMediaTakenWhen,
         treatedPlateIds: List<String>,
         caption: String?,
@@ -2524,11 +2559,11 @@ object YahpazAPI {
         val trimmed = caption?.trim()?.ifEmpty { null }
         captionError(trimmed.orEmpty())?.let { return EventMediaWriteResult.Error(it) }
         val id = UUID.randomUUID().toString()
-        val storagePath = eventMediaStoragePath(eventId, id)
+        val storagePath = eventMediaStoragePath(eventId, id, mimeType)
         try {
-            client.storage.from("event-media").upload(storagePath, jpegBytes) {
+            client.storage.from("event-media").upload(storagePath, bytes) {
                 upsert = false
-                contentType = ContentType.Image.JPEG
+                contentType = ContentType.parse(mimeType)
             }
         } catch (error: Exception) {
             return EventMediaWriteResult.Error(mapEventMediaError(error.message))
@@ -2542,8 +2577,8 @@ object YahpazAPI {
                     caption = trimmed,
                     takenWhen = takenWhen.raw,
                     storagePath = storagePath,
-                    mimeType = "image/jpeg",
-                    byteSize = jpegBytes.size,
+                    mimeType = mimeType,
+                    byteSize = bytes.size,
                     width = width,
                     height = height,
                 ),
@@ -2793,6 +2828,11 @@ private data class MyActiveEventPrefWrite(
     @SerialName("user_id") val userId: String,
     @SerialName("event_id") val eventId: String,
     val kind: String,
+)
+
+@Serializable
+private data class EventMediaEventIdRow(
+    @SerialName("event_id") val eventId: String,
 )
 
 @Serializable

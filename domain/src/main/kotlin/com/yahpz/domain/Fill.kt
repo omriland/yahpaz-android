@@ -33,6 +33,23 @@ data class ResponderFillErrors(
 
 enum class FillMode { DRAFT, COMPLETE }
 
+/** Minimum trimmed length for פירוט הטיפול on complete. Typing past this is allowed. */
+const val TREATMENT_DETAIL_MIN_CHARS = 40
+const val TREATMENT_DETAIL_MIN_ERROR = "יש להזין לפחות 40 תווים בפירוט הטיפול."
+
+fun treatmentDetailError(value: String, mode: FillMode): String? {
+    if (mode != FillMode.COMPLETE) return null
+    return if (value.trim().length < TREATMENT_DETAIL_MIN_CHARS) TREATMENT_DETAIL_MIN_ERROR else null
+}
+
+data class TreatmentDetailCounter(val text: String, val met: Boolean)
+
+/** Compact counter above the field: trimmed length against the minimum. */
+fun treatmentDetailCounter(value: String): TreatmentDetailCounter {
+    val count = value.trim().length
+    return TreatmentDetailCounter("$count מתוך $TREATMENT_DETAIL_MIN_CHARS", met = count >= TREATMENT_DETAIL_MIN_CHARS)
+}
+
 /**
  * An equal pair is a real record: a vehicle that never left the spot, or a
  * responder who logs 0 in both fields. Only a reversed pair is a typo.
@@ -50,6 +67,20 @@ private fun parseOptionalNumber(raw: String): ParsedNumber {
     if (trimmed.isEmpty()) return ParsedNumber.Missing
     val value = trimmed.toDoubleOrNull()
     return if (value != null && value.isFinite()) ParsedNumber.Value(value) else ParsedNumber.Invalid
+}
+
+/** Display-only end − start. Null until both readings are numbers and end ≥ start. */
+fun odometerDelta(odometerStart: String, odometerEnd: String): Double? {
+    val start = parseOptionalNumber(odometerStart) as? ParsedNumber.Value ?: return null
+    val end = parseOptionalNumber(odometerEnd) as? ParsedNumber.Value ?: return null
+    return if (end.value < start.value) null else end.value - start.value
+}
+
+/** The order error for a reversed pair of numbers, otherwise null. */
+fun odometerRangeError(odometerStart: String, odometerEnd: String): String? {
+    val start = parseOptionalNumber(odometerStart) as? ParsedNumber.Value ?: return null
+    val end = parseOptionalNumber(odometerEnd) as? ParsedNumber.Value ?: return null
+    return if (end.value < start.value) ODOMETER_ORDER_ERROR else null
 }
 
 fun validateResponderFillDraft(
@@ -89,7 +120,7 @@ fun validateResponderFillDraft(
             odometerEnd = "יש למלא מד אוץ סיום."
         }
         if (draft.route.trim().isEmpty()) route = "יש למלא נתיב נסיעה."
-        if (draft.treatmentDetail.trim().isEmpty()) treatmentDetail = "יש למלא פירוט הטיפול."
+        treatmentDetail = treatmentDetailError(draft.treatmentDetail, mode)
     }
 
     if (odometerEnd == null && start is ParsedNumber.Value && end is ParsedNumber.Value && end.value < start.value) {

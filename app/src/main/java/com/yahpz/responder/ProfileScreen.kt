@@ -46,6 +46,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.yahpz.domain.PASSWORD_RULES_TITLE
+import com.yahpz.domain.passwordRuleChecklist
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Circle
 import com.yahpz.domain.ADD_VEHICLE
 import com.yahpz.domain.AvailabilityStatus
 import com.yahpz.domain.DEFAULT_VEHICLE_LABEL
@@ -124,6 +128,7 @@ fun ProfileScreen(app: AppModel, ui: AppUiState) {
             FieldCard {
                 Text("יש לבחור סיסמה חדשה", style = TypeScale.section, color = FieldTheme.textPrimary)
                 FormField("סיסמה חדשה", password, { password = it }, password = true, keyboardType = KeyboardType.Password, ltr = true)
+                PasswordRulesChecklist(password)
                 FormField("אימות סיסמה", confirm, { confirm = it }, password = true, keyboardType = KeyboardType.Password, ltr = true)
                 error?.let { Text(it, style = TypeScale.caption, color = FieldTheme.alert) }
                 PrimaryButton(
@@ -633,6 +638,25 @@ private fun VehiclesSection(
                 TextButton(onClick = { if (!saving) confirm = null }, enabled = !saving) {
                     Text("ביטול", color = FieldTheme.accent)
                 }
+            }
+        }
+    }
+}
+
+/** The password rules up front, ticking off as the member types. */
+@Composable
+private fun PasswordRulesChecklist(password: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(PASSWORD_RULES_TITLE, style = TypeScale.label, color = FieldTheme.textSecondary)
+        passwordRuleChecklist(password).forEach { rule ->
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(
+                    if (rule.met) Icons.Outlined.Check else Icons.Outlined.Circle,
+                    contentDescription = if (rule.met) "בוצע" else "חסר",
+                    tint = if (rule.met) FieldTheme.done else FieldTheme.textMuted,
+                    modifier = Modifier.size(16.dp),
+                )
+                Text(rule.label, style = TypeScale.caption, color = if (rule.met) FieldTheme.done else FieldTheme.textSecondary)
             }
         }
     }

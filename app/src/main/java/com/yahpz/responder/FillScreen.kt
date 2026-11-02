@@ -61,6 +61,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import com.yahpz.domain.odometerDelta
+import com.yahpz.domain.odometerRangeError
+import com.yahpz.domain.formatNumber
+import com.yahpz.domain.treatmentDetailCounter
 import com.yahpz.domain.EVENT_MEDIA_DOCS_TAB_LABEL
 import com.yahpz.domain.EVENT_MEDIA_TAB_LABEL
 import com.yahpz.domain.CommitTreatedPlateResult
@@ -473,8 +477,18 @@ fun FillScreen(eventId: String, app: AppModel) {
                         }
                         FormField("מד אוץ התחלה", draft.odometerStart, { draft = draft.copy(odometerStart = it) }, keyboardType = KeyboardType.Number, mono = true, error = errors.odometerStart, enabled = !readOnly)
                         FormField("מד אוץ סיום", draft.odometerEnd, { draft = draft.copy(odometerEnd = it) }, keyboardType = KeyboardType.Number, mono = true, error = errors.odometerEnd, enabled = !readOnly)
+                        OdometerTotal(draft.odometerStart, draft.odometerEnd, fieldError = errors.odometerEnd)
                         FormArea("נתיב נסיעה", draft.route, { draft = draft.copy(route = it) }, error = errors.route, enabled = !readOnly)
-                        FormArea("פירוט הטיפול", draft.treatmentDetail, { draft = draft.copy(treatmentDetail = it) }, error = errors.treatmentDetail, enabled = !readOnly)
+                        val detailCounter = treatmentDetailCounter(draft.treatmentDetail)
+                        FormArea(
+                            "פירוט הטיפול",
+                            draft.treatmentDetail,
+                            { draft = draft.copy(treatmentDetail = it) },
+                            error = errors.treatmentDetail,
+                            enabled = !readOnly,
+                            counter = detailCounter.text.takeIf { !readOnly },
+                            counterMet = detailCounter.met,
+                        )
                         TreatedPlatesSection(
                             plates = draft.treatedPlates,
                             pending = draft.treatedPlatePending,
@@ -813,3 +827,19 @@ private fun treatedPlateFieldColors() = TextFieldDefaults.colors(
     focusedTextColor = FieldTheme.textPrimary,
     unfocusedTextColor = FieldTheme.textPrimary,
 )
+
+/** Live end − start. A reversed pair shows the order error until the field itself does. */
+@Composable
+private fun OdometerTotal(start: String, end: String, fieldError: String?) {
+    val total = odometerDelta(start, end)
+    if (total != null) {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("סה״כ", style = TypeScale.body, color = FieldTheme.textSecondary)
+            Text(formatNumber(total), style = TypeScale.numeric, color = FieldTheme.textPrimary)
+        }
+        return
+    }
+    val reversed = odometerRangeError(start, end)
+    if (reversed == null || reversed == fieldError) return
+    Text(reversed, style = TypeScale.caption, color = FieldTheme.alert)
+}

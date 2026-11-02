@@ -9,6 +9,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material3.Icon
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -763,6 +767,18 @@ private fun AdminUserRow(user: AdminUserListItem, today: String, onOpen: () -> U
         if (tags.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
             Text(tags.joinToString(" · "), style = TypeScale.caption, color = FieldTheme.textMuted)
+        }
+        user.dataGap?.let { gap ->
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(
+                    Icons.Outlined.ErrorOutline,
+                    contentDescription = null,
+                    tint = FieldTheme.alert,
+                    modifier = Modifier.size(16.dp),
+                )
+                Text(gap.tip, style = TypeScale.caption, color = FieldTheme.alert)
+            }
         }
     }
 }

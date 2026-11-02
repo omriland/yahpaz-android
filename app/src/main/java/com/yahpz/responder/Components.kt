@@ -632,9 +632,15 @@ fun FormArea(
     minHeight: Int = 120,
     error: String? = null,
     enabled: Boolean = true,
+    /** e.g. "12 מתוך 40"; turns green once [counterMet]. */
+    counter: String? = null,
+    counterMet: Boolean = false,
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(label, style = TypeScale.label, color = FieldTheme.textSecondary)
+        if (counter != null) {
+            Text(counter, style = TypeScale.caption, color = if (counterMet) FieldTheme.done else FieldTheme.textMuted)
+        }
         TextField(
             value = value,
             onValueChange = onValueChange,
