@@ -1,6 +1,15 @@
 package com.yahpz.responder
 
 import com.yahpz.domain.isRecognizedMapAddress
+import com.yahpz.domain.SHIFT_ORIGIN
+import com.yahpz.domain.ShiftBornFillDraft
+import com.yahpz.domain.ShiftBornTreated
+import com.yahpz.domain.mapShiftBornFillError
+import com.yahpz.domain.shiftOdometerError
+import com.yahpz.domain.SHIFT_ODOMETER_NOT_ALLOWED
+import com.yahpz.domain.SHIFT_ODOMETER_SAVE_FAILED
+import com.yahpz.domain.policeEventIdForInput
+import com.yahpz.domain.odometerDelta
 import com.yahpz.domain.AssignableProfile
 import com.yahpz.domain.HighwayJunctionCatalogRow
 import com.yahpz.domain.buildLocationPayload
@@ -273,7 +282,9 @@ object YahpazAPI {
           shift_date, shift_kind, vehicle_type,
           personal_vehicle:vehicles!shifts_personal_vehicle_id_fkey(plate_number)
         ),
-        responders:event_responders(id, responder_id, status, fill_completable_at, total_km, started_at, ended_at, profile:profiles(full_name, callsign))
+        responders:event_responders(id, responder_id, status, fill_completable_at, total_km, started_at, ended_at, profile:profiles(full_name, callsign)),
+        treatment_detail, treatment_notes,
+        shared_treated:event_treated_vehicles!event_treated_vehicles_event_id_fkey(id)
     """.trimIndent()
 
     private val cockpitSelect = """
@@ -296,7 +307,7 @@ object YahpazAPI {
     """.trimIndent()
 
     private val fillSelect = """
-        id, status, event_date, police_event_id, location, is_cancelled,
+        id, origin, status, event_date, police_event_id, location, is_cancelled,
         event_type:event_types(name),
         road:roads(name),
         shift_lead:profiles!events_shift_lead_id_fkey(full_name, callsign),
@@ -315,8 +326,19 @@ object YahpazAPI {
         responders:shift_responders(id, responder_id),
         born_events:events!events_shift_id_fkey(
           id, event_date, police_event_id, status,
-          event_type:event_types(name)
+          treatment_detail, treatment_notes, road_id, location,
+          event_type:event_types(name),
+          treated:event_treated_vehicles!event_treated_vehicles_event_id_fkey(id)
         )
+    """.trimIndent()
+
+    private val shiftBornFillSelect = """
+        id, origin, status, event_date, police_event_id, treatment_detail, treatment_notes,
+        road_id, location, is_cancelled, updated_at,
+        event_type:event_types(name),
+        shift:shifts!events_shift_id_fkey(shift_date),
+        last_saved:profiles!events_last_saved_by_fkey(full_name),
+        responders:event_responders(responder_id)
     """.trimIndent()
 
     private val reportEventSelect = """
@@ -2326,15 +2348,18 @@ object YahpazAPI {
         }
     }
 
-    suspend fun fetchFillContext(eventId: String): FillContext? {
-        val userId = sessionUserId() ?: return null
+    suspend fun fetchFillContext(eventId: String): FillLoad {
+        val userId = sessionUserId() ?: return FillLoad.NotAssigned
         val event = client.from("events").select(Columns.raw(fillSelect)) {
             filter { eq("id", eventId) }
-        }.decodeSingle<FillEventRow>()
+        }.decodeList<FillEventRow>().firstOrNull() ?: return FillLoad.NotAssigned
+        // Shift-born events are documented once for the crew; never load a per-responder fill.
+        if (event.origin == SHIFT_ORIGIN) return FillLoad.ShiftBorn
         val vehicles = client.from("vehicles").select(Columns.raw("plate_number, model, archived")) {
             filter { eq("user_id", userId) }
         }.decodeList<VehicleOption>()
-        val mine = event.responders.firstOrNull { it.responderId.equals(userId, ignoreCase = true) } ?: return null
+        val mine = event.responders.firstOrNull { it.responderId.equals(userId, ignoreCase = true) }
+            ?: return FillLoad.NotAssigned
         val existingPlate = plateDigits(mine.vehiclePlate.orEmpty())
         val options = vehicles.map {
             ResponderVehicle(
@@ -2351,7 +2376,7 @@ object YahpazAPI {
             options.size == 1 -> options[0].plate
             else -> ""
         }
-        return FillContext(
+        return FillLoad.Ready(FillContext(
             eventId = event.id,
             assignmentId = mine.id,
             eventStatus = event.status,
@@ -2378,7 +2403,115 @@ object YahpazAPI {
             ),
             vehicles = options,
             endedAt = mine.endedAt,
+        ))
+    }
+
+    /** Web `fetchShiftBornFillContext`; null when the event is gone, hidden, or not shift-born. */
+    suspend fun fetchShiftBornFillContext(eventId: String): ShiftBornFillContext? {
+        val event = client.from("events").select(Columns.raw(shiftBornFillSelect)) {
+            filter { eq("id", eventId) }
+        }.decodeList<ShiftBornEventRow>().firstOrNull() ?: return null
+        if (event.origin != SHIFT_ORIGIN) return null
+        val lookups = fetchEventLookups()
+        val treated = client.from("event_treated_vehicles").select(Columns.raw("vehicle_kind_id, quantity")) {
+            filter { eq("event_id", eventId) }
+        }.decodeList<ShiftBornTreatedRow>()
+        val plates = client.from("event_treated_plates").select(
+            Columns.raw("plate_number, model, color, left_where, manufacturer, logo_slug, sort_order"),
+        ) {
+            filter { eq("event_id", eventId) }
+            order("sort_order", Order.ASCENDING)
+        }.decodeList<EventTreatedPlateRow>()
+        return ShiftBornFillContext(
+            eventId = event.id,
+            status = event.status,
+            eventDate = event.eventDate,
+            shiftDate = event.shift?.shiftDate ?: event.eventDate,
+            eventTypeName = event.eventType?.name,
+            isCancelled = event.isCancelled,
+            lastSavedName = event.lastSaved?.fullName,
+            responderIds = event.responders.map { it.responderId },
+            roads = lookups.roads,
+            vehicleKinds = lookups.vehicleKinds,
+            expectedUpdatedAt = event.updatedAt,
+            draft = ShiftBornFillDraft(
+                policeEventId = event.policeEventId.orEmpty(),
+                treatmentDetail = event.treatmentDetail.orEmpty(),
+                treatmentNotes = event.treatmentNotes.orEmpty(),
+                roadId = event.roadId.orEmpty(),
+                location = event.location.orEmpty(),
+                treated = treated.mapNotNull { row ->
+                    val kind = row.vehicleKindId ?: return@mapNotNull null
+                    val quantity = row.quantity ?: 0
+                    if (quantity <= 0) null else ShiftBornTreated(kind, quantity)
+                },
+                treatedPlates = mapTreatedPlateRows(plates.map { it.asInput }),
+            ),
         )
+    }
+
+    /** Web `saveShiftBornEventFill`: one RPC for the shared report; the server owns status. */
+    suspend fun saveShiftBornFill(
+        eventId: String,
+        expectedUpdatedAt: String,
+        draft: ShiftBornFillDraft,
+        complete: Boolean,
+    ): ShiftBornSave = try {
+        val updatedAt = client.postgrest.rpc(
+            "save_shift_born_event_fill",
+            ShiftBornFillCall(
+                eventId = eventId,
+                expectedUpdatedAt = expectedUpdatedAt,
+                policeEventId = policeEventIdForInput(draft.policeEventId).ifEmpty { null },
+                roadId = draft.roadId.trim().ifEmpty { null },
+                location = draft.location,
+                treatmentDetail = draft.treatmentDetail,
+                emergencyMeans = false,
+                treatmentNotes = draft.treatmentNotes,
+                treated = draft.treated.map { ShiftBornTreatedCall(it.vehicleKindId, it.quantity) },
+                complete = complete,
+                plates = draft.treatedPlates.map {
+                    ShiftBornPlateCall(
+                        plateNumber = it.plateNumber,
+                        model = it.model,
+                        color = it.color,
+                        leftWhere = it.leftWhere,
+                        manufacturer = it.manufacturer,
+                        logoSlug = it.logoSlug,
+                    )
+                },
+            ),
+        ).decodeAs<String>()
+        ShiftBornSave.Ok(updatedAt)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        ShiftBornSave.Failed(mapShiftBornFillError(error.message))
+    }
+
+    /** The shift's one odometer pair. Status follows on the server (refresh_shift_log_status trigger). */
+    suspend fun saveShiftOdometer(shiftId: String, odometerStart: String, odometerEnd: String): String? {
+        shiftOdometerError(odometerStart, odometerEnd)?.let { return it }
+        val userId = sessionUserId() ?: return "יש להתחבר מחדש."
+        return try {
+            val updated = client.from("shifts").update(
+                ShiftOdometerWrite(
+                    odometerStart = parsedOdometer(odometerStart),
+                    odometerEnd = parsedOdometer(odometerEnd),
+                    totalKm = odometerDelta(odometerStart, odometerEnd),
+                    lastSavedBy = userId,
+                    updatedAt = Instant.now().toString(),
+                ),
+            ) {
+                filter { eq("id", shiftId) }
+                select(Columns.raw("id"))
+            }.decodeList<IdRow>()
+            if (updated.isEmpty()) SHIFT_ODOMETER_NOT_ALLOWED else null
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            SHIFT_ODOMETER_SAVE_FAILED
+        }
     }
 
     suspend fun saveFill(

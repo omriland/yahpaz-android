@@ -59,6 +59,11 @@ import com.yahpz.domain.ResponderFillDraft
 import com.yahpz.domain.SHIFT_KIND_LABELS
 import com.yahpz.domain.ShiftDraft
 import com.yahpz.domain.ShiftStatus
+import com.yahpz.domain.SHIFT_ORIGIN
+import com.yahpz.domain.ShiftBornEventSnapshot
+import com.yahpz.domain.ShiftBornFillDraft
+import com.yahpz.domain.StampDescriptor
+import com.yahpz.domain.shiftBornFillStamp
 import com.yahpz.domain.TreatedPlateRowInput
 import com.yahpz.domain.TreatedVehicleDraft
 import com.yahpz.domain.VEHICLE_TYPE_LABELS
@@ -220,7 +225,29 @@ data class EventListItem(
     @Serializable(with = OptionalShiftSummarySerializer::class)
     val shift: ShiftSummary? = null,
     val responders: List<ResponderSummary> = emptyList(),
+    /** Shared report fields; only shift-born events carry them on the event row. */
+    @SerialName("treatment_detail") val treatmentDetail: String? = null,
+    @SerialName("treatment_notes") val treatmentNotes: String? = null,
+    @SerialName("shared_treated") val sharedTreated: List<IdRow> = emptyList(),
 ) {
+    val isShiftBorn: Boolean get() = origin == SHIFT_ORIGIN
+
+    /** The shift's date for a shift-born event (the event date is the same day). */
+    val shiftBornDate: String get() = shift?.shiftDate ?: eventDate
+
+    val shiftBornStamp: StampDescriptor
+        get() = shiftBornFillStamp(
+            ShiftBornEventSnapshot(
+                status = status,
+                policeEventId = policeEventId,
+                treatmentDetail = treatmentDetail,
+                treatmentNotes = treatmentNotes,
+                roadId = road?.name,
+                location = location,
+                treatedCount = sharedTreated.size,
+            ),
+        )
+
     fun ownParticipation(userId: String): ParticipationStatus? =
         responders.firstOrNull { it.responderId == userId }?.status
 
@@ -585,6 +612,7 @@ data class FillAssignmentRow(
 @Serializable
 data class FillEventRow(
     val id: String,
+    val origin: String? = null,
     @Serializable(with = EventStatusSerializer::class)
     val status: EventStatus,
     @SerialName("event_date") val eventDate: String,
@@ -621,6 +649,110 @@ data class FillContext(
     val draft: ResponderFillDraft,
     val vehicles: List<ResponderVehicle>,
     val endedAt: String?,
+)
+
+/** What the per-responder fill found: a fill, an event the viewer is not on, or a shift-born event. */
+sealed class FillLoad {
+    data class Ready(val context: FillContext) : FillLoad()
+    data object NotAssigned : FillLoad()
+    data object ShiftBorn : FillLoad()
+}
+
+@Serializable
+data class ResponderIdRow(@SerialName("responder_id") val responderId: String)
+
+@Serializable
+data class ShiftBornEventRow(
+    val id: String,
+    val origin: String? = null,
+    @Serializable(with = EventStatusSerializer::class)
+    val status: EventStatus,
+    @SerialName("event_date") val eventDate: String,
+    @SerialName("police_event_id") val policeEventId: String? = null,
+    @SerialName("treatment_detail") val treatmentDetail: String? = null,
+    @SerialName("treatment_notes") val treatmentNotes: String? = null,
+    @SerialName("road_id") val roadId: String? = null,
+    val location: String? = null,
+    @SerialName("is_cancelled") val isCancelled: Boolean = false,
+    @SerialName("updated_at") val updatedAt: String,
+    @SerialName("event_type")
+    @Serializable(with = OptionalNamedSerializer::class)
+    val eventType: Named? = null,
+    @Serializable(with = OptionalShiftSummarySerializer::class)
+    val shift: ShiftSummary? = null,
+    @SerialName("last_saved")
+    @Serializable(with = OptionalPersonNameSerializer::class)
+    val lastSaved: PersonName? = null,
+    val responders: List<ResponderIdRow> = emptyList(),
+)
+
+@Serializable
+data class ShiftBornTreatedRow(
+    @SerialName("vehicle_kind_id") val vehicleKindId: String? = null,
+    @Serializable(with = OptionalIntSerializer::class)
+    val quantity: Int? = null,
+)
+
+data class ShiftBornFillContext(
+    val eventId: String,
+    val status: EventStatus,
+    val eventDate: String,
+    val shiftDate: String,
+    val eventTypeName: String?,
+    val isCancelled: Boolean,
+    val lastSavedName: String?,
+    val responderIds: List<String>,
+    val roads: List<LookupOption>,
+    val vehicleKinds: List<LookupOption>,
+    val expectedUpdatedAt: String,
+    val draft: ShiftBornFillDraft,
+)
+
+sealed class ShiftBornSave {
+    data class Ok(val updatedAt: String) : ShiftBornSave()
+    data class Failed(val message: String) : ShiftBornSave()
+}
+
+@Serializable
+data class ShiftBornTreatedCall(
+    @SerialName("vehicle_kind_id") val vehicleKindId: String,
+    val quantity: Int,
+)
+
+@Serializable
+data class ShiftBornPlateCall(
+    @SerialName("plate_number") val plateNumber: String,
+    val model: String?,
+    val color: String?,
+    @SerialName("left_where") val leftWhere: String?,
+    val manufacturer: String?,
+    @SerialName("logo_slug") val logoSlug: String?,
+)
+
+/** Same parameters as web `saveShiftBornEventFill`. */
+@Serializable
+data class ShiftBornFillCall(
+    @SerialName("p_event_id") val eventId: String,
+    @SerialName("p_expected_updated_at") val expectedUpdatedAt: String,
+    @SerialName("p_police_event_id") val policeEventId: String?,
+    @SerialName("p_road_id") val roadId: String?,
+    @SerialName("p_location") val location: String,
+    @SerialName("p_treatment_detail") val treatmentDetail: String,
+    @SerialName("p_emergency_means") val emergencyMeans: Boolean,
+    @SerialName("p_treatment_notes") val treatmentNotes: String,
+    @SerialName("p_treated") val treated: List<ShiftBornTreatedCall>,
+    @SerialName("p_complete") val complete: Boolean,
+    @SerialName("p_plates") val plates: List<ShiftBornPlateCall>,
+)
+
+/** Crew may change only non-identity shift columns; this write carries nothing else. */
+@Serializable
+data class ShiftOdometerWrite(
+    @SerialName("odometer_start") val odometerStart: Double?,
+    @SerialName("odometer_end") val odometerEnd: Double?,
+    @SerialName("total_km") val totalKm: Double?,
+    @SerialName("last_saved_by") val lastSavedBy: String,
+    @SerialName("updated_at") val updatedAt: String,
 )
 
 @Serializable
@@ -1739,7 +1871,25 @@ data class ShiftBornEvent(
     @SerialName("event_type")
     @Serializable(with = OptionalNamedSerializer::class)
     val eventType: Named? = null,
-)
+    @SerialName("treatment_detail") val treatmentDetail: String? = null,
+    @SerialName("treatment_notes") val treatmentNotes: String? = null,
+    @SerialName("road_id") val roadId: String? = null,
+    val location: String? = null,
+    val treated: List<IdRow> = emptyList(),
+) {
+    val stamp: StampDescriptor
+        get() = shiftBornFillStamp(
+            ShiftBornEventSnapshot(
+                status = status,
+                policeEventId = policeEventId,
+                treatmentDetail = treatmentDetail,
+                treatmentNotes = treatmentNotes,
+                roadId = roadId,
+                location = location,
+                treatedCount = treated.size,
+            ),
+        )
+}
 
 @Serializable
 data class ShiftListItem(

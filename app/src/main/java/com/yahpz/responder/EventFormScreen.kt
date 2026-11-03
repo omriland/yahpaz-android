@@ -1005,7 +1005,7 @@ private fun EventResponderDetailSheet(
 }
 
 @Composable
-private fun TreatedVehicleStepper(
+internal fun TreatedVehicleStepper(
     label: String,
     value: Int,
     onDelta: (Int) -> Unit,

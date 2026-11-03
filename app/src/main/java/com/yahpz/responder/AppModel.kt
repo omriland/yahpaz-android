@@ -159,6 +159,8 @@ data class AppUiState(
     val trackToken: String? = null,
     val mustChangePassword: Boolean = false,
     val fillEventId: String? = null,
+    /** The open fill is the crew's shared shift-born report, not a per-responder fill. */
+    val fillShiftBorn: Boolean = false,
     val signingIn: Boolean = false,
     val signInError: String? = null,
     val privacyOpen: Boolean = false,
@@ -309,16 +311,26 @@ class AppModel : ViewModel() {
         }
     }
 
+    /**
+     * The one door into documentation. A shift-born event always opens the crew's shared
+     * report; an event whose origin is not loaded here is checked again by [FillScreen].
+     */
     fun openFill(eventId: String) {
         val state = _state.value
         val known = (state.events + state.unitEvents + state.myActiveUnitEvents + state.myActivePinnedEvents)
             .firstOrNull { it.id == eventId }
         if (known != null && !known.releasedToResponders()) return
-        _state.update { it.copy(fillEventId = eventId) }
+        val shiftBorn = known?.isShiftBorn == true ||
+            (state.shifts + state.unitShifts).any { shift -> shift.bornEvents.any { it.id == eventId } }
+        _state.update { it.copy(fillEventId = eventId, fillShiftBorn = shiftBorn) }
+    }
+
+    fun openShiftBornFill(eventId: String) {
+        _state.update { it.copy(fillEventId = eventId, fillShiftBorn = true) }
     }
 
     fun closeFill() {
-        _state.update { it.copy(fillEventId = null) }
+        _state.update { it.copy(fillEventId = null, fillShiftBorn = false) }
     }
 
     fun closeTrack() {
@@ -1025,6 +1037,21 @@ class AppModel : ViewModel() {
         return null
     }
 
+    /** After the shared report saves: the inbox stamps and the shift cards both read it. */
+    fun refreshAfterShiftBornSave() {
+        viewModelScope.launch { reloadEvents() }
+        viewModelScope.launch { reloadShifts() }
+        if (_state.value.canManageUnit) viewModelScope.launch { reloadUnitShifts() }
+    }
+
+    suspend fun saveShiftOdometer(shiftId: String, odometerStart: String, odometerEnd: String): String? {
+        YahpazAPI.saveShiftOdometer(shiftId, odometerStart, odometerEnd)?.let { return it }
+        showToast(com.yahpz.domain.SHIFT_ODOMETER_SAVED, StampTone.DONE)
+        viewModelScope.launch { reloadShifts() }
+        if (_state.value.canManageUnit) viewModelScope.launch { reloadUnitShifts() }
+        return null
+    }
+
     suspend fun autoSaveUnitShift(shiftId: String, draft: ShiftDraft): String? {
         val error = YahpazAPI.updateUnitShift(shiftId, draft)
         if (error == null) {
@@ -1149,6 +1176,7 @@ class AppModel : ViewModel() {
                     vehiclesLoading = true,
                     vehiclesFailed = false,
                     fillEventId = null,
+                    fillShiftBorn = false,
                     showOthersCreatedEvents = false,
                     showShiftEvents = false,
                 )

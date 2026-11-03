@@ -112,6 +112,7 @@ fun RootScreen(
                     )
                 }
             }
+            ui.fillEventId != null && ui.fillShiftBorn -> SafeEdgeScreen { ShiftBornFillScreen(ui.fillEventId, app) }
             ui.fillEventId != null -> SafeEdgeScreen { FillScreen(ui.fillEventId, app) }
             else -> MainTabs(app, ui, showFeedbackFab) { feedbackOpen = true }
         }

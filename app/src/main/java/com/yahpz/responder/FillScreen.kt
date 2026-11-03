@@ -105,6 +105,9 @@ import kotlinx.coroutines.withContext
 
 private enum class FillPane { DOCS, MEDIA }
 
+/** The event is gone or the viewer is not on it; nothing a retry would fix. */
+internal const val FILL_NOT_FOUND_TITLE = "אין לך הרשאה לצפות באירוע זה או שהאירוע אינו קיים."
+
 /** Long enough to not thrash on every keystroke, short enough to survive a kill. */
 private const val FILL_STASH_DEBOUNCE_MS = 600L
 
@@ -119,6 +122,7 @@ fun FillScreen(eventId: String, app: AppModel) {
     var formError by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(true) }
     var failed by remember { mutableStateOf(false) }
+    var notAssigned by remember { mutableStateOf(false) }
     var savingDraft by remember { mutableStateOf(false) }
     var completing by remember { mutableStateOf(false) }
     var plateLookupGeneration by remember { mutableIntStateOf(0) }
@@ -241,12 +245,19 @@ fun FillScreen(eventId: String, app: AppModel) {
     suspend fun load() {
         loading = true
         failed = false
+        notAssigned = false
         restoredFromDevice = false
         try {
-            val next = YahpazAPI.fetchFillContext(eventId)
+            val load = YahpazAPI.fetchFillContext(eventId)
+            if (load is FillLoad.ShiftBorn) {
+                // Safety net behind AppModel.openFill: never a per-responder fill for a shift-born event.
+                app.openShiftBornFill(eventId)
+                return
+            }
+            val next = (load as? FillLoad.Ready)?.context
             context = next
             if (next == null) {
-                failed = true
+                notAssigned = true
             } else {
                 val now = System.currentTimeMillis()
                 val live = FillDraftStore.live(next.assignmentId)
@@ -373,6 +384,11 @@ fun FillScreen(eventId: String, app: AppModel) {
                 Spacer(Modifier.height(12.dp))
                 Text("טוען את הדיווח…", style = TypeScale.body, color = FieldTheme.textSecondary)
             }
+            notAssigned -> EmptyState(
+                title = FILL_NOT_FOUND_TITLE,
+                actionTitle = "חזרה",
+                onAction = { app.closeFill() },
+            )
             failed || context == null -> EmptyState(
                 title = "טעינת הדיווח נכשלה. בדקו את החיבור ונסו שוב.",
                 actionTitle = "רענון",
@@ -606,7 +622,7 @@ fun FillScreen(eventId: String, app: AppModel) {
 }
 
 @Composable
-private fun FillPaneTab(
+internal fun FillPaneTab(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
@@ -631,7 +647,7 @@ private fun FillPaneTab(
 }
 
 @Composable
-private fun TreatedPlatesSection(
+internal fun TreatedPlatesSection(
     plates: List<TreatedPlate>,
     pending: String,
     error: String?,
