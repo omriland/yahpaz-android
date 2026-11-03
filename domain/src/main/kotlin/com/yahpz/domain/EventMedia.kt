@@ -161,3 +161,31 @@ fun mediaPlateLabel(plate: EventMediaPlateOption): String {
     val plateLabel = formatPlate(plate.plateNumber)
     return if (caption != null) "$plateLabel $caption" else plateLabel
 }
+
+const val EVENT_MEDIA_PLATES_TITLE = "רכבים בתמונה"
+const val EVENT_MEDIA_ASSIGN = "שיוך לרכב"
+const val EVENT_MEDIA_ASSIGN_HINT = "בחרו את הרכבים שמופיעים בתמונה."
+const val EVENT_MEDIA_ASSIGN_SAVED = "השיוך נשמר."
+const val EVENT_MEDIA_AUTO_LINKED = "התמונה שויכה לרכב"
+const val EVENT_MEDIA_AUTO_LINK_UNDONE = "השיוך בוטל."
+
+/**
+ * Ids of saved plates whose digits equal a scanned plate, in [plates] order,
+ * skipping ids already in [linkedIds] and repeats.
+ */
+fun autoLinkPlateIds(
+    scannedDigits: List<String>,
+    plates: List<EventMediaPlateOption>,
+    linkedIds: List<String>,
+): List<String> {
+    val scanned = scannedDigits.map(::plateDigits).filter { it.isNotEmpty() }.toSet()
+    if (scanned.isEmpty()) return emptyList()
+    val seen = linkedIds.toMutableSet()
+    val out = mutableListOf<String>()
+    for (plate in plates) {
+        if (plateDigits(plate.plateNumber) !in scanned) continue
+        if (!seen.add(plate.id)) continue
+        out += plate.id
+    }
+    return out
+}

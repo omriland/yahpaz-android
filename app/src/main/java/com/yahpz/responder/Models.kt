@@ -957,6 +957,16 @@ data class UnitBroadcastRow(
 }
 
 @Serializable
+data class PlateScanCall(
+    @SerialName("media_id") val mediaId: String,
+)
+
+@Serializable
+data class PlateScanResponse(
+    val plates: List<String> = emptyList(),
+)
+
+@Serializable
 data class NotifyFillReadyCall(
     val action: String = "notify_fill_ready",
     @SerialName("event_responder_ids") val eventResponderIds: List<String>,

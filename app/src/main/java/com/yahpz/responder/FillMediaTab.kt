@@ -22,6 +22,8 @@ import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -30,17 +32,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -67,8 +70,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -76,6 +82,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.yahpz.domain.EVENT_MEDIA_ADDED
+import com.yahpz.domain.EVENT_MEDIA_ASSIGN
+import com.yahpz.domain.EVENT_MEDIA_ASSIGN_HINT
+import com.yahpz.domain.EVENT_MEDIA_ASSIGN_SAVED
+import com.yahpz.domain.EVENT_MEDIA_AUTO_LINKED
+import com.yahpz.domain.EVENT_MEDIA_AUTO_LINK_UNDONE
+import com.yahpz.domain.EVENT_MEDIA_PLATES_TITLE
 import com.yahpz.domain.EVENT_MEDIA_BAD_TYPE
 import com.yahpz.domain.EVENT_MEDIA_CAMERA_FAILED
 import com.yahpz.domain.EVENT_MEDIA_VIDEO_ADDED
@@ -95,15 +107,18 @@ import com.yahpz.domain.EventMedia
 import com.yahpz.domain.EventMediaPlateOption
 import com.yahpz.domain.EventMediaTakenWhen
 import com.yahpz.domain.StampTone
+import com.yahpz.domain.autoLinkPlateIds
 import com.yahpz.domain.canAddMoreMedia
 import com.yahpz.domain.canDeleteEventMedia
 import com.yahpz.domain.captionError
 import com.yahpz.domain.eventMediaTakenWhenLabel
 import com.yahpz.domain.formatDateTime
+import com.yahpz.domain.mediaPlateLabel
 import com.yahpz.domain.groupMediaByTakenWhen
 import com.yahpz.domain.slotsRemaining
 import com.yahpz.domain.togglePlateId
 import com.yahpz.domain.treatedPlateCaption
+import com.yahpz.domain.uniquePlateIds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -124,6 +139,9 @@ private data class MediaDraft(
     val uploading: Boolean = false,
     val error: String? = null,
 )
+
+/** An inline line offering to undo a plate the scan linked to a just-uploaded photo. */
+private data class AutoLink(val mediaId: String, val plateId: String)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -155,6 +173,11 @@ fun FillMediaTab(
     var editError by remember { mutableStateOf<String?>(null) }
     var savingEdit by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
+    var assignTarget by remember { mutableStateOf<EventMedia?>(null) }
+    var assignPlateIds by remember { mutableStateOf<List<String>>(emptyList()) }
+    var assignError by remember { mutableStateOf<String?>(null) }
+    var assigning by remember { mutableStateOf(false) }
+    var autoLinks by remember(eventId) { mutableStateOf<List<AutoLink>>(emptyList()) }
 
     val inFlight = drafts.count { it.uploading }
     val addEnabled = canWrite && canAddMoreMedia(items.size, inFlight)
@@ -249,6 +272,38 @@ fun FillMediaTab(
         drafts = drafts.map { if (it.key == key) it.patch() else it }
     }
 
+    // After a photo uploads: read its plate, link the saved vehicles it matches. Every failure is silent.
+    suspend fun autoLinkScannedPlates(mediaId: String) {
+        // Nothing on the event to match: skip the scan (it is a paid model call).
+        if (plates.isEmpty()) return
+        val scanned = withContext(Dispatchers.IO) { YahpazAPI.scanPlatesInMedia(mediaId) }
+        val current = items.firstOrNull { it.id == mediaId } ?: return
+        val added = autoLinkPlateIds(scanned, plates, current.treatedPlateIds)
+        if (added.isEmpty()) return
+        val all = uniquePlateIds(current.treatedPlateIds + added)
+        val result = withContext(Dispatchers.IO) { YahpazAPI.replaceMediaPlates(mediaId, all) }
+        if (result != EventMediaWriteResult.Done) return
+        items = items.map { if (it.id == mediaId) it.copy(treatedPlateIds = all) else it }
+        autoLinks = autoLinks + added.map { AutoLink(mediaId, it) }
+    }
+
+    fun undoAutoLink(link: AutoLink) {
+        val media = items.firstOrNull { it.id == link.mediaId } ?: return
+        val rest = media.treatedPlateIds - link.plateId
+        scope.launch {
+            val result = withContext(Dispatchers.IO) { YahpazAPI.replaceMediaPlates(media.id, rest) }
+            when (result) {
+                EventMediaWriteResult.Done -> {
+                    items = items.map { if (it.id == media.id) it.copy(treatedPlateIds = rest) else it }
+                    autoLinks = autoLinks - link
+                    onToast(EVENT_MEDIA_AUTO_LINK_UNDONE, StampTone.DONE)
+                }
+                is EventMediaWriteResult.Error -> onToast(result.message, StampTone.PENDING)
+                is EventMediaWriteResult.Uploaded -> Unit
+            }
+        }
+    }
+
     fun startUpload(key: String, takenWhen: EventMediaTakenWhen) {
         val draft = drafts.firstOrNull { it.key == key } ?: return
         patchDraft(key) { copy(uploading = true, error = null, takenWhen = takenWhen) }
@@ -278,6 +333,9 @@ fun FillMediaTab(
                     items = items + result.media
                     val added = if (draft.kind == EventMediaKind.VIDEO) EVENT_MEDIA_VIDEO_ADDED else EVENT_MEDIA_ADDED
                     onToast(added, StampTone.DONE)
+                    if (draft.kind == EventMediaKind.IMAGE) {
+                        scope.launch { autoLinkScannedPlates(result.media.id) }
+                    }
                 }
                 is EventMediaWriteResult.Error -> {
                     patchDraft(key) { copy(uploading = false, error = result.message) }
@@ -298,6 +356,12 @@ fun FillMediaTab(
         editPlateIds = item.treatedPlateIds
         editCaption = item.caption.orEmpty()
         editError = null
+    }
+
+    fun openAssign(item: EventMedia) {
+        assignTarget = item
+        assignPlateIds = item.treatedPlateIds
+        assignError = null
     }
 
     fun removeFromTile(item: EventMedia) {
@@ -347,16 +411,26 @@ fun FillMediaTab(
                 heading = eventMediaTakenWhenLabel(EventMediaTakenWhen.BEFORE_TREATMENT),
                 items = grouped.before,
                 hasMenu = { canDeleteEventMedia(it, viewerId, canWrite) },
+                canAssign = plates.isNotEmpty(),
                 onOpen = ::openViewer,
+                onAssign = ::openAssign,
                 onRemove = ::removeFromTile,
             )
             MediaBand(
                 heading = eventMediaTakenWhenLabel(EventMediaTakenWhen.DURING_AFTER_TREATMENT),
                 items = grouped.during,
                 hasMenu = { canDeleteEventMedia(it, viewerId, canWrite) },
+                canAssign = plates.isNotEmpty(),
                 onOpen = ::openViewer,
+                onAssign = ::openAssign,
                 onRemove = ::removeFromTile,
             )
+            autoLinks.forEach { link ->
+                val plate = plates.firstOrNull { it.id == link.plateId }
+                if (plate != null && items.any { it.id == link.mediaId }) {
+                    AutoLinkLine(plate = plate, onUndo = { undoAutoLink(link) })
+                }
+            }
             drafts.forEach { draft ->
                 MediaDraftCard(
                     draft = draft,
@@ -403,6 +477,54 @@ fun FillMediaTab(
                 if (!addEnabled) {
                     Text(EVENT_MEDIA_CAP_ERROR, style = TypeScale.caption, color = FieldTheme.textMuted)
                 }
+            }
+        }
+    }
+
+    assignTarget?.let { target ->
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { if (!assigning) assignTarget = null },
+            sheetState = sheetState,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(EVENT_MEDIA_ASSIGN, style = TypeScale.section, color = FieldTheme.textPrimary)
+                Text(EVENT_MEDIA_ASSIGN_HINT, style = TypeScale.body, color = FieldTheme.textSecondary)
+                MediaPlateChips(
+                    plates = plates,
+                    selected = assignPlateIds,
+                    enabled = !assigning,
+                    onChange = { assignPlateIds = it },
+                )
+                assignError?.let { Text(it, style = TypeScale.caption, color = FieldTheme.alert) }
+                PrimaryButton(title = "שמירה", busy = assigning, onClick = {
+                    scope.launch {
+                        assigning = true
+                        val result = withContext(Dispatchers.IO) {
+                            YahpazAPI.replaceMediaPlates(target.id, assignPlateIds)
+                        }
+                        assigning = false
+                        when (result) {
+                            EventMediaWriteResult.Done -> {
+                                val linkedIds = uniquePlateIds(assignPlateIds)
+                                items = items.map { if (it.id == target.id) it.copy(treatedPlateIds = linkedIds) else it }
+                                autoLinks = autoLinks.filterNot { it.mediaId == target.id }
+                                assignTarget = null
+                                onToast(EVENT_MEDIA_ASSIGN_SAVED, StampTone.DONE)
+                            }
+                            is EventMediaWriteResult.Error -> assignError = result.message
+                            is EventMediaWriteResult.Uploaded -> Unit
+                        }
+                    }
+                })
+                GhostButton(title = "ביטול", enabled = !assigning, onClick = { assignTarget = null })
             }
         }
     }
@@ -490,7 +612,7 @@ fun FillMediaTab(
                     }
                     if (editing) {
                         TakenWhenPicker(value = editTakenWhen, enabled = !savingEdit, onChange = { editTakenWhen = it })
-                        MediaPlateChecklist(
+                        MediaPlateChips(
                             plates = plates,
                             selected = editPlateIds,
                             enabled = !savingEdit,
@@ -532,6 +654,7 @@ fun FillMediaTab(
                                             caption = editCaption.trim().ifEmpty { null },
                                         )
                                         items = items.map { if (it.id == next.id) next else it }
+                                        autoLinks = autoLinks.filterNot { it.mediaId == next.id }
                                         viewer = next
                                         editing = false
                                         onToast(EVENT_MEDIA_UPDATED, StampTone.DONE)
@@ -590,7 +713,9 @@ private fun MediaBand(
     heading: String,
     items: List<EventMedia>,
     hasMenu: (EventMedia) -> Boolean,
+    canAssign: Boolean,
     onOpen: (EventMedia) -> Unit,
+    onAssign: (EventMedia) -> Unit,
     onRemove: (EventMedia) -> Unit,
 ) {
     if (items.isEmpty()) return
@@ -605,7 +730,7 @@ private fun MediaBand(
                     val isVideo = isVideoMedia(item.mimeType)
                     val menu = hasMenu(item)
                     var menuOpen by remember(item.id) { mutableStateOf(false) }
-                    // Your own media while editing: a tap offers צפייה / הסרה; otherwise it opens the viewer.
+                    // Your own media while editing: a tap offers צפייה / שיוך לרכב / הסרה; otherwise it opens the viewer.
                     Box(modifier = Modifier.weight(1f).aspectRatio(1f)) {
                         val tile = Modifier
                             .fillMaxSize()
@@ -636,6 +761,15 @@ private fun MediaBand(
                                     onOpen(item)
                                 },
                             )
+                            if (canAssign) {
+                                DropdownMenuItem(
+                                    text = { Text(EVENT_MEDIA_ASSIGN, style = TypeScale.body, color = FieldTheme.textPrimary) },
+                                    onClick = {
+                                        menuOpen = false
+                                        onAssign(item)
+                                    },
+                                )
+                            }
                             DropdownMenuItem(
                                 text = { Text("הסרה", style = TypeScale.body, color = FieldTheme.alert) },
                                 onClick = {
@@ -705,7 +839,7 @@ private fun MediaDraftCard(
                 Icon(Icons.Outlined.Close, contentDescription = "הסרה", tint = Color.White)
             }
         }
-        MediaPlateChecklist(
+        MediaPlateChips(
             plates = plates,
             selected = draft.treatedPlateIds,
             enabled = !draft.uploading,
@@ -776,35 +910,88 @@ private fun TakenWhenPicker(
     }
 }
 
+/** One toggle chip per saved treated vehicle: logo + plate, accent border, tint and a check when linked. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun MediaPlateChecklist(
+private fun MediaPlateChips(
     plates: List<EventMediaPlateOption>,
     selected: List<String>,
     enabled: Boolean,
     onChange: (List<String>) -> Unit,
 ) {
     if (plates.isEmpty()) return
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text("רכבים בתמונה", style = TypeScale.label, color = FieldTheme.textSecondary)
-        plates.forEach { plate ->
-            val checked = plate.id in selected
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 44.dp)
-                    .clickable(enabled = enabled) { onChange(togglePlateId(selected, plate.id)) },
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Checkbox(
-                    checked = checked,
-                    onCheckedChange = { onChange(togglePlateId(selected, plate.id)) },
-                    enabled = enabled,
-                    colors = CheckboxDefaults.colors(checkedColor = FieldTheme.accent),
-                )
-                MediaPlateRow(plate, modifier = Modifier.weight(1f))
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(EVENT_MEDIA_PLATES_TITLE, style = TypeScale.label, color = FieldTheme.textSecondary)
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            plates.forEach { plate ->
+                val checked = plate.id in selected
+                val label = mediaPlateLabel(plate)
+                val state = if (checked) "נבחר" else "לא נבחר"
+                Row(
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .clip(fieldShape)
+                        .background(if (checked) FieldTheme.accentSubtle else FieldTheme.raised)
+                        .border(
+                            if (checked) 2.dp else 1.dp,
+                            if (checked) FieldTheme.accent else FieldTheme.strong,
+                            fieldShape,
+                        )
+                        .toggleable(
+                            value = checked,
+                            enabled = enabled,
+                            role = Role.Checkbox,
+                            onValueChange = { onChange(togglePlateId(selected, plate.id)) },
+                        )
+                        .clearAndSetSemantics {
+                            contentDescription = label
+                            stateDescription = state
+                        }
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    CarLogo(slug = plate.logoSlug)
+                    LicensePlate(plate = plate.plateNumber)
+                    Box(modifier = Modifier.size(18.dp), contentAlignment = Alignment.Center) {
+                        if (checked) {
+                            Icon(
+                                Icons.Outlined.Check,
+                                contentDescription = null,
+                                tint = FieldTheme.accent,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                    }
+                }
             }
         }
+    }
+}
+
+/** Shown in the media section after the scan linked a vehicle; ביטול unlinks just that plate. */
+@Composable
+private fun AutoLinkLine(plate: EventMediaPlateOption, onUndo: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(FieldTheme.doneTint, fieldShape)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            EVENT_MEDIA_AUTO_LINKED,
+            style = TypeScale.body,
+            color = FieldTheme.textPrimary,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        LicensePlate(plate = plate.plateNumber)
+        Spacer(Modifier.weight(1f))
+        GhostButton(title = "ביטול", onClick = onUndo, modifier = Modifier.width(88.dp))
     }
 }
 

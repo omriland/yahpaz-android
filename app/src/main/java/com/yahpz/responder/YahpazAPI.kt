@@ -235,6 +235,7 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.Headers
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -2780,7 +2781,7 @@ object YahpazAPI {
         }
     }
 
-    private suspend fun replaceMediaPlates(
+    suspend fun replaceMediaPlates(
         mediaId: String,
         plateIds: List<String>,
     ): EventMediaWriteResult {
@@ -2795,6 +2796,20 @@ object YahpazAPI {
             return EventMediaWriteResult.Done
         } catch (error: Exception) {
             return EventMediaWriteResult.Error(mapEventMediaError(error.message))
+        }
+    }
+
+    /** Plates the scan read off one uploaded photo (digits only). Never throws; any failure is no plates. */
+    suspend fun scanPlatesInMedia(mediaId: String): List<String> {
+        return try {
+            val result = withTimeoutOrNull(30_000L) {
+                invokeEdge<PlateScanCall, PlateScanResponse>("plate-scan", PlateScanCall(mediaId), "")
+            }
+            result?.getOrNull()?.plates.orEmpty().map(::plateDigits).filter { it.isNotEmpty() }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            emptyList()
         }
     }
 
