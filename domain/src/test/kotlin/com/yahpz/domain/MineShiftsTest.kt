@@ -2,6 +2,7 @@ package com.yahpz.domain
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -52,5 +53,34 @@ class MineShiftsTest {
         assertEquals("א", hebrewWeekdayLetter("2026-08-16"))
         assertEquals("ב", hebrewWeekdayLetter("2026-08-17"))
         assertEquals("ש", hebrewWeekdayLetter("2026-08-22"))
+    }
+
+    @Test
+    fun fillButtonFollowsTheWebShiftCard() {
+        val today = "2026-11-03"
+        assertEquals(ShiftFillButton.ENABLED, shiftFillButton("2026-11-02", ShiftStatus.IN_PROGRESS, false, today))
+        assertEquals(ShiftFillButton.ENABLED, shiftFillButton("2026-11-03", ShiftStatus.DRAFT, false, today))
+        assertEquals(ShiftFillButton.HIDDEN, shiftFillButton("2026-11-02", ShiftStatus.CLOSED, false, today))
+        assertEquals(ShiftFillButton.TOO_EARLY, shiftFillButton("2026-11-04", ShiftStatus.IN_PROGRESS, false, today))
+        // A lead is never told to wait; a future shift is simply not pending yet.
+        assertEquals(ShiftFillButton.HIDDEN, shiftFillButton("2026-11-04", ShiftStatus.IN_PROGRESS, true, today))
+        assertEquals(ShiftFillButton.ENABLED, shiftFillButton("2026-11-02", ShiftStatus.IN_PROGRESS, true, today))
+    }
+
+    @Test
+    fun odometerPairRefusesOnlyAReversedPair() {
+        assertEquals(ODOMETER_ORDER_ERROR, shiftOdometerError("120000", "119800"))
+        assertNull(shiftOdometerError("120000", "120000"))
+        assertNull(shiftOdometerError("120000", "120412"))
+        assertNull(shiftOdometerError("120000", ""))
+        assertNull(shiftOdometerError("", ""))
+        assertFalse(ODOMETER_ORDER_ERROR.contains("!"))
+    }
+
+    @Test
+    fun canDocumentShiftFromTheShiftDate() {
+        assertFalse(canDocumentShift("2026-11-04", canManage = false, today = "2026-11-03"))
+        assertTrue(canDocumentShift("2026-11-03", canManage = false, today = "2026-11-03"))
+        assertTrue(canDocumentShift("2026-11-09", canManage = true, today = "2026-11-03"))
     }
 }

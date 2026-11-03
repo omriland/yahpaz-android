@@ -36,6 +36,8 @@ data class MineListEvent(
     val date: String,
     val participation: ParticipationStatus,
     val totalKm: Double? = null,
+    /** Set for shift-born events: [mineShiftBornIsOpen] replaces the participation rule. */
+    val shiftBornOpen: Boolean? = null,
 )
 
 data class MineListSections<T>(
@@ -54,7 +56,7 @@ fun partitionMineList(
     val logged = mutableListOf<MineListEvent>()
     var hasMoreLogged = false
     for (item in items) {
-        if (mineInboxIsOpen(item.participation, item.totalKm)) {
+        if (item.shiftBornOpen ?: mineInboxIsOpen(item.participation, item.totalKm)) {
             pending += item
             continue
         }
@@ -73,6 +75,36 @@ fun partitionMineList(
 fun loggedWindowStart(today: String, windowsLoaded: Int): String {
     val windows = maxOf(1, windowsLoaded)
     return addCalendarDays(today, -(windows * MINE_LOGGED_WINDOW_DAYS))
+}
+
+sealed class ShiftGroupBlock<T> {
+    data class Single<T>(val item: T) : ShiftGroupBlock<T>()
+    data class Group<T>(val shiftId: String, val items: List<T>) : ShiftGroupBlock<T>()
+}
+
+/**
+ * One block per shift, placed where its first event falls, even when other rows sit
+ * between that shift's events. Rows without a shift id stay single. Web `groupMineEventCards`.
+ */
+fun <T> groupByShift(items: List<T>, shiftIdOf: (T) -> String?): List<ShiftGroupBlock<T>> {
+    val blocks = mutableListOf<ShiftGroupBlock<T>>()
+    val indexByShift = mutableMapOf<String, Int>()
+    for (item in items) {
+        val shiftId = shiftIdOf(item)
+        if (shiftId == null) {
+            blocks += ShiftGroupBlock.Single(item)
+            continue
+        }
+        val at = indexByShift[shiftId]
+        if (at == null) {
+            indexByShift[shiftId] = blocks.size
+            blocks += ShiftGroupBlock.Group(shiftId, listOf(item))
+        } else {
+            val group = blocks[at] as ShiftGroupBlock.Group<T>
+            blocks[at] = group.copy(items = group.items + item)
+        }
+    }
+    return blocks
 }
 
 fun shiftGroupPendingCaption(count: Int): String =

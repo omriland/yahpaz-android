@@ -103,4 +103,34 @@ class MineInboxTest {
     fun searchHighlightRangesEmptyWhenQueryBlank() {
         assertTrue(searchHighlightRanges("צומת גזר", "   ").isEmpty())
     }
+
+    @Test
+    fun groupByShiftKeepsOneBlockPerShiftEvenWhenRowsAreNotConsecutive() {
+        val rows = listOf("a" to "s1", "m" to null, "b" to "s2", "c" to "s1")
+        val blocks = groupByShift(rows) { it.second }
+        assertEquals(3, blocks.size)
+        val first = blocks[0] as ShiftGroupBlock.Group
+        assertEquals("s1", first.shiftId)
+        assertEquals(listOf("a", "c"), first.items.map { it.first })
+        assertEquals("m", (blocks[1] as ShiftGroupBlock.Single).item.first)
+        assertEquals(listOf("b"), (blocks[2] as ShiftGroupBlock.Group).items.map { it.first })
+    }
+
+    @Test
+    fun partitionUsesTheShiftBornRuleWhenGiven() {
+        val sections = partitionMineList(
+            listOf(
+                // Done participation with no KM is open for a manual event...
+                MineListEvent("manual", "2026-11-01", ParticipationStatus.DONE, totalKm = null),
+                // ...but a shift-born event never has KM; its own rule closes it.
+                MineListEvent("shift-done", "2026-11-01", ParticipationStatus.DONE, totalKm = null, shiftBornOpen = false),
+                MineListEvent("shift-open", "2026-11-01", ParticipationStatus.DONE, totalKm = null, shiftBornOpen = true),
+            ),
+            "2026-11-03",
+            1,
+        )
+        assertEquals(listOf("manual", "shift-open"), sections.pending.map { it.id })
+        assertEquals(listOf("shift-done"), sections.logged.map { it.id })
+    }
 }
+

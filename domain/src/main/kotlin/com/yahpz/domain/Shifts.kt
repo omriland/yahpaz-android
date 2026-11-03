@@ -83,6 +83,35 @@ fun partitionMineShifts(
     )
 }
 
+/** Web `SHIFT_TOO_EARLY_MESSAGE`: crew document a shift from its date on. */
+const val SHIFT_TOO_EARLY_MESSAGE = "ניתן לערוך החל מתאריך המשמרת"
+const val SHIFT_FILL_TITLE = "תיעוד משמרת"
+const val SHIFT_ODOMETER_SAVE_TITLE = "שמירת מד אוץ"
+const val SHIFT_ODOMETER_SAVED = "מד האוץ נשמר"
+const val SHIFT_ODOMETER_SAVE_FAILED = "שמירת מד האוץ נכשלה. בדקו את החיבור ונסו שוב."
+const val SHIFT_ODOMETER_NOT_ALLOWED = "לא ניתן לעדכן את המשמרת הזו."
+
+enum class ShiftFillButton { HIDDEN, ENABLED, TOO_EARLY }
+
+/**
+ * The card's תיעוד משמרת button, as on web `ShiftCard`: shown while the shift is
+ * pending, and shown disabled before the shift date for crew (never for a lead).
+ */
+fun shiftFillButton(
+    shiftDate: String,
+    status: ShiftStatus,
+    canManage: Boolean,
+    today: String,
+): ShiftFillButton = when {
+    !canManage && isShiftFuture(shiftDate, today) -> ShiftFillButton.TOO_EARLY
+    isShiftPendingLog(shiftDate, status, today) -> ShiftFillButton.ENABLED
+    else -> ShiftFillButton.HIDDEN
+}
+
+/** The shift form's cross-field rule: either reading may be blank; only a reversed pair is refused. */
+fun shiftOdometerError(odometerStart: String, odometerEnd: String): String? =
+    odometerRangeError(odometerStart, odometerEnd)
+
 const val MINE_SHIFTS_PENDING_EMPTY = "מברוק! אין לך עוד משמרות לתעד כרגע"
 const val MINE_SHIFTS_LOGGED_EMPTY = "אין משמרות שתועדו בתקופה זו"
 const val MINE_SHIFTS_NONE = "אין משמרות עדיין"
