@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -28,13 +29,22 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.yahpz.domain.MINE_SHIFTS_LOGGED_EMPTY
 import com.yahpz.domain.MINE_SHIFTS_NONE
 import com.yahpz.domain.MINE_SHIFTS_PENDING_EMPTY
 import com.yahpz.domain.SHIFT_KIND_LABELS
 import com.yahpz.domain.VEHICLE_TYPE_LABELS
-import com.yahpz.domain.eventStamp
+import com.yahpz.domain.SHIFT_FILL_TITLE
+import com.yahpz.domain.SHIFT_ODOMETER_SAVE_TITLE
+import com.yahpz.domain.SHIFT_TOO_EARLY_MESSAGE
+import com.yahpz.domain.ShiftFillButton
+import com.yahpz.domain.digitsOnly
+import com.yahpz.domain.formatNumber
+import com.yahpz.domain.odometerDelta
+import com.yahpz.domain.shiftFillButton
+import com.yahpz.domain.shiftOdometerError
 import com.yahpz.domain.formatDate
 import com.yahpz.domain.formatPlate
 import com.yahpz.domain.hebrewWeekdayLetter
@@ -49,6 +59,7 @@ fun MyShiftsScreen(app: AppModel, ui: AppUiState) {
     val scope = rememberCoroutineScope()
     var windowsLoaded by remember { mutableIntStateOf(1) }
     var selected by remember { mutableStateOf<ShiftListItem?>(null) }
+    var odometerShift by remember { mutableStateOf<ShiftListItem?>(null) }
     var refreshing by remember { mutableStateOf(false) }
 
     LaunchedEffect(ui.userId) {
@@ -102,11 +113,16 @@ fun MyShiftsScreen(app: AppModel, ui: AppUiState) {
                     modifier = Modifier.verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(20.dp),
                 ) {
-                    ShiftSection("משמרות ממתינות לתיעוד", MINE_SHIFTS_PENDING_EMPTY, pending, app::openFill) { selected = it }
-                    if (future.isNotEmpty()) {
-                        ShiftSection("משמרות עתידיות", null, future, app::openFill) { selected = it }
+                    val today = israelToday()
+                    val fillButton = { shift: ShiftListItem ->
+                        shiftFillButton(shift.shiftDate, shift.status, ui.canManageUnit, today)
                     }
-                    ShiftSection("משמרות שתועדו", MINE_SHIFTS_LOGGED_EMPTY, logged, app::openFill) { selected = it }
+                    val onFillShift = { shift: ShiftListItem -> odometerShift = shift }
+                    ShiftSection("משמרות ממתינות לתיעוד", MINE_SHIFTS_PENDING_EMPTY, pending, fillButton, onFillShift, app::openFill) { selected = it }
+                    if (future.isNotEmpty()) {
+                        ShiftSection("משמרות עתידיות", null, future, fillButton, onFillShift, app::openFill) { selected = it }
+                    }
+                    ShiftSection("משמרות שתועדו", MINE_SHIFTS_LOGGED_EMPTY, logged, fillButton, onFillShift, app::openFill) { selected = it }
                     if (sections.hasMoreLogged) {
                         GhostButton(title = "הצג 30 יום נוספים", onClick = { windowsLoaded += 1 })
                     }
@@ -136,6 +152,85 @@ fun MyShiftsScreen(app: AppModel, ui: AppUiState) {
             }
         }
     }
+
+    odometerShift?.let { shift ->
+        ShiftOdometerSheet(shift = shift, app = app, onDismiss = { odometerShift = null })
+    }
+}
+
+private fun odometerInput(value: Double?): String = when {
+    value == null -> ""
+    value % 1.0 == 0.0 -> value.toLong().toString()
+    else -> value.toString()
+}
+
+/**
+ * The shift's one odometer pair, as on the web shift form: either reading may be saved
+ * alone, only a reversed pair is refused. Status follows on the server.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun ShiftOdometerSheet(shift: ShiftListItem, app: AppModel, onDismiss: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var start by remember(shift.id) { mutableStateOf(odometerInput(shift.odometerStart)) }
+    var end by remember(shift.id) { mutableStateOf(odometerInput(shift.odometerEnd)) }
+    var error by remember(shift.id) { mutableStateOf<String?>(null) }
+    var saving by remember { mutableStateOf(false) }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier
+                .padding(16.dp)
+                .imePadding()
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(SHIFT_FILL_TITLE, style = TypeScale.section, color = FieldTheme.textPrimary)
+            Text(
+                "${shift.title} · ${formatDate(shift.shiftDate)}",
+                style = TypeScale.caption,
+                color = FieldTheme.textMuted,
+            )
+            FormField(
+                label = "מד אוץ התחלה",
+                value = start,
+                onValueChange = {
+                    start = digitsOnly(it)
+                    error = null
+                },
+                keyboardType = KeyboardType.Number,
+                mono = true,
+            )
+            FormField(
+                label = "מד אוץ סיום",
+                value = end,
+                onValueChange = {
+                    end = digitsOnly(it)
+                    error = null
+                },
+                keyboardType = KeyboardType.Number,
+                mono = true,
+                error = error,
+            )
+            LedgerRow("קילומטרים", odometerDelta(start, end)?.let { formatNumber(it) }.orEmpty())
+            PrimaryButton(
+                title = SHIFT_ODOMETER_SAVE_TITLE,
+                busy = saving,
+                onClick = {
+                    shiftOdometerError(start, end)?.let {
+                        error = it
+                        return@PrimaryButton
+                    }
+                    scope.launch {
+                        saving = true
+                        val failed = app.saveShiftOdometer(shift.id, start, end)
+                        saving = false
+                        if (failed == null) onDismiss() else error = failed
+                    }
+                },
+            )
+            Spacer(Modifier.height(16.dp))
+        }
+    }
 }
 
 @Composable
@@ -143,6 +238,8 @@ private fun ShiftSection(
     title: String,
     empty: String?,
     items: List<ShiftListItem>,
+    fillButton: (ShiftListItem) -> ShiftFillButton,
+    onFill: (ShiftListItem) -> Unit,
     onEvent: (String) -> Unit,
     onOpen: (ShiftListItem) -> Unit,
 ) {
@@ -151,7 +248,7 @@ private fun ShiftSection(
         if (items.isEmpty() && empty != null) {
             Text(empty, style = TypeScale.body, color = FieldTheme.textSecondary)
         } else {
-            items.forEach { shift -> ShiftCard(shift, onOpen, onEvent) }
+            items.forEach { shift -> ShiftCard(shift, fillButton(shift), onFill, onOpen, onEvent) }
         }
     }
 }
@@ -159,6 +256,8 @@ private fun ShiftSection(
 @Composable
 private fun ShiftCard(
     shift: ShiftListItem,
+    fillButton: ShiftFillButton,
+    onFill: (ShiftListItem) -> Unit,
     onOpen: (ShiftListItem) -> Unit,
     onEvent: (String) -> Unit,
 ) {
@@ -186,6 +285,18 @@ private fun ShiftCard(
             StampChip(shiftStamp(shift.status))
         }
         Spacer(Modifier.height(12.dp))
+        when (fillButton) {
+            ShiftFillButton.ENABLED -> {
+                PrimaryButton(title = SHIFT_FILL_TITLE, onClick = { onFill(shift) })
+                Spacer(Modifier.height(8.dp))
+            }
+            ShiftFillButton.TOO_EARLY -> {
+                PrimaryButton(title = SHIFT_FILL_TITLE, enabled = false, onClick = {})
+                Text(SHIFT_TOO_EARLY_MESSAGE, style = TypeScale.caption, color = FieldTheme.textMuted)
+                Spacer(Modifier.height(8.dp))
+            }
+            ShiftFillButton.HIDDEN -> Unit
+        }
         GhostButton(title = "פרטי המשמרת", onClick = { onOpen(shift) })
         if (open) {
             Spacer(Modifier.height(8.dp))
@@ -206,7 +317,7 @@ private fun ShiftCard(
                             Text(event.eventType?.name ?: "אירוע", style = TypeScale.bodyStrong, color = FieldTheme.textPrimary)
                             Text(event.policeEventId ?: formatDate(event.eventDate), style = TypeScale.caption, color = FieldTheme.textMuted)
                         }
-                        StampChip(eventStamp(event.status))
+                        StampChip(event.stamp)
                     }
                 }
             }

@@ -31,7 +31,9 @@ import androidx.compose.ui.unit.dp
 import com.yahpz.domain.SHIFT_KIND_LABELS
 import com.yahpz.domain.UNIT_SHIFTS_LOAD_FAILED
 import com.yahpz.domain.VEHICLE_TYPE_LABELS
-import com.yahpz.domain.eventStamp
+import com.yahpz.domain.SHIFT_FILL_TITLE
+import com.yahpz.domain.canDocumentShift
+import com.yahpz.domain.israelToday
 import com.yahpz.domain.fieldsMatchQuery
 import com.yahpz.domain.formatDate
 import com.yahpz.domain.formatPlate
@@ -45,6 +47,7 @@ fun UnitShiftsScreen(app: AppModel, ui: AppUiState) {
     val scope = rememberCoroutineScope()
     var query by remember { mutableStateOf("") }
     var detail by remember { mutableStateOf<ShiftListItem?>(null) }
+    var odometerShift by remember { mutableStateOf<ShiftListItem?>(null) }
     var refreshing by remember { mutableStateOf(false) }
 
     LaunchedEffect(ui.userId) {
@@ -160,9 +163,20 @@ fun UnitShiftsScreen(app: AppModel, ui: AppUiState) {
                                     color = FieldTheme.textMuted,
                                 )
                             }
-                            StampChip(eventStamp(event.status))
+                            StampChip(event.stamp)
                         }
                     }
+                }
+                val isCrew = shift.responders.any { it.responderId == ui.userId }
+                if ((ui.canManageUnit || isCrew) && canDocumentShift(shift.shiftDate, ui.canManageUnit, israelToday())) {
+                    Spacer(Modifier.height(8.dp))
+                    GhostButton(
+                        title = SHIFT_FILL_TITLE,
+                        onClick = {
+                            detail = null
+                            odometerShift = shift
+                        },
+                    )
                 }
                 if (ui.canManageUnit) {
                     Spacer(Modifier.height(8.dp))
@@ -180,6 +194,10 @@ fun UnitShiftsScreen(app: AppModel, ui: AppUiState) {
                 }
             }
         }
+    }
+
+    odometerShift?.let { shift ->
+        ShiftOdometerSheet(shift = shift, app = app, onDismiss = { odometerShift = null })
     }
 }
 
