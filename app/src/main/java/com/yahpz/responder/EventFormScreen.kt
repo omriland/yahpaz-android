@@ -171,6 +171,7 @@ fun EventFormScreen(
     var errors by remember { mutableStateOf(EventDraftErrors()) }
     var formError by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
+    var topSaveTried by remember { mutableStateOf(false) }
     var confirmDelete by remember(eventId) { mutableStateOf(false) }
     var deleting by remember(eventId) { mutableStateOf(false) }
     var deleteHint by remember(eventId) { mutableStateOf<String?>(null) }
@@ -512,17 +513,42 @@ fun EventFormScreen(
     val removeResponder = removeResponderId?.let { id -> responders.firstOrNull { it.responderId == id } }
     val removeProfile = removeResponderId?.let { id -> ui.assignableProfiles.firstOrNull { it.id == id } }
 
+    // A new event is a long form: keep its main action in a sticky header too, so the
+    // אחמ״ש can create it without scrolling to the end. Edits autosave and keep the plain header.
+    val formScroll = rememberScrollState()
+    val topSave = !editing && !loadFailed && !foreignEditPending && !ui.lookups.isEmpty
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(FieldTheme.page)
-            .imePadding()
-            .verticalScroll(rememberScrollState())
+            .imePadding(),
+    ) {
+    if (topSave) {
+        EventCreateHeader(
+            title = EVENT_NEW_TITLE,
+            saveTitle = eventFormPrimarySaveTitle(editing = false),
+            saving = saving,
+            enabled = !deleting,
+            // Errors otherwise land beside the bottom buttons, out of sight.
+            error = if (topSaveTried) formError ?: errors.formMessage else null,
+            scrolled = formScroll.value > 0,
+            onBack = onBack,
+            onSave = {
+                topSaveTried = true
+                persist(allowPartial = false)
+            },
+        )
+    }
+    Column(
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxWidth()
+            .verticalScroll(formScroll)
             .padding(horizontal = 16.dp)
-            .padding(top = 12.dp),
+            .padding(top = if (topSave) 4.dp else 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        ToolsBackRow(if (editing) EVENT_EDIT_TITLE else EVENT_NEW_TITLE, onBack)
+        if (!topSave) ToolsBackRow(if (editing) EVENT_EDIT_TITLE else EVENT_NEW_TITLE, onBack)
         when {
             loadFailed -> EmptyState(
                 title = EVENT_EDIT_LOAD_FAILED,
@@ -857,6 +883,7 @@ fun EventFormScreen(
             }
         }
         Spacer(Modifier.height(24.dp))
+    }
     }
 
     if (foreignEditPending) {
