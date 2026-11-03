@@ -74,6 +74,8 @@ import com.yahpz.domain.plateDigits
 import com.yahpz.domain.resolveCarLogoSlug
 import com.yahpz.domain.vehicleFieldsForSave
 import com.yahpz.domain.vehicleRemoveMode
+import com.yahpz.domain.managesUnit
+import com.yahpz.domain.responderCardShowsLeadKm
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -121,7 +123,9 @@ fun ProfileScreen(app: AppModel, ui: AppUiState) {
             FieldCard {
                 Text("סיכום פעילות", style = TypeScale.section, color = FieldTheme.textPrimary)
                 LedgerRow("אירועים", profile.eventCount.toString())
-                LedgerRow("קילומטרים", profile.km.toInt().toString())
+                if (responderCardShowsLeadKm(managesUnit(ui.roles))) {
+                    LedgerRow("קילומטרים", profile.km.toInt().toString())
+                }
             }
         }
         if (ui.mustChangePassword) {
