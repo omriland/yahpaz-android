@@ -112,6 +112,13 @@ fun shiftFillButton(
 fun shiftOdometerError(odometerStart: String, odometerEnd: String): String? =
     odometerRangeError(odometerStart, odometerEnd)
 
+/**
+ * A load that failed. Only a network failure is sent to the connection; a server
+ * refusal with a working connection is not, since checking it would fix nothing.
+ */
+fun loadFailedMessage(subject: String, network: Boolean): String =
+    if (network) "טעינת $subject נכשלה. בדקו את החיבור ונסו שוב." else "טעינת $subject נכשלה. נסו שוב בעוד רגע."
+
 const val MINE_SHIFTS_PENDING_EMPTY = "מברוק! אין לך עוד משמרות לתעד כרגע"
 const val MINE_SHIFTS_LOGGED_EMPTY = "אין משמרות שתועדו בתקופה זו"
 const val MINE_SHIFTS_NONE = "אין משמרות עדיין"

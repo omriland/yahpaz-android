@@ -42,6 +42,8 @@ import com.yahpz.domain.shiftKindLabel
 import com.yahpz.domain.shiftVehicleTypeLabel
 import com.yahpz.domain.toggleCrewSelection
 import com.yahpz.domain.validateShiftDraft
+import com.yahpz.domain.SHIFT_DRAFT_WAITING_FOR_REQUIRED
+import com.yahpz.domain.clearedFor
 import kotlinx.coroutines.launch
 
 const val NEW_SHIFT_TITLE = SHIFT_NEW_TITLE
@@ -67,6 +69,10 @@ fun ShiftFormScreen(
     var loadFailed by remember { mutableStateOf(false) }
     var errors by remember { mutableStateOf(ShiftDraftErrors()) }
     var formError by remember { mutableStateOf<String?>(null) }
+    /** The draft the errors above were raised for; edits since then clear what they touched. */
+    var errorsFor by remember { mutableStateOf<ShiftDraft?>(null) }
+    var autoSaveError by remember { mutableStateOf<String?>(null) }
+    var autoSaveFailedFor by remember { mutableStateOf<ShiftDraft?>(null) }
     var saving by remember { mutableStateOf(false) }
     var quietSaving by remember { mutableStateOf(false) }
     var persistedDraft by remember { mutableStateOf<ShiftDraft?>(null) }
@@ -144,6 +150,10 @@ fun ShiftFormScreen(
         quietSaving = false
         if (error == null) {
             persistedDraft = current
+            autoSaveError = null
+        } else {
+            autoSaveError = error
+            autoSaveFailedFor = current
         }
     }
 
@@ -185,6 +195,9 @@ fun ShiftFormScreen(
         }
     }
 
+    val shownErrors = errorsFor?.let { errors.clearedFor(it, current) } ?: errors
+    val shownFormError = formError?.takeIf { errorsFor == null || errorsFor == current }
+
     val includePersonal = vehiclesLoaded && crewVehicles.isNotEmpty()
     val vehicleOptions = remember(vehicleType, includePersonal) {
         val base = offeredShiftVehicleTypes(includePersonal).map { it to shiftVehicleTypeLabel(it) }
@@ -225,13 +238,13 @@ fun ShiftFormScreen(
                     value = shiftDate,
                     onValueChange = { shiftDate = it },
                 )
-                errors.shiftDate?.let { Text(it, style = TypeScale.caption, color = FieldTheme.alert) }
+                shownErrors.shiftDate?.let { Text(it, style = TypeScale.caption, color = FieldTheme.alert) }
                 OptionRowSelector(
                     label = "שם משמרת",
                     options = SHIFT_KIND_ORDER.map { it to shiftKindLabel(it) },
                     selected = shiftKind,
                     onSelect = { shiftKind = it },
-                    error = errors.shiftKind,
+                    error = shownErrors.shiftKind,
                 )
                 OptionRowSelector(
                     label = "סוג רכב",
@@ -241,7 +254,7 @@ fun ShiftFormScreen(
                         vehicleType = it
                         if (it != "personal") personalVehicleId = null
                     },
-                    error = errors.vehicleType,
+                    error = shownErrors.vehicleType,
                 )
                 if (vehicleType == "personal" && includePersonal) {
                     LookupPickerField(
@@ -260,7 +273,7 @@ fun ShiftFormScreen(
                             "בחירת לוחית"
                         },
                         searchPlaceholder = "חיפוש לוחית",
-                        error = errors.plate,
+                        error = shownErrors.plate,
                     )
                 }
                 CrewAssignmentSection(
@@ -274,7 +287,7 @@ fun ShiftFormScreen(
                     emptyHint = SHIFT_ASSIGN_EMPTY,
                     emptyRoster = "אין משתמשים פעילים לשיבוץ.",
                     emptyQuery = "לא נמצאו מתנדבים לשיבוץ",
-                    error = errors.crew,
+                    error = shownErrors.crew,
                     removeLabel = EVENT_ASSIGN_REMOVE,
                 )
                 FormArea(
@@ -283,14 +296,21 @@ fun ShiftFormScreen(
                     onValueChange = { notes = it },
                     minHeight = 96,
                 )
-                formError?.let { Text(it, style = TypeScale.caption, color = FieldTheme.alert) }
-                if (formError == null) {
+                shownFormError?.let { Text(it, style = TypeScale.caption, color = FieldTheme.alert) }
+                if (shownFormError == null) {
                     if (editing && loaded) {
                         val pending = persistedDraft != current
+                        val failed = autoSaveError?.takeIf { autoSaveFailedFor == current && !quietSaving }
                         Text(
-                            if (saving || quietSaving || pending) "שומר…" else "השינויים נשמרים אוטומטית.",
+                            when {
+                                failed != null -> failed
+                                saving || quietSaving -> "שומר…"
+                                pending && !validateShiftDraft(current).isEmpty -> SHIFT_DRAFT_WAITING_FOR_REQUIRED
+                                pending -> "שומר…"
+                                else -> "השינויים נשמרים אוטומטית."
+                            },
                             style = TypeScale.caption,
-                            color = FieldTheme.textMuted,
+                            color = if (failed != null) FieldTheme.alert else FieldTheme.textMuted,
                         )
                     } else if (!editing && (shiftKind.isNotBlank() || vehicleType.isNotBlank() || notes.isNotBlank() || responderIds.isNotEmpty())) {
                         Text(
@@ -314,6 +334,7 @@ fun ShiftFormScreen(
                         )
                         val next = validateShiftDraft(draft)
                         errors = next
+                        errorsFor = draft
                         if (!next.isEmpty) {
                             formError = next.formMessage
                             return@PrimaryButton

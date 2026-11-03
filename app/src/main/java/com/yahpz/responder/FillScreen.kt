@@ -64,6 +64,7 @@ import androidx.compose.ui.unit.dp
 import com.yahpz.domain.odometerDelta
 import com.yahpz.domain.odometerRangeError
 import com.yahpz.domain.formatNumber
+import com.yahpz.domain.loadFailedMessage
 import com.yahpz.domain.treatmentDetailCounter
 import com.yahpz.domain.EVENT_MEDIA_DOCS_TAB_LABEL
 import com.yahpz.domain.EVENT_MEDIA_TAB_LABEL
@@ -98,6 +99,7 @@ import com.yahpz.domain.vehiclesMissingPhotos
 import com.yahpz.domain.VEHICLE_PHOTOS_BACK
 import com.yahpz.domain.VEHICLE_PHOTOS_PROCEED
 import com.yahpz.domain.VEHICLE_PHOTOS_TITLE
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -123,6 +125,7 @@ fun FillScreen(eventId: String, app: AppModel) {
     var loading by remember { mutableStateOf(true) }
     var failed by remember { mutableStateOf(false) }
     var notAssigned by remember { mutableStateOf(false) }
+    var loadError by remember { mutableStateOf("") }
     var savingDraft by remember { mutableStateOf(false) }
     var completing by remember { mutableStateOf(false) }
     var plateLookupGeneration by remember { mutableIntStateOf(0) }
@@ -284,7 +287,10 @@ fun FillScreen(eventId: String, app: AppModel) {
                     }
                 }
             }
-        } catch (_: Exception) {
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            loadError = loadFailedMessage("הדיווח", error.isNetworkFailure())
             failed = true
         }
         loading = false
@@ -390,7 +396,7 @@ fun FillScreen(eventId: String, app: AppModel) {
                 onAction = { app.closeFill() },
             )
             failed || context == null -> EmptyState(
-                title = "טעינת הדיווח נכשלה. בדקו את החיבור ונסו שוב.",
+                title = loadError.ifEmpty { loadFailedMessage("הדיווח", network = true) },
                 actionTitle = "רענון",
                 onAction = { scope.launch { load() } },
             )

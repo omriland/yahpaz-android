@@ -10,6 +10,7 @@ import com.yahpz.domain.SHIFT_ODOMETER_NOT_ALLOWED
 import com.yahpz.domain.SHIFT_ODOMETER_SAVE_FAILED
 import com.yahpz.domain.policeEventIdForInput
 import com.yahpz.domain.odometerDelta
+import com.yahpz.domain.mapShiftSaveError
 import com.yahpz.domain.AssignableProfile
 import com.yahpz.domain.HighwayJunctionCatalogRow
 import com.yahpz.domain.buildLocationPayload
@@ -252,6 +253,10 @@ sealed class EventMediaWriteResult {
 }
 
 private val edgeErrorPattern = Regex("\"error\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"")
+
+/** The request never got an answer (offline, timeout), as opposed to a server refusal. */
+internal fun Throwable.isNetworkFailure(): Boolean =
+    this is io.github.jan.supabase.exceptions.HttpRequestException || this is java.io.IOException
 
 /** Recover the Hebrew `error` string an edge function returned, if the raw body carries one. */
 internal fun edgeErrorMessage(raw: String?, fallback: String): String {
@@ -2143,10 +2148,17 @@ object YahpazAPI {
                 select(Columns.raw("id"))
             }.decodeList<IdRow>()
             if (updated.isEmpty()) return "אין הרשאה לעדכן את המשמרת."
-            runCatching {
+            // Crew changes reach the shift-born events only through this sync; a failure is not a save.
+            try {
                 client.postgrest.rpc("sync_shift_born_events", mapOf("p_shift_id" to shiftId))
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                return mapShiftSaveError(error.message)
             }
             null
+        } catch (error: CancellationException) {
+            throw error
         } catch (_: Exception) {
             SHIFT_DRAFT_SAVE_FAILED
         }

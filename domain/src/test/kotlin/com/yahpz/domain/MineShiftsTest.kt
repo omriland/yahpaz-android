@@ -83,4 +83,11 @@ class MineShiftsTest {
         assertTrue(canDocumentShift("2026-11-03", canManage = false, today = "2026-11-03"))
         assertTrue(canDocumentShift("2026-11-09", canManage = true, today = "2026-11-03"))
     }
+
+    @Test
+    fun loadFailureSendsOnlyNetworkFailuresToTheConnection() {
+        assertEquals("טעינת המשמרות נכשלה. בדקו את החיבור ונסו שוב.", loadFailedMessage("המשמרות", network = true))
+        assertEquals("טעינת המשמרות נכשלה. נסו שוב בעוד רגע.", loadFailedMessage("המשמרות", network = false))
+    }
 }
+

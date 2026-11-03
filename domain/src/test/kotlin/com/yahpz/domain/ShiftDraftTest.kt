@@ -104,4 +104,32 @@ class ShiftDraftTest {
         assertEquals("12-345-67 · מאזדה", crewVehicleLabel("1234567", "מאזדה"))
         assertEquals("12-345-67", crewVehicleLabel("1234567", "  "))
     }
+
+    @Test
+    fun editedFieldStopsShowingItsError() {
+        val validated = ShiftDraft(shiftDate = "", shiftKind = "", vehicleType = "")
+        val errors = validateShiftDraft(validated)
+        val fixedKind = errors.clearedFor(validated, validated.copy(shiftKind = "morning"))
+        assertEquals(null, fixedKind.shiftKind)
+        assertEquals(SHIFT_DRAFT_DATE_ERROR, fixedKind.shiftDate)
+        assertEquals(SHIFT_DRAFT_VEHICLE_ERROR, fixedKind.vehicleType)
+        assertEquals(SHIFT_DRAFT_CREW_ERROR, fixedKind.crew)
+        val fixedCrew = errors.clearedFor(validated, validated.copy(responderIds = listOf("u1")))
+        assertEquals(null, fixedCrew.crew)
+        assertEquals(errors, errors.clearedFor(validated, validated))
+    }
+
+    @Test
+    fun shiftSaveErrorsPassServerHebrewThroughAndHideTheRest() {
+        assertEquals("אין הרשאה לשנות פרטי משמרת", mapShiftSaveError("ERROR: אין הרשאה לשנות פרטי משמרת"))
+        assertEquals(STALE_SAVE_MESSAGE, mapShiftSaveError("x מישהו שמר לפניך — רעננו"))
+        assertEquals(
+            "ניתן לעדכן את המשמרת החל מתאריך המשמרת.",
+            mapShiftSaveError("ניתן לעדכן את המשמרת החל מתאריך המשמרת."),
+        )
+        assertEquals("אין הרשאה", mapShiftSaveError("אין הרשאה"))
+        assertEquals(SHIFT_DRAFT_SAVE_FAILED, mapShiftSaveError("socket timeout"))
+        assertEquals(SHIFT_DRAFT_SAVE_FAILED, mapShiftSaveError(null))
+    }
 }
+

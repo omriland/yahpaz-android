@@ -57,6 +57,7 @@ import com.yahpz.domain.formatDate
 import com.yahpz.domain.israelToday
 import com.yahpz.domain.lastSavedByLabel
 import com.yahpz.domain.leftoverEventMediaError
+import com.yahpz.domain.loadFailedMessage
 import com.yahpz.domain.lookupPlate
 import com.yahpz.domain.plateDigits
 import com.yahpz.domain.policeEventIdForInput
@@ -90,6 +91,7 @@ fun ShiftBornFillScreen(eventId: String, app: AppModel) {
     val ui by app.state.collectAsState()
     val scope = rememberCoroutineScope()
     var load by remember(eventId) { mutableStateOf(ShiftBornLoad.LOADING) }
+    var loadError by remember(eventId) { mutableStateOf("") }
     var context by remember(eventId) { mutableStateOf<ShiftBornFillContext?>(null) }
     var draft by remember(eventId) { mutableStateOf(ShiftBornFillDraft()) }
     var expectedAt by remember(eventId) { mutableStateOf<String?>(null) }
@@ -114,7 +116,8 @@ fun ShiftBornFillScreen(eventId: String, app: AppModel) {
             YahpazAPI.fetchShiftBornFillContext(eventId)
         } catch (error: CancellationException) {
             throw error
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            loadError = loadFailedMessage("הדיווח", error.isNetworkFailure())
             load = ShiftBornLoad.FAILED
             return
         }
@@ -289,7 +292,7 @@ fun ShiftBornFillScreen(eventId: String, app: AppModel) {
                 onAction = { app.closeFill() },
             )
             ShiftBornLoad.FAILED -> EmptyState(
-                title = "טעינת הדיווח נכשלה. בדקו את החיבור ונסו שוב.",
+                title = loadError,
                 actionTitle = "רענון",
                 onAction = { scope.launch { fetch() } },
             )

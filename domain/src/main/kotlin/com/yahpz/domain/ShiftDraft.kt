@@ -74,6 +74,37 @@ data class ShiftDraftErrors(
         }
 }
 
+/** Shown instead of "שומר…" while an edit cannot autosave because a required field is empty. */
+const val SHIFT_DRAFT_WAITING_FOR_REQUIRED = "השינויים יישמרו אחרי מילוי שדות החובה."
+
+/**
+ * Errors still standing after the user edited the form: a field they changed since
+ * [validated] stops showing red before the next save attempt.
+ */
+fun ShiftDraftErrors.clearedFor(validated: ShiftDraft, current: ShiftDraft): ShiftDraftErrors = ShiftDraftErrors(
+    shiftDate = shiftDate.takeIf { validated.shiftDate == current.shiftDate },
+    shiftKind = shiftKind.takeIf { validated.shiftKind == current.shiftKind },
+    vehicleType = vehicleType.takeIf { validated.vehicleType == current.vehicleType },
+    crew = crew.takeIf { validated.responderIds == current.responderIds },
+    plate = plate.takeIf {
+        validated.personalVehicleId == current.personalVehicleId && validated.vehicleType == current.vehicleType
+    },
+)
+
+/** Server messages the user can act on pass through; anything else is the generic failure. Web `mapShiftUpdateError`. */
+fun mapShiftSaveError(message: String?): String {
+    val raw = message.orEmpty()
+    val known = listOf(
+        "אין הרשאה לשנות פרטי משמרת",
+        STALE_SAVE_MESSAGE,
+        COUNT_DECREASE_BLOCKED,
+        "ניתן לעדכן את המשמרת החל מתאריך המשמרת.",
+    )
+    known.firstOrNull { raw.contains(it) }?.let { return it }
+    if (raw.contains(SHIFT_BORN_NO_PERMISSION)) return SHIFT_BORN_NO_PERMISSION
+    return SHIFT_DRAFT_SAVE_FAILED
+}
+
 /** Minimal save gate: date + shift kind + vehicle type + one to three crew (+ plate when private). */
 fun validateShiftDraft(draft: ShiftDraft): ShiftDraftErrors = ShiftDraftErrors(
     shiftDate = if (normalizeReturnDate(draft.shiftDate) == null) SHIFT_DRAFT_DATE_ERROR else null,

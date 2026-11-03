@@ -109,6 +109,7 @@ data class AppUiState(
     val eventsLoading: Boolean = false,
     val shifts: List<ShiftListItem> = emptyList(),
     val shiftsFailed: Boolean = false,
+    val shiftsFailedMessage: String = com.yahpz.domain.loadFailedMessage("המשמרות", network = true),
     val shiftsLoading: Boolean = false,
     val vehicles: List<ProfileVehicle> = emptyList(),
     val vehiclesFailed: Boolean = false,
@@ -484,11 +485,12 @@ class AppModel : ViewModel() {
             _state.update { it.copy(shifts = shifts, shiftsFailed = false) }
         } catch (error: CancellationException) {
             throw error
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            val message = com.yahpz.domain.loadFailedMessage("המשמרות", error.isNetworkFailure())
             if (hadShifts) {
-                showToast("טעינת המשמרות נכשלה. בדקו את החיבור ונסו שוב.", StampTone.PENDING)
+                showToast(message, StampTone.PENDING)
             } else {
-                _state.update { it.copy(shiftsFailed = true) }
+                _state.update { it.copy(shiftsFailed = true, shiftsFailedMessage = message) }
             }
         } finally {
             _state.update { it.copy(shiftsLoading = false) }

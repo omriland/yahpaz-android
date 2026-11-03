@@ -95,7 +95,7 @@ fun MyShiftsScreen(app: AppModel, ui: AppUiState) {
             Text("המשמרות שלי", style = TypeScale.title, color = FieldTheme.textPrimary)
             when {
                 ui.shiftsFailed -> EmptyState(
-                    title = "טעינת המשמרות נכשלה. בדקו את החיבור ונסו שוב.",
+                    title = ui.shiftsFailedMessage,
                     actionTitle = "רענון",
                     onAction = { scope.launch { app.reloadShifts() } },
                 )
