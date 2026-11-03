@@ -11,7 +11,6 @@ const val EVENT_MEDIA_COMPRESS_FAIL = "לא הצלחנו לדחוס את התמ�
 const val EVENT_MEDIA_HEIC_FAIL =
     "לא הצלחנו לקרוא את התמונה. שמרו כ-JPEG או PNG ונסו שוב."
 const val EVENT_MEDIA_NETWORK = "ההעלאה נכשלה. נסו שוב."
-const val EVENT_MEDIA_CAMERA_PERMISSION = "נדרשת הרשאת מצלמה כדי לצלם תמונה."
 const val EVENT_MEDIA_CAMERA_FAILED = "לא הצלחנו לפתוח את המצלמה."
 const val EVENT_MEDIA_TITLE = "מדיה"
 /** Paperclip mark on the unit Events list when an event has media. */
@@ -86,6 +85,10 @@ fun slotsRemaining(savedCount: Int, inFlightCount: Int): Int =
 
 fun canAddMoreMedia(savedCount: Int, inFlightCount: Int): Boolean =
     slotsRemaining(savedCount, inFlightCount) > 0
+
+/** Mirrors the event_media_delete RLS policy: only the uploader, while they may write. */
+fun canDeleteEventMedia(item: EventMedia, viewerId: String?, canWrite: Boolean): Boolean =
+    canWrite && viewerId != null && item.uploadedBy == viewerId
 
 fun groupMediaByTakenWhen(items: List<EventMedia>): EventMediaBands {
     val byCreated = compareBy<EventMedia> { it.createdAt }

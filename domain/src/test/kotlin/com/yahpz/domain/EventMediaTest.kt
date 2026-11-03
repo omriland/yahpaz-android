@@ -145,4 +145,24 @@ class EventMediaTest {
         assertEquals("אין תמונות או סרטונים לאירוע זה.", EVENT_MEDIA_EMPTY)
         assertEquals("הסרטון ארוך מדי. ניתן לצרף סרטון קצר, עד 25MB.", EVENT_MEDIA_VIDEO_TOO_LARGE)
     }
+
+    @Test
+    fun uploaderCanDeleteWhileWriting() {
+        assertTrue(canDeleteEventMedia(media(), "u1", canWrite = true))
+    }
+
+    @Test
+    fun someoneElsesMediaIsViewOnly() {
+        assertFalse(canDeleteEventMedia(media(), "u2", canWrite = true))
+    }
+
+    @Test
+    fun uploaderCannotDeleteWhenReadOnly() {
+        assertFalse(canDeleteEventMedia(media(), "u1", canWrite = false))
+    }
+
+    @Test
+    fun signedOutViewerCannotDelete() {
+        assertFalse(canDeleteEventMedia(media(), null, canWrite = true))
+    }
 }

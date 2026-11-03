@@ -6,12 +6,13 @@ import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import java.io.File
-import androidx.compose.material.icons.outlined.PhotoCamera
+import android.app.Activity
+import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
+import android.provider.MediaStore
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -41,6 +42,8 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -75,7 +78,6 @@ import coil.compose.AsyncImage
 import com.yahpz.domain.EVENT_MEDIA_ADDED
 import com.yahpz.domain.EVENT_MEDIA_BAD_TYPE
 import com.yahpz.domain.EVENT_MEDIA_CAMERA_FAILED
-import com.yahpz.domain.EVENT_MEDIA_CAMERA_PERMISSION
 import com.yahpz.domain.EVENT_MEDIA_VIDEO_ADDED
 import com.yahpz.domain.EVENT_MEDIA_VIDEO_DELETED
 import com.yahpz.domain.EventMediaKind
@@ -94,6 +96,7 @@ import com.yahpz.domain.EventMediaPlateOption
 import com.yahpz.domain.EventMediaTakenWhen
 import com.yahpz.domain.StampTone
 import com.yahpz.domain.canAddMoreMedia
+import com.yahpz.domain.canDeleteEventMedia
 import com.yahpz.domain.captionError
 import com.yahpz.domain.eventMediaTakenWhenLabel
 import com.yahpz.domain.formatDateTime
@@ -144,6 +147,8 @@ fun FillMediaTab(
     var immersive by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    // Delete chosen from the tile menu: ביטול goes back to the grid, not into the viewer.
+    var deleteFromTile by remember { mutableStateOf(false) }
     var editTakenWhen by remember { mutableStateOf(EventMediaTakenWhen.BEFORE_TREATMENT) }
     var editPlateIds by remember { mutableStateOf<List<String>>(emptyList()) }
     var editCaption by remember { mutableStateOf("") }
@@ -170,10 +175,7 @@ fun FillMediaTab(
         drafts = drafts.filterNot { it.key == last.key }
     }
 
-    val picker = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickMultipleVisualMedia(maxItems = EVENT_MEDIA_CAP),
-    ) { uris ->
-        if (uris.isEmpty() || !addEnabled) return@rememberLauncherForActivityResult
+    fun addPicked(uris: List<Uri>) {
         val picked = uris.map { uri -> uri to context.contentResolver.getType(uri) }
         val supported = picked.filter { (_, type) -> eventMediaKind(type) != null }
         if (supported.size < picked.size) onToast(EVENT_MEDIA_BAD_TYPE, StampTone.PENDING)
@@ -191,32 +193,56 @@ fun FillMediaTab(
         }
     }
 
-    // The camera writes into a cache file that FileProvider shares with the camera app.
-    var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
-    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { saved ->
-        val uri = pendingCameraUri
-        pendingCameraUri = null
-        if (!saved || uri == null || !addEnabled) return@rememberLauncherForActivityResult
-        drafts = drafts + MediaDraft(key = UUID.randomUUID().toString(), uri = uri)
-        scope.launch {
-            plates = withContext(Dispatchers.IO) { YahpazAPI.listEventMediaPlates(eventId) }
+    // One add button opens the system chooser: the camera next to the gallery and files apps.
+    // A photo taken there lands in a cache file that FileProvider shares with the camera app.
+    var pendingCamera by remember { mutableStateOf<Pair<File, Uri>?>(null) }
+    val chooser = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val camera = pendingCamera
+        pendingCamera = null
+        val data = result.data
+        val picked = buildList {
+            data?.clipData?.let { clip -> for (i in 0 until clip.itemCount) add(clip.getItemAt(i).uri) }
+            if (isEmpty()) data?.data?.let(::add)
+        }
+        val photo = camera?.takeIf { (file, _) -> file.length() > 0 }
+        if (photo == null) camera?.first?.delete()
+        if (result.resultCode != Activity.RESULT_OK || !addEnabled) return@rememberLauncherForActivityResult
+        when {
+            picked.isNotEmpty() -> addPicked(picked)
+            photo != null -> addPicked(listOf(photo.second))
         }
     }
-    fun launchCamera() {
-        val dir = File(context.cacheDir, "event_photos").apply { mkdirs() }
-        val uri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.fileprovider",
-            File(dir, "${UUID.randomUUID()}.jpg"),
-        )
-        pendingCameraUri = uri
-        runCatching { camera.launch(uri) }.onFailure {
-            pendingCameraUri = null
+    fun openChooser(withCamera: Boolean) {
+        val pick = Intent(Intent.ACTION_GET_CONTENT).apply {
+            type = "*/*"
+            addCategory(Intent.CATEGORY_OPENABLE)
+            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/mp4", "video/quicktime", "video/webm"))
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+        }
+        val capture = if (withCamera) {
+            val dir = File(context.cacheDir, "event_photos").apply { mkdirs() }
+            val file = File(dir, "${UUID.randomUUID()}.jpg")
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            pendingCamera = file to uri
+            Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
+                putExtra(MediaStore.EXTRA_OUTPUT, uri)
+                clipData = ClipData.newRawUri("", uri)
+                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+        } else {
+            null
+        }
+        val intent = Intent.createChooser(pick, "הוספת תמונות וסרטונים").apply {
+            capture?.let { putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(it)) }
+        }
+        runCatching { chooser.launch(intent) }.onFailure {
+            pendingCamera = null
             onToast(EVENT_MEDIA_CAMERA_FAILED, StampTone.PENDING)
         }
     }
+    // CAMERA is declared for the plate scanner, so the camera app may only be offered once it is granted.
     val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) launchCamera() else onToast(EVENT_MEDIA_CAMERA_PERMISSION, StampTone.PENDING)
+        openChooser(withCamera = granted)
     }
 
     fun patchDraft(key: String, patch: MediaDraft.() -> MediaDraft) {
@@ -263,6 +289,23 @@ fun FillMediaTab(
         }
     }
 
+    fun openViewer(item: EventMedia) {
+        viewer = item
+        editing = false
+        confirmDelete = false
+        deleteFromTile = false
+        editTakenWhen = item.takenWhen
+        editPlateIds = item.treatedPlateIds
+        editCaption = item.caption.orEmpty()
+        editError = null
+    }
+
+    fun removeFromTile(item: EventMedia) {
+        openViewer(item)
+        deleteFromTile = true
+        confirmDelete = true
+    }
+
     val grouped = groupMediaByTakenWhen(items)
     Column(modifier = modifier) {
         Column(
@@ -303,28 +346,16 @@ fun FillMediaTab(
             MediaBand(
                 heading = eventMediaTakenWhenLabel(EventMediaTakenWhen.BEFORE_TREATMENT),
                 items = grouped.before,
-                onOpen = { item ->
-                    viewer = item
-                    editing = false
-                    confirmDelete = false
-                    editTakenWhen = item.takenWhen
-                    editPlateIds = item.treatedPlateIds
-                    editCaption = item.caption.orEmpty()
-                    editError = null
-                },
+                hasMenu = { canDeleteEventMedia(it, viewerId, canWrite) },
+                onOpen = ::openViewer,
+                onRemove = ::removeFromTile,
             )
             MediaBand(
                 heading = eventMediaTakenWhenLabel(EventMediaTakenWhen.DURING_AFTER_TREATMENT),
                 items = grouped.during,
-                onOpen = { item ->
-                    viewer = item
-                    editing = false
-                    confirmDelete = false
-                    editTakenWhen = item.takenWhen
-                    editPlateIds = item.treatedPlateIds
-                    editCaption = item.caption.orEmpty()
-                    editError = null
-                },
+                hasMenu = { canDeleteEventMedia(it, viewerId, canWrite) },
+                onOpen = ::openViewer,
+                onRemove = ::removeFromTile,
             )
             drafts.forEach { draft ->
                 MediaDraftCard(
@@ -347,9 +378,9 @@ fun FillMediaTab(
             ) {
                 TextButton(
                     onClick = {
-                        picker.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo),
-                        )
+                        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+                            PackageManager.PERMISSION_GRANTED
+                        if (granted) openChooser(withCamera = true) else cameraPermission.launch(Manifest.permission.CAMERA)
                     },
                     enabled = addEnabled,
                     modifier = Modifier
@@ -369,30 +400,6 @@ fun FillMediaTab(
                         color = if (addEnabled) FieldTheme.accent else FieldTheme.textMuted,
                     )
                 }
-                TextButton(
-                    onClick = {
-                        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
-                            PackageManager.PERMISSION_GRANTED
-                        if (granted) launchCamera() else cameraPermission.launch(Manifest.permission.CAMERA)
-                    },
-                    enabled = addEnabled,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 44.dp)
-                        .border(1.dp, FieldTheme.strong, fieldShape),
-                ) {
-                    Icon(
-                        Icons.Outlined.PhotoCamera,
-                        contentDescription = null,
-                        tint = if (addEnabled) FieldTheme.accent else FieldTheme.textMuted,
-                        modifier = Modifier.padding(end = 8.dp),
-                    )
-                    Text(
-                        "צילום תמונה",
-                        style = TypeScale.bodyStrong,
-                        color = if (addEnabled) FieldTheme.accent else FieldTheme.textMuted,
-                    )
-                }
                 if (!addEnabled) {
                     Text(EVENT_MEDIA_CAP_ERROR, style = TypeScale.caption, color = FieldTheme.textMuted)
                 }
@@ -402,7 +409,7 @@ fun FillMediaTab(
 
     viewer?.let { current ->
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        val own = canWrite && viewerId != null && current.uploadedBy == viewerId
+        val own = canDeleteEventMedia(current, viewerId, canWrite)
         val linked = plates.filter { it.id in current.treatedPlateIds }
         val currentIsVideo = isVideoMedia(current.mimeType)
         ModalBottomSheet(
@@ -458,7 +465,10 @@ fun FillMediaTab(
                             }
                         }
                     })
-                    GhostButton(title = "ביטול", enabled = !deleting, onClick = { confirmDelete = false })
+                    GhostButton(title = "ביטול", enabled = !deleting, onClick = {
+                        confirmDelete = false
+                        if (deleteFromTile) viewer = null
+                    })
                 } else {
                     val videoUrl = current.signedUrl.takeIf { currentIsVideo }
                     if (videoUrl != null) {
@@ -579,7 +589,9 @@ fun FillMediaTab(
 private fun MediaBand(
     heading: String,
     items: List<EventMedia>,
+    hasMenu: (EventMedia) -> Boolean,
     onOpen: (EventMedia) -> Unit,
+    onRemove: (EventMedia) -> Unit,
 ) {
     if (items.isEmpty()) return
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -590,21 +602,48 @@ private fun MediaBand(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 row.forEach { item ->
-                    val tile = Modifier
-                        .weight(1f)
-                        .aspectRatio(1f)
-                        .clip(fieldShape)
-                        .border(1.dp, FieldTheme.hairline, fieldShape)
-                        .clickable { onOpen(item) }
-                    if (isVideoMedia(item.mimeType)) {
-                        VideoTile(contentDescription = "סרטון: ${item.caption ?: heading}", modifier = tile)
-                    } else {
-                        AsyncImage(
-                            model = item.signedUrl,
-                            contentDescription = item.caption ?: heading,
-                            contentScale = ContentScale.Crop,
-                            modifier = tile,
-                        )
+                    val isVideo = isVideoMedia(item.mimeType)
+                    val menu = hasMenu(item)
+                    var menuOpen by remember(item.id) { mutableStateOf(false) }
+                    // Your own media while editing: a tap offers צפייה / הסרה; otherwise it opens the viewer.
+                    Box(modifier = Modifier.weight(1f).aspectRatio(1f)) {
+                        val tile = Modifier
+                            .fillMaxSize()
+                            .clip(fieldShape)
+                            .border(1.dp, FieldTheme.hairline, fieldShape)
+                            .clickable(
+                                onClickLabel = if (!menu) null else if (isVideo) "פעולות לסרטון" else "פעולות לתמונה",
+                            ) { if (menu) menuOpen = true else onOpen(item) }
+                        if (isVideo) {
+                            VideoTile(contentDescription = "סרטון: ${item.caption ?: heading}", modifier = tile)
+                        } else {
+                            AsyncImage(
+                                model = item.signedUrl,
+                                contentDescription = item.caption ?: heading,
+                                contentScale = ContentScale.Crop,
+                                modifier = tile,
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = menuOpen,
+                            onDismissRequest = { menuOpen = false },
+                            containerColor = FieldTheme.raised,
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("צפייה", style = TypeScale.body, color = FieldTheme.textPrimary) },
+                                onClick = {
+                                    menuOpen = false
+                                    onOpen(item)
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("הסרה", style = TypeScale.body, color = FieldTheme.alert) },
+                                onClick = {
+                                    menuOpen = false
+                                    onRemove(item)
+                                },
+                            )
+                        }
                     }
                 }
                 if (row.size == 1) Spacer(Modifier.weight(1f))
