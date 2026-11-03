@@ -65,7 +65,6 @@ import com.yahpz.domain.IncompleteField
 import com.yahpz.domain.eventMissingLeadDoneDetails
 import com.yahpz.domain.missingEventFields
 import com.yahpz.domain.leadKmPendingNote
-import com.yahpz.domain.mineFillCtaLabel
 import com.yahpz.domain.mineInboxIsOpen
 import com.yahpz.domain.mineLoggedNoResultsTitle
 import com.yahpz.domain.eventStamp
@@ -77,6 +76,10 @@ import com.yahpz.domain.partitionMineList
 import com.yahpz.domain.searchHighlightRanges
 import com.yahpz.domain.shiftGroupPendingCaption
 import com.yahpz.domain.shiftGroupShouldStartOpen
+import com.yahpz.domain.ShiftGroupBlock
+import com.yahpz.domain.groupByShift
+import com.yahpz.domain.mineShiftBornIsOpen
+import com.yahpz.domain.mineShiftBornIsPending
 import kotlinx.coroutines.launch
 
 private val searchHitYellow = Color(0xFFFFF59D)
@@ -97,10 +100,16 @@ fun InboxScreen(app: AppModel, ui: AppUiState) {
         if (ui.userId != null && ui.events.isEmpty()) app.reloadEvents()
     }
 
+    val today = israelToday()
     val pending = ui.events.filter { event ->
         val userId = ui.userId ?: return@filter false
         if (!event.releasedToResponders()) return@filter false
-        mineInboxIsOpen(event.ownParticipation(userId), event.ownTotalKm(userId))
+        if (event.isShiftBorn) {
+            // Shared report: open until פירוט הטיפול is in and the event is done; not before the shift date.
+            mineShiftBornIsPending(event.status, event.treatmentDetail, event.shiftBornDate, today)
+        } else {
+            mineInboxIsOpen(event.ownParticipation(userId), event.ownTotalKm(userId))
+        }
     }.sortedByDescending { it.eventDate }
 
     val loggedWindow = if (ui.userId == null) {
@@ -113,9 +122,10 @@ fun InboxScreen(app: AppModel, ui: AppUiState) {
                     it.eventDate,
                     it.ownParticipation(ui.userId) ?: ParticipationStatus.PENDING,
                     it.ownTotalKm(ui.userId),
+                    shiftBornOpen = if (it.isShiftBorn) mineShiftBornIsOpen(it.status, it.treatmentDetail) else null,
                 )
             },
-            israelToday(),
+            today,
             windowsLoaded,
         )
     }
@@ -186,7 +196,6 @@ fun InboxScreen(app: AppModel, ui: AppUiState) {
     }
 
     detail?.let { event ->
-        val mine = ui.userId?.let { event.ownParticipation(it) } ?: ParticipationStatus.PENDING
         ModalBottomSheet(onDismissRequest = { detail = null }) {
             Column(
                 Modifier
@@ -202,6 +211,7 @@ fun InboxScreen(app: AppModel, ui: AppUiState) {
                         FrozenEventMark(event.freeze)
                     }
                     Text("פרטי האירוע", style = TypeScale.section, color = FieldTheme.textPrimary)
+                    if (event.isShiftBorn) StampChip(event.shiftBornStamp)
                 }
                 val missingLead = missingEventFields(event.asIncompleteSnapshot())
                 LedgerRow("תאריך", formatDate(event.eventDate))
@@ -239,7 +249,8 @@ fun InboxScreen(app: AppModel, ui: AppUiState) {
                             color = FieldTheme.textPrimary,
                         )
                         val missingLead = event.origin != "shift" && eventMissingLeadDoneDetails(event.endedAt)
-                        StampWithNote(
+                        // Shift-born: one shared report, so no per-responder stamp.
+                        if (!event.isShiftBorn) StampWithNote(
                             if (row.responderId == ui.userId) {
                                 mineParticipationStamp(row.status, row.totalKm, missingLead)
                             } else {
@@ -258,7 +269,7 @@ fun InboxScreen(app: AppModel, ui: AppUiState) {
                         )
                     }
                 }
-                mineFillCtaLabel(mine)?.let { label ->
+                event.fillCtaLabel(ui.userId)?.let { label ->
                     PrimaryButton(title = label, onClick = {
                         val id = event.id
                         detail = null
@@ -316,15 +327,15 @@ private fun PendingList(
         modifier = Modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        pendingBlocks(pending).forEach { block ->
+        groupByShift(pending) { if (it.isShiftBorn) it.shiftId else null }.forEach { block ->
             when (block) {
-                is InboxBlock.Single -> EventCard(block.event, userId, onOpen, onFill)
-                is InboxBlock.Shift -> ShiftGroup(
-                    title = block.title,
-                    caption = shiftGroupPendingCaption(block.events.size),
-                    startsOpen = shiftGroupShouldStartOpen(block.events.size),
+                is ShiftGroupBlock.Single -> EventCard(block.item, userId, onOpen, onFill)
+                is ShiftGroupBlock.Group -> ShiftGroup(
+                    title = block.items.first().shiftGroupTitle,
+                    caption = shiftGroupPendingCaption(block.items.size),
+                    startsOpen = shiftGroupShouldStartOpen(block.items.size),
                 ) {
-                    block.events.forEach { EventCard(it, userId, onOpen, onFill) }
+                    block.items.forEach { EventCard(it, userId, onOpen, onFill) }
                 }
             }
         }
@@ -427,7 +438,11 @@ private fun LoggedList(
                         val ownKm = userId?.let { event.ownTotalKm(it) }
                         val missingLead = event.origin != "shift" && eventMissingLeadDoneDetails(event.endedAt)
                         StampWithNote(
-                            mineParticipationStamp(ParticipationStatus.DONE, ownKm, missingLead),
+                            if (event.isShiftBorn) {
+                                event.shiftBornStamp
+                            } else {
+                                mineParticipationStamp(ParticipationStatus.DONE, ownKm, missingLead)
+                            },
                             note = leadKmPendingNote(
                                 ParticipationStatus.DONE,
                                 ownKm,
@@ -479,8 +494,13 @@ private fun EventCard(
     val mine = userId?.let { event.ownParticipation(it) } ?: ParticipationStatus.PENDING
     val ownKm = userId?.let { event.ownTotalKm(it) }
     val missingLead = event.origin != "shift" && eventMissingLeadDoneDetails(event.endedAt)
-    val stamp = if (event.isCancelled) cancelledStamp() else mineParticipationStamp(mine, ownKm, missingLead)
-    val overdue = isMineFillOverdue(
+    val stamp = when {
+        event.isCancelled -> cancelledStamp()
+        event.isShiftBorn -> event.shiftBornStamp
+        else -> mineParticipationStamp(mine, ownKm, missingLead)
+    }
+    // The overdue clock does not run for shift-born events (server skips them too).
+    val overdue = !event.isShiftBorn && isMineFillOverdue(
         isCancelled = event.isCancelled,
         participationStatus = mine,
         fillCompletableAt = userId?.let { event.ownFillCompletableAt(it) },
@@ -551,7 +571,7 @@ private fun EventCard(
                     },
                 )
             }
-            mineFillCtaLabel(mine)?.let { label ->
+            event.fillCtaLabel(userId)?.let { label ->
                 Spacer(Modifier.height(12.dp))
                 PrimaryButton(title = label, onClick = { onFill(event.id) })
             }
@@ -587,30 +607,4 @@ private fun BoxCentered(text: String) {
         Spacer(Modifier.height(12.dp))
         Text(text, style = TypeScale.body, color = FieldTheme.textSecondary)
     }
-}
-
-private sealed class InboxBlock {
-    data class Single(val event: EventListItem) : InboxBlock()
-    data class Shift(val title: String, val events: List<EventListItem>) : InboxBlock()
-}
-
-private fun pendingBlocks(items: List<EventListItem>): List<InboxBlock> {
-    val blocks = mutableListOf<InboxBlock>()
-    var index = 0
-    while (index < items.size) {
-        val event = items[index]
-        if (event.origin == "shift" && event.shiftId != null) {
-            val grouped = mutableListOf(event)
-            index += 1
-            while (index < items.size && items[index].origin == "shift" && items[index].shiftId == event.shiftId) {
-                grouped += items[index]
-                index += 1
-            }
-            blocks += InboxBlock.Shift(event.shiftGroupTitle, grouped)
-        } else {
-            blocks += InboxBlock.Single(event)
-            index += 1
-        }
-    }
-    return blocks
 }

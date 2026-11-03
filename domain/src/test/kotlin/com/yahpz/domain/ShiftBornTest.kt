@@ -189,4 +189,13 @@ class ShiftBornTest {
         assertEquals(SHIFT_BORN_SAVE_FAILED, mapShiftBornFillError("timeout"))
         assertEquals(SHIFT_BORN_SAVE_FAILED, mapShiftBornFillError(null))
     }
+
+    @Test
+    fun ctaFollowsTheSharedReportNotTheOwnRow() {
+        assertEquals("השלמת התיעוד שלי", shiftBornFillCtaLabel(snapshot()))
+        assertEquals("המשך התיעוד", shiftBornFillCtaLabel(snapshot(location = "צומת")))
+        assertNull(shiftBornFillCtaLabel(snapshot(status = EventStatus.DONE, treatmentDetail = "חילוץ")))
+        // Done without פירוט הטיפול is still open, so the way in stays.
+        assertEquals("השלמת התיעוד שלי", shiftBornFillCtaLabel(snapshot(status = EventStatus.DONE)))
+    }
 }

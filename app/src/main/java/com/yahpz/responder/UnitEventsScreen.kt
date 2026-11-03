@@ -89,7 +89,6 @@ import com.yahpz.domain.formatPlate
 import com.yahpz.domain.formatTime
 import com.yahpz.domain.eventMissingLeadDoneDetails
 import com.yahpz.domain.leadKmPendingNote
-import com.yahpz.domain.mineFillCtaLabel
 import com.yahpz.domain.mineParticipationStamp
 import com.yahpz.domain.participationStamp
 import com.yahpz.domain.plateDigits
@@ -496,6 +495,8 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
         val mine = ui.userId?.let { current.ownParticipation(it) }
         val stamp = if (current.isCancelled) {
             cancelledStamp()
+        } else if (current.isShiftBorn) {
+            current.shiftBornStamp
         } else {
             reportingDocumentationStamp(
                 current.status,
@@ -611,7 +612,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                         UnitEventResponderRow(
                             row = row,
                             eventDate = current.eventDate,
-                            showTreatedPlates = current.origin != "shift",
+                            shiftBorn = current.isShiftBorn,
                             showLeadKm = responderCardShowsLeadKm(managesUnit(ui.roles)),
                             missingLeadDetails = current.origin != "shift" &&
                                 eventMissingLeadDoneDetails(current.endedAt),
@@ -628,7 +629,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                     }
                 }
                 if (mine != null && current.releasedToResponders()) {
-                    mineFillCtaLabel(mine)?.let { label ->
+                    current.fillCtaLabel(ui.userId)?.let { label ->
                         PrimaryButton(title = label, onClick = {
                             val id = current.id
                             detail = null
@@ -833,7 +834,8 @@ private fun DraggableActiveEventRow(
 private fun UnitEventResponderRow(
     row: UnitEventDetailResponderRow,
     eventDate: String,
-    showTreatedPlates: Boolean,
+    /** One shared report: no per-responder stamp, plate, odometer, route or KM. */
+    shiftBorn: Boolean,
     showLeadKm: Boolean,
     missingLeadDetails: Boolean,
     isViewer: Boolean,
@@ -871,7 +873,7 @@ private fun UnitEventResponderRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                StampWithNote(
+                if (!shiftBorn) StampWithNote(
                     stamp,
                     note = if (isViewer) {
                         leadKmPendingNote(
@@ -896,7 +898,7 @@ private fun UnitEventResponderRow(
         if (expanded) {
             Spacer(Modifier.height(8.dp))
             Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                if (showLeadKm) {
+                if (showLeadKm && !shiftBorn) {
                     LedgerRow(
                         LEAD_KM_VIEW_LABEL,
                         row.totalKm?.let { "${formatNumber(it)} ק״מ" }.orEmpty(),
@@ -908,23 +910,23 @@ private fun UnitEventResponderRow(
                 if (treated.isNotEmpty()) {
                     LedgerRow("רכבים שטופלו", treated)
                 }
-                if (showTreatedPlates) {
+                if (!shiftBorn) {
                     val plates = treatedPlatesLabel(row.treatedPlates)
                     if (plates.isNotEmpty()) {
                         LedgerRow("מספרי כלי רכב", plates)
                     }
-                }
-                row.vehiclePlate?.trim()?.takeIf { it.isNotEmpty() }?.let { plate ->
-                    LedgerRow("לוחית רישוי", formatPlate(plate))
-                }
-                row.odometerStart?.let { start ->
-                    LedgerRow("מד אוץ התחלה", formatNumber(start))
-                }
-                row.odometerEnd?.let { end ->
-                    LedgerRow("מד אוץ סיום", formatNumber(end))
-                }
-                row.route?.trim()?.takeIf { it.isNotEmpty() }?.let { route ->
-                    LedgerRow("נתיב נסיעה", route)
+                    row.vehiclePlate?.trim()?.takeIf { it.isNotEmpty() }?.let { plate ->
+                        LedgerRow("לוחית רישוי", formatPlate(plate))
+                    }
+                    row.odometerStart?.let { start ->
+                        LedgerRow("מד אוץ התחלה", formatNumber(start))
+                    }
+                    row.odometerEnd?.let { end ->
+                        LedgerRow("מד אוץ סיום", formatNumber(end))
+                    }
+                    row.route?.trim()?.takeIf { it.isNotEmpty() }?.let { route ->
+                        LedgerRow("נתיב נסיעה", route)
+                    }
                 }
             }
             row.treatmentDetail?.trim()?.takeIf { it.isNotEmpty() }?.let { detail ->
@@ -977,6 +979,8 @@ private fun UnitEventRow(
 ) {
     val stamp = if (event.isCancelled) {
         cancelledStamp()
+    } else if (event.isShiftBorn) {
+        event.shiftBornStamp
     } else {
         reportingDocumentationStamp(
             event.status,

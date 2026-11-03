@@ -62,6 +62,17 @@ fun mineShiftBornIsPending(
     today: String,
 ): Boolean = !isShiftFuture(shiftDate, today) && mineShiftBornIsOpen(status, treatmentDetail)
 
+/**
+ * CTA on a shift-born card. It follows the shared report, not the viewer's own
+ * participation row: a crew row marked done by an old per-responder fill must not hide
+ * the way into a report that is still open.
+ */
+fun shiftBornFillCtaLabel(event: ShiftBornEventSnapshot): String? {
+    if (!mineShiftBornIsOpen(event.status, event.treatmentDetail)) return null
+    val started = !isShiftBornEventEmpty(event)
+    return mineFillCtaLabel(if (started) ParticipationStatus.IN_PROGRESS else ParticipationStatus.PENDING)
+}
+
 fun lastSavedByLabel(name: String?): String? {
     val trimmed = name?.trim()
     if (trimmed.isNullOrEmpty()) return null

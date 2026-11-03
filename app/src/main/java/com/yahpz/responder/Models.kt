@@ -64,6 +64,8 @@ import com.yahpz.domain.ShiftBornEventSnapshot
 import com.yahpz.domain.ShiftBornFillDraft
 import com.yahpz.domain.StampDescriptor
 import com.yahpz.domain.shiftBornFillStamp
+import com.yahpz.domain.shiftBornFillCtaLabel
+import com.yahpz.domain.mineFillCtaLabel
 import com.yahpz.domain.TreatedPlateRowInput
 import com.yahpz.domain.TreatedVehicleDraft
 import com.yahpz.domain.VEHICLE_TYPE_LABELS
@@ -235,18 +237,24 @@ data class EventListItem(
     /** The shift's date for a shift-born event (the event date is the same day). */
     val shiftBornDate: String get() = shift?.shiftDate ?: eventDate
 
-    val shiftBornStamp: StampDescriptor
-        get() = shiftBornFillStamp(
-            ShiftBornEventSnapshot(
-                status = status,
-                policeEventId = policeEventId,
-                treatmentDetail = treatmentDetail,
-                treatmentNotes = treatmentNotes,
-                roadId = road?.name,
-                location = location,
-                treatedCount = sharedTreated.size,
-            ),
+    private val shiftBornSnapshot: ShiftBornEventSnapshot
+        get() = ShiftBornEventSnapshot(
+            status = status,
+            policeEventId = policeEventId,
+            treatmentDetail = treatmentDetail,
+            treatmentNotes = treatmentNotes,
+            roadId = road?.name,
+            location = location,
+            treatedCount = sharedTreated.size,
         )
+
+    val shiftBornStamp: StampDescriptor get() = shiftBornFillStamp(shiftBornSnapshot)
+
+    /** Documentation CTA: the shared report for shift-born events, the own row otherwise. */
+    fun fillCtaLabel(userId: String?): String? {
+        val mine = userId?.let { ownParticipation(it) } ?: return null
+        return if (isShiftBorn) shiftBornFillCtaLabel(shiftBornSnapshot) else mineFillCtaLabel(mine)
+    }
 
     fun ownParticipation(userId: String): ParticipationStatus? =
         responders.firstOrNull { it.responderId == userId }?.status
