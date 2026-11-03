@@ -143,9 +143,12 @@ fun ShiftBornFillScreen(eventId: String, app: AppModel) {
     val today = israelToday()
     val canManage = ui.canManageUnit
     val eventDone = ctx?.status == EventStatus.DONE
-    val readOnly = ctx == null || shiftBornFillReadOnly(eventDone, canManage, ctx.shiftDate, today)
-    val readOnlyNotice = ctx?.let { shiftBornReadOnlyNotice(eventDone, canManage, it.shiftDate, today) }
     val assigned = ctx != null && ui.userId != null && ui.userId in ctx.responderIds
+    // Only the shift's crew and leads may save (the RPC says אין הרשאה otherwise), so others just read.
+    val readOnly = ctx == null || (!canManage && !assigned) ||
+        shiftBornFillReadOnly(eventDone, canManage, ctx.shiftDate, today)
+    val readOnlyNotice = ctx?.takeIf { canManage || assigned }
+        ?.let { shiftBornReadOnlyNotice(eventDone, canManage, it.shiftDate, today) }
 
     LaunchedEffect(draft, ctx?.draft) {
         val loaded = ctx ?: return@LaunchedEffect
