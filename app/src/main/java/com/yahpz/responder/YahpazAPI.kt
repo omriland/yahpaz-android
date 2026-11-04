@@ -1548,7 +1548,7 @@ object YahpazAPI {
             currentEventId = null,
         )?.let { return EventWriteOutcome(error = it) }
         return try {
-            val nextStatus = deriveEventStatusFromDraft(draft.responders, draft.isCancelled)
+            val nextStatus = deriveEventStatusFromDraft(draft.responders, draft.isCancelled, draft.endTime)
             val rowStatus = eventStatusForRowWriteBeforeResponders(nextStatus)
             val locationPayload = buildLocationPayload(draft.locationPin)
             val callsign = resolvePatrolCallsign(
@@ -1783,7 +1783,7 @@ object YahpazAPI {
             currentEventId = eventId,
         )?.let { return it }
         return try {
-            val nextStatus = deriveEventStatusFromDraft(draft.responders, draft.isCancelled)
+            val nextStatus = deriveEventStatusFromDraft(draft.responders, draft.isCancelled, draft.endTime)
             val rowStatus = eventStatusForRowWriteBeforeResponders(nextStatus)
             val overnight = isOvernightEnd(draft.startTime, draft.endTime)
             val eventStartedAt = wallTimestamp(eventDate, draft.startTime, 0)

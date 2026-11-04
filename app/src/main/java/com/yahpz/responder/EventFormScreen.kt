@@ -756,6 +756,16 @@ fun EventFormScreen(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
+                LookupPickerField(
+                    label = "כביש",
+                    options = ui.lookups.roads,
+                    selectedId = roadId,
+                    onSelect = { roadId = it },
+                    placeholder = "בחירת כביש",
+                    searchPlaceholder = "חיפוש כביש",
+                    error = errors.road,
+                    modifier = Modifier.fillMaxWidth(),
+                )
                 FieldNote(field = EventFormFieldNoteId.LOCATION)
                 LocationPlacesField(
                     value = locationPin,
@@ -774,16 +784,6 @@ fun EventFormScreen(
                         app.showToast(LOCATION_GOOGLE_UNAVAILABLE, StampTone.PENDING)
                     },
                     placeholder = "",
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                LookupPickerField(
-                    label = "כביש",
-                    options = ui.lookups.roads,
-                    selectedId = roadId,
-                    onSelect = { roadId = it },
-                    placeholder = "בחירת כביש",
-                    searchPlaceholder = "חיפוש כביש",
-                    error = errors.road,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 FormArea(

@@ -124,6 +124,8 @@ data class AppUiState(
     val unitEventsFailed: Boolean = false,
     val unitEventsLoading: Boolean = false,
     val showOthersCreatedEvents: Boolean = false,
+    /** Off by default: the אירועים catalog is the last 12 hours plus this lead's open gaps. */
+    val showOlderUnitEvents: Boolean = false,
     /** Off by default each session: shift-born events stay off the unit list. */
     val showShiftEvents: Boolean = false,
     val unitShifts: List<ShiftListItem> = emptyList(),
@@ -565,6 +567,10 @@ class AppModel : ViewModel() {
 
     fun setShowShiftEvents(show: Boolean) {
         _state.update { it.copy(showShiftEvents = show) }
+    }
+
+    fun setShowOlderUnitEvents(show: Boolean) {
+        _state.update { it.copy(showOlderUnitEvents = show) }
     }
 
     fun setShowOthersCreatedEvents(show: Boolean) {
@@ -1180,6 +1186,7 @@ class AppModel : ViewModel() {
                     fillEventId = null,
                     fillShiftBorn = false,
                     showOthersCreatedEvents = false,
+                    showOlderUnitEvents = false,
                     showShiftEvents = false,
                 )
             }

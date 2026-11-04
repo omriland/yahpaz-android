@@ -150,6 +150,9 @@ fun parsedOdometer(raw: String): Double? = when (val parsed = parseOptionalNumbe
     else -> null
 }
 
+/** Shown on the fill while the event is cancelled. The report itself stays editable. */
+const val FILL_CANCELLED_NOTE = "האירוע בוטל."
+
 enum class FillWriteGate { PROCEED, LOCKED, ALREADY_COMPLETE }
 
 /** Completing an already-done assignment is success; drafts stay locked. */

@@ -109,13 +109,13 @@ class ShiftBornTest {
     }
 
     @Test
-    fun cancelledDropsTheMinimumButNotTheField() {
+    fun cancelledKeepsTheTwentyFiveCharacterMinimum() {
         val base = ShiftBornFillDraft(roadId = "r1", location = "מחלף שורק")
-        assertNull(shiftBornCompleteErrors(base.copy(treatmentDetail = "בוטל"), isCancelled = true).treatmentDetail)
         assertEquals(
-            "יש להזין פירוט טיפול",
-            shiftBornCompleteErrors(base.copy(treatmentDetail = "   "), isCancelled = true).treatmentDetail,
+            TREATMENT_DETAIL_MIN_ERROR,
+            shiftBornCompleteErrors(base.copy(treatmentDetail = "בוטל")).treatmentDetail,
         )
+        assertNull(shiftBornCompleteErrors(base.copy(treatmentDetail = "א".repeat(25))).treatmentDetail)
     }
 
     @Test

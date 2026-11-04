@@ -259,19 +259,36 @@ class EventDraftTest {
         )
         val columns = eventPersistColumns(cancelled, districts, "lead-1")
         assertEquals(true, columns["is_cancelled"])
-        assertEquals(EventStatus.PARTIAL.raw, columns["status"])
-        assertEquals(EventStatus.DONE, deriveEventStatusFromDraft(cancelled.responders, isCancelled = true))
+        assertEquals(EventStatus.DRAFT.raw, columns["status"])
+        assertEquals(
+            EventStatus.DRAFT,
+            deriveEventStatusFromDraft(cancelled.responders, isCancelled = true, endTime = cancelled.endTime),
+        )
     }
 
     @Test
-    fun `cancelled event with no responders is done`() {
-        assertEquals(EventStatus.DONE, deriveEventStatusFromDraft(emptyList(), isCancelled = true))
-        assertEquals(EventStatus.DRAFT, deriveEventStatusFromDraft(emptyList(), isCancelled = false))
+    fun `cancelled event with no responders is done only after the lead sets an end time`() {
+        assertEquals(EventStatus.DRAFT, deriveEventStatusFromDraft(emptyList(), isCancelled = true))
+        assertEquals(
+            EventStatus.DONE,
+            deriveEventStatusFromDraft(emptyList(), isCancelled = true, endTime = "09:00"),
+        )
+        assertEquals(
+            EventStatus.PARTIAL,
+            eventStatusForRowWriteBeforeResponders(
+                deriveEventStatusFromDraft(emptyList(), isCancelled = true, endTime = "09:00"),
+            ),
+        )
+        assertEquals(
+            EventStatus.DRAFT,
+            deriveEventStatusFromDraft(emptyList(), isCancelled = false, endTime = "09:00"),
+        )
         assertEquals(
             EventStatus.IN_PROGRESS,
             deriveEventStatusFromDraft(
                 listOf(EventResponderDraft(responderId = "r1")),
                 isCancelled = true,
+                endTime = "09:00",
             ),
         )
     }

@@ -12,6 +12,8 @@ class PersonalVehiclePromptTest {
         assertTrue(needsPersonalVehiclePrompt("active_volunteer", 0))
         assertTrue(needsPersonalVehiclePrompt("personal_vehicle_training", 0))
         assertFalse(needsPersonalVehiclePrompt("active_volunteer", 1))
+        assertFalse(needsPersonalVehiclePrompt(VolunteerStatus.SHIFTS_ONLY.raw, 0))
+        assertFalse(needsPersonalVehiclePrompt(VolunteerStatus.ADMINISTRATION.raw, 0))
         assertFalse(needsPersonalVehiclePrompt("training", 0))
         assertFalse(needsPersonalVehiclePrompt(null, 0))
     }

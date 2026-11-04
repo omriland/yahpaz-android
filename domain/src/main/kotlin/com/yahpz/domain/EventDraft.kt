@@ -322,8 +322,14 @@ fun fillReadyNotifyIds(
 fun deriveEventStatusFromDraft(
     responders: List<EventResponderDraft>,
     isCancelled: Boolean = false,
+    endTime: String? = null,
 ): EventStatus {
-    if (responders.isEmpty()) return if (isCancelled) EventStatus.DONE else EventStatus.DRAFT
+    // Nobody assigned: a cancelled event is done once the lead set שעת סיום.
+    // A normal event stays a draft. Assigned responders keep the existing rule.
+    if (responders.isEmpty()) {
+        if (isCancelled && !endTime.isNullOrBlank()) return EventStatus.DONE
+        return EventStatus.DRAFT
+    }
     if (responders.all { it.status == ParticipationStatus.DONE }) return EventStatus.DONE
     if (responders.any { it.status == ParticipationStatus.DONE }) return EventStatus.PARTIAL
     return EventStatus.IN_PROGRESS
@@ -542,7 +548,7 @@ fun eventPersistColumns(
     val prefix = patrolCallsignPrefixForInput(callsign.prefix).trim().nilIfBlank()
     val number = patrolCallsignNumberForInput(callsign.number).nilIfBlank()
     val rowStatus = eventStatusForRowWriteBeforeResponders(
-        deriveEventStatusFromDraft(draft.responders, draft.isCancelled),
+        deriveEventStatusFromDraft(draft.responders, draft.isCancelled, draft.endTime),
     )
     return mapOf(
         "event_date" to eventDate,

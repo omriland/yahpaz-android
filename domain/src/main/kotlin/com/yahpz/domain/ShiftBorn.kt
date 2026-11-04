@@ -17,7 +17,6 @@ const val SHIFT_BORN_SAVE_FAILED = "שמירת האירוע נכשלה. בדקו
 const val SHIFT_BORN_NO_PERMISSION = "אין הרשאה"
 const val SHIFT_BORN_ROAD_ERROR = "יש לבחור כביש"
 const val SHIFT_BORN_LOCATION_ERROR = "יש להזין מיקום"
-const val SHIFT_BORN_DETAIL_EMPTY_ERROR = "יש להזין פירוט טיפול"
 const val SHIFT_BORN_COMPLETE_FORM_ERROR = "יש להשלים את השדות המסומנים כדי לסיים את הדיווח."
 
 data class ShiftBornEventSnapshot(
@@ -126,14 +125,10 @@ data class ShiftBornFillErrors(
 /**
  * Completion bar for the shared report: where it happened and what was done.
  * No end time, KM, plate or odometer — those never apply to a shift-born event.
- * A cancelled event still needs a word on what happened, but not 25 characters.
+ * A cancelled event uses the same bar, including the 25-character פירוט minimum.
  */
-fun shiftBornCompleteErrors(draft: ShiftBornFillDraft, isCancelled: Boolean = false): ShiftBornFillErrors {
-    val detail = if (isCancelled) {
-        if (draft.treatmentDetail.isBlank()) SHIFT_BORN_DETAIL_EMPTY_ERROR else null
-    } else {
-        treatmentDetailError(draft.treatmentDetail, FillMode.COMPLETE)
-    }
+fun shiftBornCompleteErrors(draft: ShiftBornFillDraft): ShiftBornFillErrors {
+    val detail = treatmentDetailError(draft.treatmentDetail, FillMode.COMPLETE)
     return ShiftBornFillErrors(
         roadId = if (draft.roadId.isBlank()) SHIFT_BORN_ROAD_ERROR else null,
         location = if (draft.location.isBlank()) SHIFT_BORN_LOCATION_ERROR else null,

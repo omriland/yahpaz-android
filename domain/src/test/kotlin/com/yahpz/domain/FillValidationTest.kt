@@ -263,6 +263,27 @@ class FillValidationTest {
     }
 
     @Test
+    fun cancelledFillKeepsTheMarkAndStillProceeds() {
+        assertEquals("האירוע בוטל.", FILL_CANCELLED_NOTE)
+        assertEquals(
+            FillWriteGate.PROCEED,
+            gateResponderFillWrite(
+                complete = true,
+                participationStatus = ParticipationStatus.IN_PROGRESS,
+                eventStatus = EventStatus.IN_PROGRESS,
+            ),
+        )
+        assertEquals(
+            FillWriteGate.PROCEED,
+            gateResponderFillWrite(
+                complete = false,
+                participationStatus = ParticipationStatus.IN_PROGRESS,
+                eventStatus = EventStatus.IN_PROGRESS,
+            ),
+        )
+    }
+
+    @Test
     fun inProgressCompleteMayProceed() {
         assertEquals(
             FillWriteGate.PROCEED,

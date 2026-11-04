@@ -222,7 +222,7 @@ fun ShiftBornFillScreen(eventId: String, app: AppModel) {
 
     fun onComplete() {
         val loaded = context ?: return
-        val fieldErrors = shiftBornCompleteErrors(draft, loaded.isCancelled)
+        val fieldErrors = shiftBornCompleteErrors(draft)
         if (!fieldErrors.isEmpty) {
             errors = fieldErrors
             app.showToast(SHIFT_BORN_COMPLETE_FORM_ERROR, StampTone.PENDING)
@@ -389,7 +389,7 @@ fun ShiftBornFillScreen(eventId: String, app: AppModel) {
                                 },
                                 error = errors.treatmentDetail,
                                 enabled = !readOnly,
-                                counter = counter.text.takeIf { !readOnly && !loaded.isCancelled },
+                                counter = counter.text.takeIf { !readOnly },
                                 counterMet = counter.met,
                             )
                             TreatedPlatesSection(

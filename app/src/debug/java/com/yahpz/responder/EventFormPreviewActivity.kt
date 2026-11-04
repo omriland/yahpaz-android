@@ -93,8 +93,8 @@ class EventFormPreviewActivity : ComponentActivity() {
                                 TimeField(label = EVENT_END_TIME_LABEL, value = "", onValueChange = {}, showNow = true, modifier = Modifier.weight(1f))
                             }
                             LookupPickerField(label = "שלוחה", options = listOf(LookupOption("d", "תל אביב")), selectedId = "d", onSelect = {}, placeholder = "בחירת שלוחה", searchPlaceholder = "חיפוש שלוחה", modifier = Modifier.fillMaxWidth())
-                            FormField(label = "מיקום", value = "מחלף גלילות", onValueChange = {}, modifier = Modifier.fillMaxWidth())
                             LookupPickerField(label = "כביש", options = listOf(LookupOption("r", "2")), selectedId = "r", onSelect = {}, placeholder = "בחירת כביש", searchPlaceholder = "חיפוש כביש", modifier = Modifier.fillMaxWidth())
+                            FormField(label = "מיקום", value = "מחלף גלילות", onValueChange = {}, modifier = Modifier.fillMaxWidth())
                             FormArea(label = "הערות", value = "", onValueChange = {}, minHeight = 96)
                             Spacer(Modifier.height(400.dp))
                         }

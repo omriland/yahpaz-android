@@ -95,8 +95,14 @@ import com.yahpz.domain.plateDigits
 import com.yahpz.domain.visibleMyActiveIds
 import com.yahpz.domain.INCOMPLETE_EVENTS_HEADING
 import com.yahpz.domain.INCOMPLETE_NOTICE_MARK
+import com.yahpz.domain.SHIFT_LEAD_EVENTS_RECENT_CAPTION
+import com.yahpz.domain.SHIFT_LEAD_EVENTS_RECENT_EMPTY
+import com.yahpz.domain.SHOW_OLDER_UNIT_EVENTS_LABEL
 import com.yahpz.domain.SHOW_OTHERS_CREATED_EVENTS_LABEL
 import com.yahpz.domain.SHOW_SHIFT_EVENTS_LABEL
+import com.yahpz.domain.keepShiftLeadRecentEvent
+import com.yahpz.domain.shouldApplyShiftLeadRecentWindow
+import java.time.Instant
 import com.yahpz.domain.EVENT_ATTACHMENT_LABEL
 import androidx.compose.material.icons.outlined.AttachFile
 import com.yahpz.domain.filterShiftEvents
@@ -181,7 +187,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
         }
     val activeVisibleIds = activeEvents.map { it.id }.toSet()
     val hiddenAuto = ui.myActiveUnitEvents.filter { it.id in hiddenIds && it.id !in lockedIds }
-    val events = if (trimmed.isEmpty()) {
+    val catalog = if (trimmed.isEmpty()) {
         (ui.unitEvents.filter { it.id !in activeVisibleIds } + hiddenAuto.filter { d ->
             ui.unitEvents.none { it.id == d.id }
         })
@@ -191,6 +197,25 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
     }.filter { it.id !in activeVisibleIds }
         .let { rows -> filterShiftEvents(rows, ui.showShiftEvents) { it.origin } }
         .sortedByDescending { it.eventDate }
+    val applyRecentWindow = shouldApplyShiftLeadRecentWindow(ui.roles) &&
+        !ui.showOlderUnitEvents &&
+        trimmed.isEmpty()
+    val events = if (!applyRecentWindow) {
+        catalog
+    } else {
+        val now = Instant.now()
+        catalog.filter { event ->
+            keepShiftLeadRecentEvent(
+                createdAt = event.createdAt,
+                now = now,
+                viewerId = viewerId,
+                shiftLeadId = event.shiftLeadId,
+                secondaryLeadIds = event.secondaryLeads.map { it.userId },
+                incomplete = event.asIncompleteSnapshot(),
+            )
+        }
+    }
+    val catalogCaption = if (applyRecentWindow) SHIFT_LEAD_EVENTS_RECENT_CAPTION else UNIT_EVENTS_CAPTION
     val (incompleteEvents, restEvents) = partitionIncompleteEvents(events) { it.asIncompleteSnapshot() }
 
     fun dismissFromActive(eventId: String) {
@@ -253,6 +278,13 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                 checked = ui.showShiftEvents,
                 onCheckedChange = { app.setShowShiftEvents(it) },
             )
+            if (shouldApplyShiftLeadRecentWindow(ui.roles)) {
+                ScopeSwitchRow(
+                    label = SHOW_OLDER_UNIT_EVENTS_LABEL,
+                    checked = ui.showOlderUnitEvents,
+                    onCheckedChange = { app.setShowOlderUnitEvents(it) },
+                )
+            }
             if (shouldFilterUnitEventsToOwnCreated(ui.roles)) {
                 ScopeSwitchRow(
                     label = SHOW_OTHERS_CREATED_EVENTS_LABEL,
@@ -386,7 +418,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                         }
                         if (events.isNotEmpty()) {
                             Text(
-                                UNIT_EVENTS_CAPTION,
+                                catalogCaption,
                                 style = TypeScale.caption,
                                 color = FieldTheme.textMuted,
                             )
@@ -468,16 +500,29 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                             }
                         } else if (dragSource == ActiveDragSource.ACTIVE) {
                             Text(
-                                UNIT_EVENTS_CAPTION,
+                                catalogCaption,
                                 style = TypeScale.caption,
                                 color = FieldTheme.textMuted,
                             )
                             Spacer(Modifier.height(48.dp))
                         } else {
+                            val olderHidden = applyRecentWindow && catalog.isNotEmpty()
                             EmptyState(
-                                title = if (trimmed.isEmpty()) "אין אירועים להצגה" else "לא נמצאו אירועים תואמים",
-                                actionTitle = if (trimmed.isEmpty()) null else "ניקוי חיפוש",
-                                onAction = if (trimmed.isEmpty()) null else ({ query = "" }),
+                                title = when {
+                                    trimmed.isNotEmpty() -> "לא נמצאו אירועים תואמים"
+                                    olderHidden -> SHIFT_LEAD_EVENTS_RECENT_EMPTY
+                                    else -> "אין אירועים להצגה"
+                                },
+                                actionTitle = when {
+                                    trimmed.isNotEmpty() -> "ניקוי חיפוש"
+                                    olderHidden -> SHOW_OLDER_UNIT_EVENTS_LABEL
+                                    else -> null
+                                },
+                                onAction = when {
+                                    trimmed.isNotEmpty() -> ({ query = "" })
+                                    olderHidden -> ({ app.setShowOlderUnitEvents(true) })
+                                    else -> null
+                                },
                             )
                         }
                     }

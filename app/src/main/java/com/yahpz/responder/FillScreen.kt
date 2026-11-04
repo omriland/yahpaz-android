@@ -70,6 +70,7 @@ import com.yahpz.domain.EVENT_MEDIA_DOCS_TAB_LABEL
 import com.yahpz.domain.EVENT_MEDIA_TAB_LABEL
 import com.yahpz.domain.CommitTreatedPlateResult
 import com.yahpz.domain.EventStatus
+import com.yahpz.domain.FILL_CANCELLED_NOTE
 import com.yahpz.domain.FillBackAction
 import com.yahpz.domain.FillMode
 import com.yahpz.domain.ParticipationStatus
@@ -175,7 +176,7 @@ fun FillScreen(eventId: String, app: AppModel) {
 
     fun isReadOnly(fill: FillContext): Boolean =
         fill.participationStatus == ParticipationStatus.DONE ||
-            fill.eventStatus == EventStatus.DONE || fill.isCancelled
+            fill.eventStatus == EventStatus.DONE
 
     fun persistLocalDraft() {
         val fill = latestContext ?: return
@@ -403,7 +404,7 @@ fun FillScreen(eventId: String, app: AppModel) {
             else -> {
                 val fill = context!!
                 val readOnly = fill.participationStatus == ParticipationStatus.DONE ||
-                    fill.eventStatus == EventStatus.DONE || fill.isCancelled
+                    fill.eventStatus == EventStatus.DONE
                 val mediaWritable = !fill.isCancelled
                 Column(Modifier.fillMaxSize()) {
                     Row(
@@ -456,7 +457,7 @@ fun FillScreen(eventId: String, app: AppModel) {
                         }
                         if (fill.isCancelled) {
                             Text(
-                                "האירוע נסגר. לא ניתן לערוך את הדיווח.",
+                                FILL_CANCELLED_NOTE,
                                 style = TypeScale.body,
                                 color = FieldTheme.textPrimary,
                                 modifier = Modifier
