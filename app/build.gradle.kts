@@ -28,8 +28,8 @@ android {
         applicationId = "com.yahpz.responder"
         minSdk = 26
         targetSdk = 36
-        versionCode = 68
-        versionName = "0.3.54"
+        versionCode = 69
+        versionName = "0.3.55"
         manifestPlaceholders["MAPS_API_KEY"] = mapsApiKey
         buildConfigField("String", "MAPS_API_KEY", "\"${mapsApiKey.replace("\"", "\\\"")}\"")
     }
