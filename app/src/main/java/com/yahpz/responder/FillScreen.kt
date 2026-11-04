@@ -194,6 +194,7 @@ fun FillScreen(eventId: String, app: AppModel) {
             fill.vehicles.map { it.plate },
             fill.totalKm,
             unfinishedMediaDrafts,
+            fill.isCancelled,
         )
         if (!errors.isEmpty) {
             if (errors.eventMedia != null) pane = FillPane.MEDIA
@@ -509,7 +510,7 @@ fun FillScreen(eventId: String, app: AppModel) {
                             { draft = draft.copy(treatmentDetail = it) },
                             error = errors.treatmentDetail,
                             enabled = !readOnly,
-                            counter = detailCounter.text.takeIf { !readOnly },
+                            counter = detailCounter.text.takeIf { !readOnly && !fill.isCancelled },
                             counterMet = detailCounter.met,
                         )
                         TreatedPlatesSection(

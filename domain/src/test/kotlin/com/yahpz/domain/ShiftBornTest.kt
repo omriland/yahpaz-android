@@ -109,13 +109,17 @@ class ShiftBornTest {
     }
 
     @Test
-    fun cancelledKeepsTheTwentyFiveCharacterMinimum() {
+    fun cancelledHasNoTreatmentDetailMinimum() {
         val base = ShiftBornFillDraft(roadId = "r1", location = "מחלף שורק")
-        assertEquals(
-            TREATMENT_DETAIL_MIN_ERROR,
-            shiftBornCompleteErrors(base.copy(treatmentDetail = "בוטל")).treatmentDetail,
-        )
-        assertNull(shiftBornCompleteErrors(base.copy(treatmentDetail = "א".repeat(25))).treatmentDetail)
+        assertNull(shiftBornCompleteErrors(base.copy(treatmentDetail = ""), cancelled = true).treatmentDetail)
+        assertNull(shiftBornCompleteErrors(base.copy(treatmentDetail = "   "), cancelled = true).treatmentDetail)
+        assertNull(shiftBornCompleteErrors(base.copy(treatmentDetail = "בוטל"), cancelled = true).treatmentDetail)
+        assertTrue(shiftBornCompleteErrors(base.copy(treatmentDetail = ""), cancelled = true).isEmpty)
+
+        val missingPlace = shiftBornCompleteErrors(ShiftBornFillDraft(treatmentDetail = ""), cancelled = true)
+        assertEquals("יש לבחור כביש", missingPlace.roadId)
+        assertEquals("יש להזין מיקום", missingPlace.location)
+        assertNull(missingPlace.treatmentDetail)
     }
 
     @Test

@@ -37,8 +37,9 @@ enum class FillMode { DRAFT, COMPLETE }
 const val TREATMENT_DETAIL_MIN_CHARS = 25
 const val TREATMENT_DETAIL_MIN_ERROR = "יש להזין לפחות 25 תווים בפירוט הטיפול."
 
-fun treatmentDetailError(value: String, mode: FillMode): String? {
-    if (mode != FillMode.COMPLETE) return null
+/** Complete-mode error. A cancelled event has no minimum; any other event still needs 25 trimmed characters. */
+fun treatmentDetailError(value: String, mode: FillMode, cancelled: Boolean = false): String? {
+    if (mode != FillMode.COMPLETE || cancelled) return null
     return if (value.trim().length < TREATMENT_DETAIL_MIN_CHARS) TREATMENT_DETAIL_MIN_ERROR else null
 }
 
@@ -89,6 +90,7 @@ fun validateResponderFillDraft(
     allowedPlates: List<String> = emptyList(),
     totalKm: Double? = null,
     unfinishedMediaDraftCount: Int = 0,
+    cancelled: Boolean = false,
 ): ResponderFillErrors {
     var vehiclePlate: String? = null
     var odometerStart: String? = null
@@ -120,7 +122,7 @@ fun validateResponderFillDraft(
             odometerEnd = "יש למלא מד אוץ סיום."
         }
         if (draft.route.trim().isEmpty()) route = "יש למלא נתיב נסיעה."
-        treatmentDetail = treatmentDetailError(draft.treatmentDetail, mode)
+        treatmentDetail = treatmentDetailError(draft.treatmentDetail, mode, cancelled)
     }
 
     if (odometerEnd == null && start is ParsedNumber.Value && end is ParsedNumber.Value && end.value < start.value) {

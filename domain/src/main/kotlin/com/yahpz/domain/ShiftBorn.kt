@@ -125,10 +125,11 @@ data class ShiftBornFillErrors(
 /**
  * Completion bar for the shared report: where it happened and what was done.
  * No end time, KM, plate or odometer — those never apply to a shift-born event.
- * A cancelled event uses the same bar, including the 25-character פירוט minimum.
+ * A cancelled event keeps the place fields and has no פירוט minimum:
+ * blank and short text are both valid.
  */
-fun shiftBornCompleteErrors(draft: ShiftBornFillDraft): ShiftBornFillErrors {
-    val detail = treatmentDetailError(draft.treatmentDetail, FillMode.COMPLETE)
+fun shiftBornCompleteErrors(draft: ShiftBornFillDraft, cancelled: Boolean = false): ShiftBornFillErrors {
+    val detail = treatmentDetailError(draft.treatmentDetail, FillMode.COMPLETE, cancelled)
     return ShiftBornFillErrors(
         roadId = if (draft.roadId.isBlank()) SHIFT_BORN_ROAD_ERROR else null,
         location = if (draft.location.isBlank()) SHIFT_BORN_LOCATION_ERROR else null,

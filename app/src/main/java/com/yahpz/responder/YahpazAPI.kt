@@ -2539,6 +2539,7 @@ object YahpazAPI {
             context.vehicles.map { it.plate },
             context.totalKm,
             unfinishedMediaDraftCount,
+            context.isCancelled,
         )
         if (!errors.isEmpty) {
             return if (complete) {

@@ -301,6 +301,39 @@ class FillValidationTest {
         assertEquals(TREATMENT_DETAIL_MIN_ERROR, treatmentDetailError("   " + "א".repeat(24) + "   ", FillMode.COMPLETE))
         assertNull(treatmentDetailError("א".repeat(25), FillMode.COMPLETE))
         assertNull(treatmentDetailError("", FillMode.DRAFT))
+        assertNull(treatmentDetailError("", FillMode.COMPLETE, cancelled = true))
+        assertNull(treatmentDetailError("   ", FillMode.COMPLETE, cancelled = true))
+        assertNull(treatmentDetailError("בוטל", FillMode.COMPLETE, cancelled = true))
+    }
+
+    @Test
+    fun `cancelled complete allows a blank or short treatment detail`() {
+        val fields = ResponderFillDraft(
+            vehiclePlate = "1234567",
+            odometerStart = "100",
+            odometerEnd = "112",
+            route = "כביש 1",
+        )
+        listOf("", "   ", "בוטל", "א".repeat(24)).forEach { detail ->
+            assertNull(
+                validateResponderFillDraft(
+                    fields.copy(treatmentDetail = detail),
+                    FillMode.COMPLETE,
+                    plates,
+                    12.0,
+                    cancelled = true,
+                ).treatmentDetail,
+            )
+        }
+        assertEquals(
+            TREATMENT_DETAIL_MIN_ERROR,
+            validateResponderFillDraft(
+                fields.copy(treatmentDetail = "בוטל"),
+                FillMode.COMPLETE,
+                plates,
+                12.0,
+            ).treatmentDetail,
+        )
     }
 
     @Test
