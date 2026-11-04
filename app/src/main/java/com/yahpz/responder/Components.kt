@@ -632,7 +632,7 @@ fun FormArea(
     minHeight: Int = 120,
     error: String? = null,
     enabled: Boolean = true,
-    /** e.g. "12 מתוך 40"; turns green once [counterMet]. */
+    /** e.g. "12 מתוך 25"; turns green once [counterMet]. */
     counter: String? = null,
     counterMet: Boolean = false,
 ) {

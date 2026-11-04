@@ -34,8 +34,8 @@ data class ResponderFillErrors(
 enum class FillMode { DRAFT, COMPLETE }
 
 /** Minimum trimmed length for פירוט הטיפול on complete. Typing past this is allowed. */
-const val TREATMENT_DETAIL_MIN_CHARS = 40
-const val TREATMENT_DETAIL_MIN_ERROR = "יש להזין לפחות 40 תווים בפירוט הטיפול."
+const val TREATMENT_DETAIL_MIN_CHARS = 25
+const val TREATMENT_DETAIL_MIN_ERROR = "יש להזין לפחות 25 תווים בפירוט הטיפול."
 
 fun treatmentDetailError(value: String, mode: FillMode): String? {
     if (mode != FillMode.COMPLETE) return null

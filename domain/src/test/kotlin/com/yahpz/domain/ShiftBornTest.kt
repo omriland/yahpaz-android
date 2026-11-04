@@ -94,17 +94,17 @@ class ShiftBornTest {
         val errors = shiftBornCompleteErrors(ShiftBornFillDraft())
         assertEquals("יש לבחור כביש", errors.roadId)
         assertEquals("יש להזין מיקום", errors.location)
-        assertEquals("יש להזין לפחות 40 תווים בפירוט הטיפול.", errors.treatmentDetail)
+        assertEquals("יש להזין לפחות 25 תווים בפירוט הטיפול.", errors.treatmentDetail)
     }
 
     @Test
-    fun treatmentDetailNeedsFortyTrimmedCharacters() {
+    fun treatmentDetailNeedsTwentyFiveTrimmedCharacters() {
         val base = ShiftBornFillDraft(roadId = "r1", location = "מחלף שורק")
         assertEquals(
             TREATMENT_DETAIL_MIN_ERROR,
-            shiftBornCompleteErrors(base.copy(treatmentDetail = "א".repeat(39))).treatmentDetail,
+            shiftBornCompleteErrors(base.copy(treatmentDetail = "א".repeat(24))).treatmentDetail,
         )
-        assertNull(shiftBornCompleteErrors(base.copy(treatmentDetail = "  $forty  ")).treatmentDetail)
+        assertNull(shiftBornCompleteErrors(base.copy(treatmentDetail = "  ${"א".repeat(25)}  ")).treatmentDetail)
         assertNull(shiftBornCompleteErrors(base.copy(treatmentDetail = "א".repeat(80))).treatmentDetail)
     }
 

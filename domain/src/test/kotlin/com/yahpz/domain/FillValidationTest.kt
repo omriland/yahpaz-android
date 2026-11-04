@@ -275,17 +275,17 @@ class FillValidationTest {
     }
 
     @Test
-    fun `complete needs 40 trimmed characters of treatment detail`() {
+    fun `complete needs 25 trimmed characters of treatment detail`() {
         assertEquals(TREATMENT_DETAIL_MIN_ERROR, treatmentDetailError("טיפול", FillMode.COMPLETE))
-        assertEquals(TREATMENT_DETAIL_MIN_ERROR, treatmentDetailError("   " + "א".repeat(39) + "   ", FillMode.COMPLETE))
-        assertNull(treatmentDetailError("א".repeat(40), FillMode.COMPLETE))
+        assertEquals(TREATMENT_DETAIL_MIN_ERROR, treatmentDetailError("   " + "א".repeat(24) + "   ", FillMode.COMPLETE))
+        assertNull(treatmentDetailError("א".repeat(25), FillMode.COMPLETE))
         assertNull(treatmentDetailError("", FillMode.DRAFT))
     }
 
     @Test
-    fun `treatment detail counter shows trimmed count against 40`() {
-        assertEquals(TreatmentDetailCounter("0 מתוך 40", met = false), treatmentDetailCounter("  "))
-        assertEquals(TreatmentDetailCounter("40 מתוך 40", met = true), treatmentDetailCounter(" " + "ב".repeat(40)))
+    fun `treatment detail counter shows trimmed count against 25`() {
+        assertEquals(TreatmentDetailCounter("0 מתוך 25", met = false), treatmentDetailCounter("  "))
+        assertEquals(TreatmentDetailCounter("25 מתוך 25", met = true), treatmentDetailCounter(" " + "ב".repeat(25)))
     }
 
     @Test

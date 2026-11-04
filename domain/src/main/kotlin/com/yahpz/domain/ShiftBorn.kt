@@ -126,7 +126,7 @@ data class ShiftBornFillErrors(
 /**
  * Completion bar for the shared report: where it happened and what was done.
  * No end time, KM, plate or odometer — those never apply to a shift-born event.
- * A cancelled event still needs a word on what happened, but not 40 characters.
+ * A cancelled event still needs a word on what happened, but not 25 characters.
  */
 fun shiftBornCompleteErrors(draft: ShiftBornFillDraft, isCancelled: Boolean = false): ShiftBornFillErrors {
     val detail = if (isCancelled) {
