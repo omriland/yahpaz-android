@@ -43,6 +43,33 @@ class EventMediaTest {
     }
 
     @Test
+    fun `empty text does not block save and the chosen vehicle is sent`() {
+        val write = photoAttachWrite("   ", "veh-1")
+        assertFalse(write.blocked)
+        assertNull(write.caption)
+        assertEquals(listOf("veh-1"), write.vehicleIds)
+        assertTrue(
+            photoStepCanSave(
+                caption = "",
+                takenWhen = EventMediaTakenWhen.DURING_AFTER_TREATMENT,
+                platesLoaded = true,
+            ),
+        )
+        assertTrue(canAddAnotherPhoto(1))
+        assertFalse(canAddAnotherPhoto(20))
+    }
+
+    @Test
+    fun `one vehicle is preselected and none is not invented`() {
+        assertEquals("only", nextPhotoVehicleId(listOf("only"), null))
+        assertNull(nextPhotoVehicleId(listOf("a", "b"), null))
+        assertEquals("b", nextPhotoVehicleId(listOf("a", "b"), "b"))
+        assertNull(nextPhotoVehicleId(emptyList(), "a"))
+        assertEquals(EVENT_MEDIA_NO_VEHICLE, photoStepVehicleNote(0))
+        assertNull(photoStepVehicleNote(1))
+    }
+
+    @Test
     fun captionAllowsEmptyAnd200() {
         assertNull(captionError(""))
         assertNull(captionError("א".repeat(200)))

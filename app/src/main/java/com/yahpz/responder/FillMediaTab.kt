@@ -108,7 +108,14 @@ import com.yahpz.domain.EventMediaPlateOption
 import com.yahpz.domain.EventMediaTakenWhen
 import com.yahpz.domain.StampTone
 import com.yahpz.domain.autoLinkPlateIds
+import com.yahpz.domain.EVENT_MEDIA_NO_VEHICLE
+import com.yahpz.domain.EVENT_MEDIA_STEP_TITLE
+import com.yahpz.domain.EVENT_MEDIA_VEHICLE_PROMPT
+import com.yahpz.domain.PhotoAttachWrite
 import com.yahpz.domain.canAddMoreMedia
+import com.yahpz.domain.nextPhotoVehicleId
+import com.yahpz.domain.photoAttachWrite
+import com.yahpz.domain.photoStepCanSave
 import com.yahpz.domain.canDeleteEventMedia
 import com.yahpz.domain.captionError
 import com.yahpz.domain.eventMediaTakenWhenLabel
@@ -192,6 +199,15 @@ fun FillMediaTab(
     LaunchedEffect(drafts) {
         onUnfinishedChange(drafts.count { it.takenWhen == null })
     }
+    LaunchedEffect(plates) {
+        val ids = plates.map { it.id }
+        drafts = drafts.map { draft ->
+            if (draft.uploading) return@map draft
+            val next = nextPhotoVehicleId(ids, draft.treatedPlateIds.firstOrNull())
+            if (draft.treatedPlateIds.singleOrNull() == next) draft
+            else draft.copy(treatedPlateIds = listOfNotNull(next))
+        }
+    }
     LaunchedEffect(dropUnfinishedTick) {
         if (dropUnfinishedTick <= 0) return@LaunchedEffect
         val last = drafts.lastOrNull { it.takenWhen == null && !it.uploading } ?: return@LaunchedEffect
@@ -202,6 +218,7 @@ fun FillMediaTab(
         val picked = uris.map { uri -> uri to context.contentResolver.getType(uri) }
         val supported = picked.filter { (_, type) -> eventMediaKind(type) != null }
         if (supported.size < picked.size) onToast(EVENT_MEDIA_BAD_TYPE, StampTone.PENDING)
+        val presetVehicleId = nextPhotoVehicleId(plates.map { it.id }, null)
         drafts = drafts + supported.take(remaining).map { (uri, type) ->
             val kind = eventMediaKind(type) ?: EventMediaKind.IMAGE
             MediaDraft(
@@ -209,6 +226,7 @@ fun FillMediaTab(
                 uri = uri,
                 kind = kind,
                 videoMimeType = type.takeIf { kind == EventMediaKind.VIDEO },
+                treatedPlateIds = listOfNotNull(presetVehicleId),
             )
         }
         scope.launch {
@@ -304,9 +322,18 @@ fun FillMediaTab(
         }
     }
 
-    fun startUpload(key: String, takenWhen: EventMediaTakenWhen) {
+    fun startUpload(key: String, takenWhen: EventMediaTakenWhen, write: PhotoAttachWrite) {
         val draft = drafts.firstOrNull { it.key == key } ?: return
-        patchDraft(key) { copy(uploading = true, error = null, takenWhen = takenWhen) }
+        if (write.blocked) return
+        patchDraft(key) {
+            copy(
+                uploading = true,
+                error = null,
+                takenWhen = takenWhen,
+                treatedPlateIds = write.vehicleIds,
+                caption = write.caption.orEmpty(),
+            )
+        }
         scope.launch {
             val payload = withContext(Dispatchers.IO) { readUploadPayload(context, draft) }
             if (payload is UploadPayload.Rejected) {
@@ -314,7 +341,6 @@ fun FillMediaTab(
                 return@launch
             }
             val ready = payload as UploadPayload.Ready
-            val latest = drafts.firstOrNull { it.key == key } ?: draft
             val result = withContext(Dispatchers.IO) {
                 YahpazAPI.uploadEventMedia(
                     eventId = eventId,
@@ -323,8 +349,8 @@ fun FillMediaTab(
                     width = ready.width,
                     height = ready.height,
                     takenWhen = takenWhen,
-                    treatedPlateIds = latest.treatedPlateIds,
-                    caption = latest.caption.trim().ifEmpty { null },
+                    treatedPlateIds = write.vehicleIds,
+                    caption = write.caption,
                 )
             }
             when (result) {
@@ -431,16 +457,53 @@ fun FillMediaTab(
                     AutoLinkLine(plate = plate, onUndo = { undoAutoLink(link) })
                 }
             }
-            drafts.forEach { draft ->
-                MediaDraftCard(
-                    draft = draft,
-                    plates = plates,
-                    onCaption = { patchDraft(draft.key) { copy(caption = it) } },
-                    onPlates = { patchDraft(draft.key) { copy(treatedPlateIds = it) } },
-                    onTakenWhen = { startUpload(draft.key, it) },
-                    onRetry = { draft.takenWhen?.let { startUpload(draft.key, it) } },
-                    onRemove = { drafts = drafts.filterNot { it.key == draft.key } },
+            drafts.firstOrNull()?.let { draft ->
+                val write = photoAttachWrite(draft.caption, draft.treatedPlateIds.firstOrNull())
+                val canSave = photoStepCanSave(
+                    caption = draft.caption,
+                    takenWhen = draft.takenWhen,
+                    platesLoaded = !loading,
                 )
+                val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+                ModalBottomSheet(
+                    onDismissRequest = {
+                        if (!draft.uploading) drafts = drafts.filterNot { it.key == draft.key }
+                    },
+                    sheetState = sheetState,
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 16.dp)
+                            .padding(bottom = 24.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text(EVENT_MEDIA_STEP_TITLE, style = TypeScale.section, color = FieldTheme.textPrimary)
+                        MediaDraftCard(
+                            draft = draft,
+                            plates = plates,
+                            platesLoaded = !loading,
+                            canSave = canSave,
+                            onCaption = { patchDraft(draft.key) { copy(caption = it) } },
+                            onPlates = { patchDraft(draft.key) { copy(treatedPlateIds = it) } },
+                            onTakenWhen = { chosen -> patchDraft(draft.key) { copy(takenWhen = chosen) } },
+                            onSave = {
+                                draft.takenWhen?.let { whenTaken ->
+                                    startUpload(draft.key, whenTaken, write)
+                                }
+                            },
+                            onRemove = { drafts = drafts.filterNot { it.key == draft.key } },
+                        )
+                        if (drafts.size > 1) {
+                            Text(
+                                "אחרי השמירה אפשר לשייך את התמונה הבאה.",
+                                style = TypeScale.caption,
+                                color = FieldTheme.textMuted,
+                            )
+                        }
+                    }
+                }
             }
         }
         if (canWrite) {
@@ -790,10 +853,12 @@ private fun MediaBand(
 private fun MediaDraftCard(
     draft: MediaDraft,
     plates: List<EventMediaPlateOption>,
+    platesLoaded: Boolean,
+    canSave: Boolean,
     onCaption: (String) -> Unit,
     onPlates: (List<String>) -> Unit,
     onTakenWhen: (EventMediaTakenWhen) -> Unit,
-    onRetry: () -> Unit,
+    onSave: () -> Unit,
     onRemove: () -> Unit,
 ) {
     Column(
@@ -839,18 +904,25 @@ private fun MediaDraftCard(
                 Icon(Icons.Outlined.Close, contentDescription = "הסרה", tint = Color.White)
             }
         }
-        MediaPlateChips(
-            plates = plates,
-            selected = draft.treatedPlateIds,
-            enabled = !draft.uploading,
-            onChange = onPlates,
-        )
+        if (!platesLoaded) {
+            Text("טוען רכבים…", style = TypeScale.caption, color = FieldTheme.textMuted)
+        } else if (plates.isEmpty()) {
+            Text(EVENT_MEDIA_NO_VEHICLE, style = TypeScale.body, color = FieldTheme.textSecondary)
+        } else {
+            MediaPlateChips(
+                plates = plates,
+                selected = draft.treatedPlateIds,
+                enabled = !draft.uploading,
+                single = true,
+                onChange = onPlates,
+            )
+        }
         FormField(
             label = "תיאור",
             value = draft.caption,
             onValueChange = onCaption,
             enabled = !draft.uploading,
-            placeholder = "למשל: פגיעה בגלגל קדמי",
+            placeholder = "אופציונלי, למשל: פגיעה בגלגל קדמי",
         )
         TakenWhenPicker(
             value = draft.takenWhen,
@@ -862,13 +934,17 @@ private fun MediaDraftCard(
         if (draft.uploading) {
             Text("מעלה…", style = TypeScale.caption, color = FieldTheme.textMuted)
         }
-        if (draft.error != null) {
-            GhostButton(
-                title = "נסו שוב",
-                enabled = draft.takenWhen != null && !draft.uploading,
-                onClick = onRetry,
-            )
-        }
+        PrimaryButton(
+            title = "שמירה",
+            busy = draft.uploading,
+            enabled = canSave,
+            onClick = onSave,
+        )
+        GhostButton(
+            title = "ביטול",
+            enabled = !draft.uploading,
+            onClick = onRemove,
+        )
     }
 }
 
@@ -918,10 +994,15 @@ private fun MediaPlateChips(
     selected: List<String>,
     enabled: Boolean,
     onChange: (List<String>) -> Unit,
+    single: Boolean = false,
 ) {
     if (plates.isEmpty()) return
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(EVENT_MEDIA_PLATES_TITLE, style = TypeScale.label, color = FieldTheme.textSecondary)
+        Text(
+            if (single) EVENT_MEDIA_VEHICLE_PROMPT else EVENT_MEDIA_PLATES_TITLE,
+            style = TypeScale.label,
+            color = FieldTheme.textSecondary,
+        )
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -943,8 +1024,10 @@ private fun MediaPlateChips(
                         .toggleable(
                             value = checked,
                             enabled = enabled,
-                            role = Role.Checkbox,
-                            onValueChange = { onChange(togglePlateId(selected, plate.id)) },
+                            role = if (single) Role.RadioButton else Role.Checkbox,
+                            onValueChange = {
+                                onChange(if (single) listOf(plate.id) else togglePlateId(selected, plate.id))
+                            },
                         )
                         .clearAndSetSemantics {
                             contentDescription = label

@@ -86,6 +86,54 @@ fun slotsRemaining(savedCount: Int, inFlightCount: Int): Int =
 fun canAddMoreMedia(savedCount: Int, inFlightCount: Int): Boolean =
     slotsRemaining(savedCount, inFlightCount) > 0
 
+const val EVENT_MEDIA_STEP_TITLE = "שיוך התמונה"
+const val EVENT_MEDIA_VEHICLE_PROMPT = "לאיזה רכב לשייך?"
+const val EVENT_MEDIA_NO_VEHICLE = "אין רכב באירוע. התמונה תישמר בלי שיוך לרכב."
+
+data class PhotoAttachWrite(
+    val caption: String?,
+    val vehicleIds: List<String>,
+    /** Empty text never blocks. A caption over 200 characters does. */
+    val blocked: Boolean,
+)
+
+/** The only vehicle on the event is already chosen. Several stay unchosen until tapped. */
+fun nextPhotoVehicleId(vehicleIds: List<String>, currentId: String?): String? {
+    if (vehicleIds.isEmpty()) return null
+    if (vehicleIds.size == 1) return vehicleIds[0]
+    if (currentId != null && currentId in vehicleIds) return currentId
+    return null
+}
+
+fun photoStepVehicleNote(vehicleCount: Int): String? {
+    if (vehicleCount > 0) return null
+    return EVENT_MEDIA_NO_VEHICLE
+}
+
+/** Caption is optional. A chosen vehicle id is the one id sent with the photo. */
+fun photoAttachWrite(caption: String, vehicleId: String?): PhotoAttachWrite {
+    val trimmed = caption.trim()
+    return PhotoAttachWrite(
+        caption = trimmed.ifEmpty { null },
+        vehicleIds = if (vehicleId.isNullOrEmpty()) emptyList() else listOf(vehicleId),
+        blocked = captionError(caption) != null,
+    )
+}
+
+fun photoStepCanSave(
+    caption: String,
+    takenWhen: EventMediaTakenWhen?,
+    platesLoaded: Boolean,
+    preparing: Boolean = false,
+): Boolean {
+    if (!platesLoaded || preparing) return false
+    if (takenWhen == null) return false
+    return !photoAttachWrite(caption, null).blocked
+}
+
+/** After one photo is stored, the add action stays until the cap. */
+fun canAddAnotherPhoto(savedCount: Int): Boolean = canAddMoreMedia(savedCount, 0)
+
 /** Mirrors the event_media_delete RLS policy: only the uploader, while they may write. */
 fun canDeleteEventMedia(item: EventMedia, viewerId: String?, canWrite: Boolean): Boolean =
     canWrite && viewerId != null && item.uploadedBy == viewerId
