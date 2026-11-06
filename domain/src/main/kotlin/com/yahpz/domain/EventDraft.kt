@@ -452,7 +452,18 @@ fun treatedQuantity(responder: EventResponderDraft, vehicleKindId: String): Int 
 fun filterAssignableProfiles(profiles: List<AssignableProfile>, query: String): List<AssignableProfile> {
     val trimmed = query.trim()
     if (trimmed.isEmpty()) return profiles
-    return profiles.filter { fieldsMatchQuery(it.searchFields, trimmed) }
+    return sortByCallsignForNumericQuery(profiles.filter { fieldsMatchQuery(it.searchFields, trimmed) }, trimmed)
+}
+
+private val DIGITS_ONLY = Regex("^[0-9]+$")
+
+/** A digits-only search lists callsigns numerically; other callsigns follow in their given order. */
+fun sortByCallsignForNumericQuery(profiles: List<AssignableProfile>, query: String): List<AssignableProfile> {
+    if (!DIGITS_ONLY.matches(query.trim())) return profiles
+    return profiles.sortedBy { profile ->
+        val callsign = profile.callsign.trim()
+        if (DIGITS_ONLY.matches(callsign)) callsign.toDouble() else Double.POSITIVE_INFINITY
+    }
 }
 
 fun createIncludesSelfAssign(shiftLeadId: String, responders: List<EventResponderDraft>): Boolean =

@@ -192,6 +192,46 @@ class EventDraftTest {
         assertEquals("דנה כהן · 12", profiles[0].display)
     }
 
+    private fun callsignProfiles(vararg callsigns: String) =
+        callsigns.mapIndexed { index, callsign -> AssignableProfile("p$index", "שם $index", callsign) }
+
+    @Test
+    fun `a digits search orders volunteers by callsign as numbers`() {
+        val profiles = callsignProfiles("815", "874", "528", "598", "823", "418", "873", "228")
+        assertEquals(
+            listOf("228", "418", "528", "598", "815", "823", "873", "874"),
+            filterAssignableProfiles(profiles, "8").map { it.callsign },
+        )
+        assertEquals(
+            listOf("98", "815"),
+            filterAssignableProfiles(callsignProfiles("815", "98"), " 8 ").map { it.callsign },
+        )
+    }
+
+    @Test
+    fun `non-numeric callsigns follow in their given order and equal callsigns stay stable`() {
+        val mixed = callsignProfiles("ב8", "815", "", "98", "א8")
+        assertEquals(
+            listOf("98", "815", "ב8", "", "א8"),
+            sortByCallsignForNumericQuery(mixed, "8").map { it.callsign },
+        )
+        assertEquals(
+            listOf("p0", "p1", "p2"),
+            sortByCallsignForNumericQuery(callsignProfiles("8", "8", "08"), "8").map { it.id },
+        )
+    }
+
+    @Test
+    fun `name and empty searches keep the given order`() {
+        val named = listOf(
+            AssignableProfile("a", "יוסי א", "815"),
+            AssignableProfile("b", "יוסי ב", "98"),
+        )
+        assertEquals(listOf("a", "b"), filterAssignableProfiles(named, "יוסי").map { it.id })
+        assertEquals(listOf("a", "b"), filterAssignableProfiles(named, "  ").map { it.id })
+        assertEquals(listOf("a", "b"), sortByCallsignForNumericQuery(named, "a8").map { it.id })
+    }
+
     @Test
     fun `clearing the cancelled flag is allowed for unit managers`() {
         assertNull(canToggleEventCancelled(next = true, canClearCancelled = false))
