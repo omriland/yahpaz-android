@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,14 +24,22 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -49,13 +59,20 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.yahpz.domain.EVENT_DELETE_ACTION
 import com.yahpz.domain.EVENT_DELETE_CONFIRM
@@ -116,6 +133,11 @@ import com.yahpz.domain.partitionIncompleteEvents
 import com.yahpz.domain.responderCardShowsLeadKm
 import com.yahpz.domain.shouldFilterUnitEventsToOwnCreated
 import kotlinx.coroutines.launch
+
+private const val SCOPE_CHIPS_PREFIX = "הצג גם"
+private const val SHIFT_EVENTS_CHIP = "ממשמרות"
+private const val OLDER_EVENTS_CHIP = "ישנים יותר"
+private const val OTHERS_EVENTS_CHIP = "של אחרים"
 
 private const val UNIT_EVENTS_CAPTION =
     "מציג 80 אירועים אחרונים - ניתן לחפש גם אירועים ישנים יותר"
@@ -259,39 +281,10 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 16.dp)
-                .padding(top = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(top = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("אירועים", style = TypeScale.title, color = FieldTheme.textPrimary)
-            }
-            SearchField(
-                value = query,
-                onValueChange = { query = it },
-                placeholder = "אירוע, כביש, מיקום או אחמ״ש",
-            )
-            ScopeSwitchRow(
-                label = SHOW_SHIFT_EVENTS_LABEL,
-                checked = ui.showShiftEvents,
-                onCheckedChange = { app.setShowShiftEvents(it) },
-            )
-            if (shouldApplyShiftLeadRecentWindow(ui.roles)) {
-                ScopeSwitchRow(
-                    label = SHOW_OLDER_UNIT_EVENTS_LABEL,
-                    checked = ui.showOlderUnitEvents,
-                    onCheckedChange = { app.setShowOlderUnitEvents(it) },
-                )
-            }
-            if (shouldFilterUnitEventsToOwnCreated(ui.roles)) {
-                ScopeSwitchRow(
-                    label = SHOW_OTHERS_CREATED_EVENTS_LABEL,
-                    checked = ui.showOthersCreatedEvents,
-                    onCheckedChange = { app.setShowOthersCreatedEvents(it) },
-                )
-            }
+            UnitEventsHeader(app = app, ui = ui, query = query, onQueryChange = { query = it })
             when {
                 ui.unitEventsFailed -> EmptyState(
                     title = UNIT_EVENTS_LOAD_FAILED,
@@ -754,33 +747,182 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
     }
 }
 
+/** Pinned above the list, like the other tabs' title and search. */
 @Composable
-private fun ScopeSwitchRow(label: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(
+private fun UnitEventsHeader(
+    app: AppModel,
+    ui: AppUiState,
+    query: String,
+    onQueryChange: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("אירועים", style = TypeScale.title, color = FieldTheme.textPrimary)
+        Column {
+            EventsSearchField(
+                value = query,
+                onValueChange = onQueryChange,
+                placeholder = "אירוע, כביש, מיקום או אחמ״ש",
+            )
+            // Bleeds through the screen's 16dp gutter so chips scroll off the edge, not at the margin.
+            Row(
+                modifier = Modifier
+                    .layout { measurable, constraints ->
+                        val gutter = 16.dp.roundToPx()
+                        val placeable = measurable.measure(
+                            constraints.copy(maxWidth = constraints.maxWidth + 2 * gutter),
+                        )
+                        layout(constraints.maxWidth, placeable.height) { placeable.place(-gutter, 0) }
+                    }
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                // Every chip widens the list, while a filter chip usually narrows it. This says so.
+                // TalkBack gets the same meaning from each chip's full label.
+                Text(
+                    SCOPE_CHIPS_PREFIX,
+                    style = TypeScale.label,
+                    color = FieldTheme.textSecondary,
+                    modifier = Modifier.clearAndSetSemantics {},
+                )
+                ScopeChip(
+                    label = SHIFT_EVENTS_CHIP,
+                    spokenLabel = SHOW_SHIFT_EVENTS_LABEL,
+                    selected = ui.showShiftEvents,
+                    onSelectedChange = { app.setShowShiftEvents(it) },
+                )
+                if (shouldApplyShiftLeadRecentWindow(ui.roles)) {
+                    ScopeChip(
+                        label = OLDER_EVENTS_CHIP,
+                        spokenLabel = SHOW_OLDER_UNIT_EVENTS_LABEL,
+                        selected = ui.showOlderUnitEvents,
+                        onSelectedChange = { app.setShowOlderUnitEvents(it) },
+                    )
+                }
+                if (shouldFilterUnitEventsToOwnCreated(ui.roles)) {
+                    ScopeChip(
+                        label = OTHERS_EVENTS_CHIP,
+                        spokenLabel = SHOW_OTHERS_CREATED_EVENTS_LABEL,
+                        selected = ui.showOthersCreatedEvents,
+                        onSelectedChange = { app.setShowOthersCreatedEvents(it) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EventsSearchField(value: String, onValueChange: (String) -> Unit, placeholder: String) {
+    val focusManager = LocalFocusManager.current
+    val interactionSource = remember { MutableInteractionSource() }
+    val shape = RoundedCornerShape(24.dp)
+    val colors = OutlinedTextFieldDefaults.colors(
+        focusedContainerColor = FieldTheme.raised,
+        unfocusedContainerColor = FieldTheme.raised,
+        focusedBorderColor = FieldTheme.accent,
+        unfocusedBorderColor = FieldTheme.strong,
+        focusedLeadingIconColor = FieldTheme.textSecondary,
+        unfocusedLeadingIconColor = FieldTheme.textSecondary,
+        focusedTrailingIconColor = FieldTheme.textSecondary,
+        unfocusedTrailingIconColor = FieldTheme.textSecondary,
+    )
+    val textStyle = TypeScale.body.copy(fontSize = 16.sp, color = FieldTheme.textPrimary)
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        singleLine = true,
+        textStyle = textStyle,
+        cursorBrush = SolidColor(FieldTheme.accent),
+        interactionSource = interactionSource,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 44.dp)
-            .clickable { onCheckedChange(!checked) },
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text(
-            label,
-            style = TypeScale.body,
-            color = FieldTheme.textPrimary,
-            modifier = Modifier.weight(1f),
-        )
-        Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            colors = SwitchDefaults.colors(
-                checkedThumbColor = FieldTheme.textOnAccent,
-                checkedTrackColor = FieldTheme.accent,
-                uncheckedThumbColor = FieldTheme.raised,
-                uncheckedTrackColor = FieldTheme.strong,
-            ),
-        )
-    }
+            .heightIn(min = 48.dp)
+            .semantics { contentDescription = "חיפוש" },
+        decorationBox = { innerTextField ->
+            OutlinedTextFieldDefaults.DecorationBox(
+                value = value,
+                innerTextField = innerTextField,
+                enabled = true,
+                singleLine = true,
+                visualTransformation = VisualTransformation.None,
+                interactionSource = interactionSource,
+                placeholder = { Text(placeholder, style = textStyle, color = FieldTheme.textMuted) },
+                leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
+                trailingIcon = if (value.isEmpty()) {
+                    null
+                } else {
+                    {
+                        IconButton(onClick = { onValueChange("") }) {
+                            Icon(Icons.Outlined.Close, contentDescription = "ניקוי חיפוש")
+                        }
+                    }
+                },
+                colors = colors,
+                contentPadding = OutlinedTextFieldDefaults.contentPadding(top = 8.dp, bottom = 8.dp),
+                container = {
+                    OutlinedTextFieldDefaults.Container(
+                        enabled = true,
+                        isError = false,
+                        interactionSource = interactionSource,
+                        colors = colors,
+                        shape = shape,
+                    )
+                },
+            )
+        },
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ScopeChip(
+    label: String,
+    spokenLabel: String,
+    selected: Boolean,
+    onSelectedChange: (Boolean) -> Unit,
+) {
+    FilterChip(
+        selected = selected,
+        onClick = { onSelectedChange(!selected) },
+        label = {
+            Text(
+                label,
+                style = TypeScale.label,
+                maxLines = 1,
+                // On the label, not the chip: on the chip TalkBack would read both strings.
+                modifier = Modifier.semantics { contentDescription = spokenLabel },
+            )
+        },
+        leadingIcon = if (selected) {
+            {
+                Icon(
+                    Icons.Filled.Check,
+                    contentDescription = null,
+                    modifier = Modifier.size(FilterChipDefaults.IconSize),
+                )
+            }
+        } else {
+            null
+        },
+        colors = FilterChipDefaults.filterChipColors(
+            containerColor = FieldTheme.raised,
+            labelColor = FieldTheme.textPrimary,
+            selectedContainerColor = FieldTheme.accentSubtle,
+            selectedLabelColor = FieldTheme.accent,
+            selectedLeadingIconColor = FieldTheme.accent,
+        ),
+        border = FilterChipDefaults.filterChipBorder(
+            enabled = true,
+            selected = selected,
+            borderColor = FieldTheme.strong,
+            selectedBorderColor = FieldTheme.accent,
+        ),
+    )
 }
 
 @Composable
