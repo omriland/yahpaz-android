@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,13 +17,20 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Call
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -34,9 +42,17 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.yahpz.domain.CONTACTS_EMPTY_TITLE
 import com.yahpz.domain.CONTACTS_FAILED_TITLE
 import com.yahpz.domain.CONTACTS_NO_RESULTS_TITLE
@@ -179,13 +195,75 @@ private fun ContactRow(contact: UnitContact, onCall: () -> Unit, onWhatsApp: () 
     }
 }
 
+/** Compact M3 search: icon pill, placeholder inside, clear button, Search key. "חיפוש" is the spoken label. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchField(value: String, onValueChange: (String) -> Unit, placeholder: String) {
-    FormField(
-        label = "חיפוש",
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    val interactionSource = remember { MutableInteractionSource() }
+    val shape = RoundedCornerShape(24.dp)
+    val colors = OutlinedTextFieldDefaults.colors(
+        focusedContainerColor = FieldTheme.raised,
+        unfocusedContainerColor = FieldTheme.raised,
+        focusedBorderColor = FieldTheme.accent,
+        unfocusedBorderColor = FieldTheme.strong,
+        focusedLeadingIconColor = FieldTheme.textSecondary,
+        unfocusedLeadingIconColor = FieldTheme.textSecondary,
+        focusedTrailingIconColor = FieldTheme.textSecondary,
+        unfocusedTrailingIconColor = FieldTheme.textSecondary,
+    )
+    val textStyle = TypeScale.body.copy(fontSize = 16.sp, color = FieldTheme.textPrimary)
+    BasicTextField(
         value = value,
         onValueChange = onValueChange,
-        placeholder = placeholder,
+        singleLine = true,
+        textStyle = textStyle,
+        cursorBrush = SolidColor(FieldTheme.accent),
+        interactionSource = interactionSource,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(
+            onSearch = {
+                focusManager.clearFocus()
+                keyboard?.hide()
+            },
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .semantics { contentDescription = "חיפוש" },
+        decorationBox = { innerTextField ->
+            OutlinedTextFieldDefaults.DecorationBox(
+                value = value,
+                innerTextField = innerTextField,
+                enabled = true,
+                singleLine = true,
+                visualTransformation = VisualTransformation.None,
+                interactionSource = interactionSource,
+                placeholder = { Text(placeholder, style = textStyle, color = FieldTheme.textMuted) },
+                leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
+                trailingIcon = if (value.isEmpty()) {
+                    null
+                } else {
+                    {
+                        IconButton(onClick = { onValueChange("") }) {
+                            Icon(Icons.Outlined.Close, contentDescription = "ניקוי חיפוש")
+                        }
+                    }
+                },
+                colors = colors,
+                contentPadding = OutlinedTextFieldDefaults.contentPadding(top = 8.dp, bottom = 8.dp),
+                container = {
+                    OutlinedTextFieldDefaults.Container(
+                        enabled = true,
+                        isError = false,
+                        interactionSource = interactionSource,
+                        colors = colors,
+                        shape = shape,
+                    )
+                },
+            )
+        },
     )
 }
 
