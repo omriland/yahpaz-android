@@ -5,7 +5,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,22 +23,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -59,20 +51,15 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.PathEffect
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.yahpz.domain.EVENT_DELETE_ACTION
 import com.yahpz.domain.EVENT_DELETE_CONFIRM
@@ -758,7 +745,7 @@ private fun UnitEventsHeader(
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("אירועים", style = TypeScale.title, color = FieldTheme.textPrimary)
         Column {
-            EventsSearchField(
+            SearchField(
                 value = query,
                 onValueChange = onQueryChange,
                 placeholder = "אירוע, כביש, מיקום או אחמ״ש",
@@ -811,71 +798,6 @@ private fun UnitEventsHeader(
             }
         }
     }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun EventsSearchField(value: String, onValueChange: (String) -> Unit, placeholder: String) {
-    val focusManager = LocalFocusManager.current
-    val interactionSource = remember { MutableInteractionSource() }
-    val shape = RoundedCornerShape(24.dp)
-    val colors = OutlinedTextFieldDefaults.colors(
-        focusedContainerColor = FieldTheme.raised,
-        unfocusedContainerColor = FieldTheme.raised,
-        focusedBorderColor = FieldTheme.accent,
-        unfocusedBorderColor = FieldTheme.strong,
-        focusedLeadingIconColor = FieldTheme.textSecondary,
-        unfocusedLeadingIconColor = FieldTheme.textSecondary,
-        focusedTrailingIconColor = FieldTheme.textSecondary,
-        unfocusedTrailingIconColor = FieldTheme.textSecondary,
-    )
-    val textStyle = TypeScale.body.copy(fontSize = 16.sp, color = FieldTheme.textPrimary)
-    BasicTextField(
-        value = value,
-        onValueChange = onValueChange,
-        singleLine = true,
-        textStyle = textStyle,
-        cursorBrush = SolidColor(FieldTheme.accent),
-        interactionSource = interactionSource,
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-        keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 48.dp)
-            .semantics { contentDescription = "חיפוש" },
-        decorationBox = { innerTextField ->
-            OutlinedTextFieldDefaults.DecorationBox(
-                value = value,
-                innerTextField = innerTextField,
-                enabled = true,
-                singleLine = true,
-                visualTransformation = VisualTransformation.None,
-                interactionSource = interactionSource,
-                placeholder = { Text(placeholder, style = textStyle, color = FieldTheme.textMuted) },
-                leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
-                trailingIcon = if (value.isEmpty()) {
-                    null
-                } else {
-                    {
-                        IconButton(onClick = { onValueChange("") }) {
-                            Icon(Icons.Outlined.Close, contentDescription = "ניקוי חיפוש")
-                        }
-                    }
-                },
-                colors = colors,
-                contentPadding = OutlinedTextFieldDefaults.contentPadding(top = 8.dp, bottom = 8.dp),
-                container = {
-                    OutlinedTextFieldDefaults.Container(
-                        enabled = true,
-                        isError = false,
-                        interactionSource = interactionSource,
-                        colors = colors,
-                        shape = shape,
-                    )
-                },
-            )
-        },
-    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
