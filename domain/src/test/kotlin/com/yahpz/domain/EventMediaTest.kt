@@ -60,13 +60,16 @@ class EventMediaTest {
     }
 
     @Test
-    fun `one vehicle is preselected and none is not invented`() {
-        assertEquals("only", nextPhotoVehicleId(listOf("only"), null))
-        assertNull(nextPhotoVehicleId(listOf("a", "b"), null))
-        assertEquals("b", nextPhotoVehicleId(listOf("a", "b"), "b"))
-        assertNull(nextPhotoVehicleId(emptyList(), "a"))
+    fun `no vehicle is chosen for the person and the one no-vehicle choice is sent as no link`() {
+        assertEquals(emptyList<String>(), photoAttachWrite("", null).vehicleIds)
         assertEquals(EVENT_MEDIA_NO_VEHICLE, photoStepVehicleNote(0))
         assertNull(photoStepVehicleNote(1))
+    }
+
+    @Test
+    fun `photo step copy matches the web`() {
+        assertEquals("מה רואים בתמונה?", EVENT_MEDIA_VEHICLE_PROMPT)
+        assertEquals("ללא שיוך לרכב", EVENT_MEDIA_UNASSIGNED_LABEL)
     }
 
     @Test

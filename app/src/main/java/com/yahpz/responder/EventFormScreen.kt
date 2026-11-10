@@ -92,6 +92,10 @@ import com.yahpz.domain.forPersistCompare
 import com.yahpz.domain.EventResponderDraft
 import com.yahpz.domain.LookupOption
 import com.yahpz.domain.NO_VEHICLE_KM_PLACEHOLDER
+import com.yahpz.domain.PICKER_NEEDS_VEHICLE_NOTE
+import com.yahpz.domain.PICKER_NO_VEHICLE_CANDIDATES
+import com.yahpz.domain.pickerCandidates
+import com.yahpz.domain.pickerNeedsVehicleResponder
 import com.yahpz.domain.EVENT_STATION_LABEL
 import com.yahpz.domain.EVENT_TYPE_DETAIL_LABEL
 import com.yahpz.domain.EVENT_TYPE_DETAIL_MAX_LENGTH
@@ -793,6 +797,7 @@ fun EventFormScreen(
                     minHeight = 96,
                 )
                 FormSectionHeading(EVENT_FORM_RESPONDERS_SECTION)
+                val pickerNeedsVehicle = pickerNeedsVehicleResponder(responders, ui.assignableProfiles)
                 CrewAssignmentSection(
                     assignOpenLabel = EVENT_ASSIGN_OPEN,
                     assignCloseLabel = EVENT_ASSIGN_CLOSE,
@@ -830,6 +835,9 @@ fun EventFormScreen(
                     emptyHint = EVENT_ASSIGN_EMPTY,
                     emptyRoster = "אין משתמשים פעילים להקצאה.",
                     emptyQuery = "לא נמצאו מתנדבים להקצאה",
+                    candidates = pickerCandidates(responders, ui.assignableProfiles),
+                    pickerNote = PICKER_NEEDS_VEHICLE_NOTE.takeIf { pickerNeedsVehicle },
+                    emptyCandidates = PICKER_NO_VEHICLE_CANDIDATES.takeIf { pickerNeedsVehicle },
                 )
                 if (!eventReleasedToResponders(
                         origin = "manual",

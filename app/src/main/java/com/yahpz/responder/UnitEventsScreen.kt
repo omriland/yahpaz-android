@@ -80,6 +80,10 @@ import com.yahpz.domain.MY_ACTIVE_REMOVE
 import com.yahpz.domain.MY_ACTIVE_REMOVE_LOCKED
 import com.yahpz.domain.ParticipationStatus
 import com.yahpz.domain.StampTone
+import com.yahpz.domain.StampDescriptor
+import com.yahpz.domain.LEAD_ENTERED_LABEL
+import com.yahpz.domain.leadEnteredAwaitingStamp
+import com.yahpz.domain.leadEnteredStamp
 import com.yahpz.domain.UNIT_EVENTS_LOAD_FAILED
 import com.yahpz.domain.canDeleteUnassignedEvent
 import com.yahpz.domain.canRemoveFromMyActive
@@ -334,6 +338,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                                 )
                             DraggableActiveEventRow(
                                 event = event,
+                                viewerId = viewerId,
                                 dragging = draggingId == event.id,
                                 dragOffset = if (draggingId == event.id) dragOffset else Offset.Zero,
                                 boardActionTitle = MY_ACTIVE_REMOVE,
@@ -417,6 +422,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                                     incompleteEvents.forEach { event ->
                                         CatalogEventRow(
                                             event = event,
+                                            viewerId = viewerId,
                                             draggingId = draggingId,
                                             dragOffset = dragOffset,
                                             pendingBoardIds = pendingBoardIds,
@@ -450,6 +456,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                             restEvents.forEach { event ->
                                 CatalogEventRow(
                                     event = event,
+                                    viewerId = viewerId,
                                     draggingId = draggingId,
                                     dragOffset = dragOffset,
                                     pendingBoardIds = pendingBoardIds,
@@ -518,16 +525,8 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
             ?: ui.myActivePinnedEvents.firstOrNull { it.id == event.id }
             ?: event
         val mine = ui.userId?.let { current.ownParticipation(it) }
-        val stamp = if (current.isCancelled) {
-            cancelledStamp()
-        } else if (current.isShiftBorn) {
-            current.shiftBornStamp
-        } else {
-            reportingDocumentationStamp(
-                current.status,
-                eventHasMissingResponderKm(current.asIncompleteSnapshot()),
-            )
-        }
+        val stamp = unitEventStamp(current, ui.userId)
+        val leadEntered = stamp.label == LEAD_ENTERED_LABEL
         var expandedResponderIds by remember(current.id) { mutableStateOf(setOf<String>()) }
         var detailRows by remember(current.id) { mutableStateOf<UnitEventDetailRespondersWrap?>(null) }
         var confirmDelete by remember(current.id) { mutableStateOf(false) }
@@ -642,6 +641,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                             missingLeadDetails = current.origin != "shift" &&
                                 eventMissingLeadDoneDetails(current.endedAt),
                             isViewer = row.responderId == ui.userId,
+                            leadEntered = leadEntered,
                             expanded = row.id in expandedResponderIds,
                             onToggle = {
                                 expandedResponderIds = if (row.id in expandedResponderIds) {
@@ -850,6 +850,7 @@ private fun ScopeChip(
 @Composable
 private fun CatalogEventRow(
     event: EventListItem,
+    viewerId: String?,
     draggingId: String?,
     dragOffset: Offset,
     pendingBoardIds: Set<String>,
@@ -862,6 +863,7 @@ private fun CatalogEventRow(
 ) {
     DraggableActiveEventRow(
         event = event,
+        viewerId = viewerId,
         dragging = draggingId == event.id,
         dragOffset = if (draggingId == event.id) dragOffset else Offset.Zero,
         boardActionTitle = MY_ACTIVE_ADD,
@@ -879,6 +881,7 @@ private fun CatalogEventRow(
 @Composable
 private fun DraggableActiveEventRow(
     event: EventListItem,
+    viewerId: String?,
     dragging: Boolean,
     dragOffset: Offset,
     boardActionTitle: String,
@@ -925,6 +928,7 @@ private fun DraggableActiveEventRow(
     ) {
         UnitEventRow(
             event = event,
+            viewerId = viewerId,
             enabled = !dragging,
             boardActionTitle = boardActionTitle,
             boardActionEnabled = boardActionEnabled && !dragging,
@@ -948,13 +952,15 @@ private fun UnitEventResponderRow(
     showLeadKm: Boolean,
     missingLeadDetails: Boolean,
     isViewer: Boolean,
+    /** Viewer is the אחמ״ש and their part is complete: open volunteers read הוזן בהצלחה. */
+    leadEntered: Boolean,
     expanded: Boolean,
     onToggle: () -> Unit,
 ) {
-    val stamp = if (isViewer) {
-        mineParticipationStamp(row.status, row.totalKm, missingLeadDetails)
-    } else {
-        participationStamp(row.status, false)
+    val stamp = when {
+        isViewer -> mineParticipationStamp(row.status, row.totalKm, missingLeadDetails)
+        leadEntered && row.status != ParticipationStatus.DONE -> leadEnteredStamp(1)
+        else -> participationStamp(row.status, false)
     }
     FieldCard(
         modifier = Modifier
@@ -1074,6 +1080,17 @@ private fun treatedPlatesLabel(plates: List<EventTreatedPlateRow>): String =
         plate.plateNumber?.trim()?.takeIf { it.isNotEmpty() }?.let(::formatPlate)
     }.joinToString(", ")
 
+/** The event's stamp as this viewer sees it: a lead whose part is done reads הוזן בהצלחה. */
+private fun unitEventStamp(event: EventListItem, viewerId: String?): StampDescriptor = when {
+    event.isCancelled -> cancelledStamp()
+    event.isShiftBorn -> event.shiftBornStamp
+    else -> {
+        val snapshot = event.asIncompleteSnapshot()
+        leadEnteredAwaitingStamp(snapshot, viewerId)
+            ?: reportingDocumentationStamp(event.status, eventHasMissingResponderKm(snapshot))
+    }
+}
+
 @Composable
 private fun UnitEventRow(
     event: EventListItem,
@@ -1085,17 +1102,9 @@ private fun UnitEventRow(
     onOpen: () -> Unit,
     incompleteFields: List<String> = emptyList(),
     incompleteSpoken: String = "",
+    viewerId: String? = null,
 ) {
-    val stamp = if (event.isCancelled) {
-        cancelledStamp()
-    } else if (event.isShiftBorn) {
-        event.shiftBornStamp
-    } else {
-        reportingDocumentationStamp(
-            event.status,
-            eventHasMissingResponderKm(event.asIncompleteSnapshot()),
-        )
-    }
+    val stamp = unitEventStamp(event, viewerId)
     val incomplete = incompleteFields.isNotEmpty()
     val cardShape = RoundedCornerShape(8.dp)
     Row(

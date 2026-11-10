@@ -16,6 +16,10 @@ data class AssignableProfile(
     val id: String,
     val fullName: String,
     val callsign: String,
+    /** Has an active, unarchived vehicle. Only the event picker loads it. */
+    val hasVehicle: Boolean = false,
+    /** Raw `volunteer_status`; null when the list did not select it (shift leads). */
+    val volunteerStatus: String? = null,
 ) {
     val display: String get() = personDisplay(fullName, callsign)
 
@@ -448,6 +452,48 @@ fun bumpTreatedVehicle(
 
 fun treatedQuantity(responder: EventResponderDraft, vehicleKindId: String): Int =
     responder.treated.firstOrNull { it.vehicleKindId == vehicleKindId }?.quantity ?: 0
+
+const val PICKER_NEEDS_VEHICLE_NOTE =
+    "צריך קודם מתנדב עם רכב, ולכן מוצגים כרגע רק מתנדבים עם רכב. אחריו אפשר לשבץ כל מתנדב."
+const val PICKER_NO_VEHICLE_CANDIDATES = "אין מתנדבים עם רכב זמינים להקצאה."
+
+private val VEHICLE_RESPONDER_STATUSES = setOf(
+    VolunteerStatus.ACTIVE_VOLUNTEER.raw,
+    VolunteerStatus.PHONE_TRAINING.raw,
+    VolunteerStatus.PERSONAL_VEHICLE_TRAINING.raw,
+)
+
+/** Can come out with a car: active vehicle and מתנדב פעיל / חניכה טלפונית / חניכה ברכב פרטי. */
+fun canBeVehicleResponder(person: AssignableProfile): Boolean =
+    person.hasVehicle && person.volunteerStatus in VEHICLE_RESPONDER_STATUSES
+
+/**
+ * The event needs one responder who comes with a car; after that anyone can join.
+ * Assignment order is not stored, so "first" means: no assigned responder can be
+ * that car-holder yet. Removing the car-holder puts the picker back on car-holders
+ * only. A responder missing from the roster (deactivated since) counts by the
+ * vehicle flag on the draft.
+ */
+fun pickerNeedsVehicleResponder(
+    responders: List<EventResponderDraft>,
+    roster: List<AssignableProfile>,
+): Boolean {
+    val byId = roster.associateBy { it.id }
+    return responders.none { row ->
+        val person = byId[row.responderId]
+        if (person != null) canBeVehicleResponder(person) else row.hasVehicle
+    }
+}
+
+/** Roster entries the picker may offer right now, before the search query. */
+fun pickerCandidates(
+    responders: List<EventResponderDraft>,
+    roster: List<AssignableProfile>,
+): List<AssignableProfile> {
+    val taken = responders.map { it.responderId }.toSet()
+    val needsVehicle = pickerNeedsVehicleResponder(responders, roster)
+    return roster.filter { it.id !in taken && (!needsVehicle || canBeVehicleResponder(it)) }
+}
 
 fun filterAssignableProfiles(profiles: List<AssignableProfile>, query: String): List<AssignableProfile> {
     val trimmed = query.trim()

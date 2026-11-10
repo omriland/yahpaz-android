@@ -87,8 +87,10 @@ fun canAddMoreMedia(savedCount: Int, inFlightCount: Int): Boolean =
     slotsRemaining(savedCount, inFlightCount) > 0
 
 const val EVENT_MEDIA_STEP_TITLE = "שיוך התמונה"
-const val EVENT_MEDIA_VEHICLE_PROMPT = "לאיזה רכב לשייך?"
-const val EVENT_MEDIA_NO_VEHICLE = "אין רכב באירוע. התמונה תישמר בלי שיוך לרכב."
+const val EVENT_MEDIA_VEHICLE_PROMPT = "מה רואים בתמונה?"
+const val EVENT_MEDIA_NO_VEHICLE = "עוד אין רכבים בדיווח. אפשר להוסיף רכב בשדה לוחית הרישוי."
+/** The one "no vehicle" choice. Older photos saved as not_vehicle read as this too. */
+const val EVENT_MEDIA_UNASSIGNED_LABEL = "ללא שיוך לרכב"
 
 data class PhotoAttachWrite(
     val caption: String?,
@@ -96,14 +98,6 @@ data class PhotoAttachWrite(
     /** Empty text never blocks. A caption over 200 characters does. */
     val blocked: Boolean,
 )
-
-/** The only vehicle on the event is already chosen. Several stay unchosen until tapped. */
-fun nextPhotoVehicleId(vehicleIds: List<String>, currentId: String?): String? {
-    if (vehicleIds.isEmpty()) return null
-    if (vehicleIds.size == 1) return vehicleIds[0]
-    if (currentId != null && currentId in vehicleIds) return currentId
-    return null
-}
 
 fun photoStepVehicleNote(vehicleCount: Int): String? {
     if (vehicleCount > 0) return null
@@ -214,26 +208,3 @@ const val EVENT_MEDIA_PLATES_TITLE = "רכבים בתמונה"
 const val EVENT_MEDIA_ASSIGN = "שיוך לרכב"
 const val EVENT_MEDIA_ASSIGN_HINT = "בחרו את הרכבים שמופיעים בתמונה."
 const val EVENT_MEDIA_ASSIGN_SAVED = "השיוך נשמר."
-const val EVENT_MEDIA_AUTO_LINKED = "התמונה שויכה לרכב"
-const val EVENT_MEDIA_AUTO_LINK_UNDONE = "השיוך בוטל."
-
-/**
- * Ids of saved plates whose digits equal a scanned plate, in [plates] order,
- * skipping ids already in [linkedIds] and repeats.
- */
-fun autoLinkPlateIds(
-    scannedDigits: List<String>,
-    plates: List<EventMediaPlateOption>,
-    linkedIds: List<String>,
-): List<String> {
-    val scanned = scannedDigits.map(::plateDigits).filter { it.isNotEmpty() }.toSet()
-    if (scanned.isEmpty()) return emptyList()
-    val seen = linkedIds.toMutableSet()
-    val out = mutableListOf<String>()
-    for (plate in plates) {
-        if (plateDigits(plate.plateNumber) !in scanned) continue
-        if (!seen.add(plate.id)) continue
-        out += plate.id
-    }
-    return out
-}

@@ -5,30 +5,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class EventVehiclePhotosTest {
-    private fun media(vararg plateIds: String) = EventMedia(
-        id = "m-${plateIds.joinToString()}",
-        eventId = "e1",
-        uploadedBy = "u1",
-        uploaderName = "אחר",
-        treatedPlateIds = plateIds.toList(),
-        caption = null,
-        takenWhen = EventMediaTakenWhen.DURING_AFTER_TREATMENT,
-        storagePath = "p",
-        mimeType = "image/jpeg",
-        byteSize = 1,
-        width = 1,
-        height = 1,
-        createdAt = "2026-09-10T00:00:00Z",
-        signedUrl = null,
-    )
-
     @Test
     fun `shared photo covers every attached plate`() {
         val plates = listOf(
             PhotoCoveragePlate("p1", "1234567"),
             PhotoCoveragePlate("p2", "7654321"),
         )
-        val covered = coveredPlateDigits(listOf(media("p1", "p2")), plates)
+        val covered = coveredPlateDigits(listOf(listOf("p1", "p2")), plates)
         assertEquals(setOf("1234567", "7654321"), covered)
     }
 

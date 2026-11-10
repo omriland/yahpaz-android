@@ -48,6 +48,7 @@ import com.yahpz.domain.ShiftBornFillDraft
 import com.yahpz.domain.ShiftBornFillErrors
 import com.yahpz.domain.StampDescriptor
 import com.yahpz.domain.StampTone
+import com.yahpz.domain.TreatedPlate
 import com.yahpz.domain.applyTreatedPlateLookup
 import com.yahpz.domain.bumpShiftBornTreated
 import com.yahpz.domain.commitTreatedPlate
@@ -66,7 +67,9 @@ import com.yahpz.domain.setTreatedPlateLeftWhere
 import com.yahpz.domain.shiftBornCompleteErrors
 import com.yahpz.domain.shiftBornFillReadOnly
 import com.yahpz.domain.shiftBornReadOnlyNotice
+import com.yahpz.domain.skippedPhotoDigits
 import com.yahpz.domain.treatmentDetailCounter
+import com.yahpz.domain.vehiclePhotosPrompt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -109,6 +112,10 @@ fun ShiftBornFillScreen(eventId: String, app: AppModel) {
     var unfinishedMediaDrafts by remember(eventId) { mutableIntStateOf(0) }
     var dropUnfinishedTick by remember(eventId) { mutableIntStateOf(0) }
     var mediaError by remember(eventId) { mutableStateOf<String?>(null) }
+    var missingPhotoPlates by remember(eventId) { mutableStateOf<List<TreatedPlate>>(emptyList()) }
+    var pendingPhotoSaveComplete by remember(eventId) { mutableStateOf<Boolean?>(null) }
+    // Vehicles the user chose to save without a photo; a vehicle added later is still asked about.
+    var photoSkippedDigits by remember(eventId) { mutableStateOf<Set<String>>(emptySet()) }
 
     suspend fun fetch() {
         load = ShiftBornLoad.LOADING
@@ -211,9 +218,23 @@ fun ShiftBornFillScreen(eventId: String, app: AppModel) {
         }
     }
 
+    /** Opens the "no photo for these vehicles" prompt when one is due. */
+    suspend fun photoPromptOpened(complete: Boolean): Boolean {
+        val covered = withContext(Dispatchers.IO) { YahpazAPI.fetchEventPhotoCoverage(eventId) }
+        val missing = vehiclePhotosPrompt(draft.treatedPlates, covered, photoSkippedDigits)
+        if (missing.isEmpty()) return false
+        missingPhotoPlates = missing
+        pendingPhotoSaveComplete = complete
+        return true
+    }
+
     fun onSave() {
         scope.launch {
             saving = true
+            if (photoPromptOpened(complete = false)) {
+                saving = false
+                return@launch
+            }
             val ok = persist(complete = false)
             saving = false
             if (ok) app.showToast("הטיוטה נשמרה")
@@ -237,6 +258,10 @@ fun ShiftBornFillScreen(eventId: String, app: AppModel) {
         }
         scope.launch {
             completing = true
+            if (photoPromptOpened(complete = true)) {
+                completing = false
+                return@launch
+            }
             val ok = persist(complete = true)
             completing = false
             if (ok) {
@@ -475,6 +500,27 @@ fun ShiftBornFillScreen(eventId: String, app: AppModel) {
                 }
             }
         }
+    }
+
+    if (missingPhotoPlates.isNotEmpty()) {
+        VehiclePhotosPromptSheet(
+            plates = missingPhotoPlates,
+            onBack = {
+                missingPhotoPlates = emptyList()
+                pendingPhotoSaveComplete = null
+            },
+            onProceed = {
+                val complete = pendingPhotoSaveComplete
+                photoSkippedDigits = photoSkippedDigits + skippedPhotoDigits(missingPhotoPlates)
+                missingPhotoPlates = emptyList()
+                pendingPhotoSaveComplete = null
+                when (complete) {
+                    true -> onComplete()
+                    false -> onSave()
+                    null -> Unit
+                }
+            },
+        )
     }
 
     if (plateScanOpen) {

@@ -55,4 +55,36 @@ class CompressEventImageTest {
         assertEquals(60, jpegQualityPercent(0.6))
         assertEquals(50, jpegQualityPercent(0.5))
     }
+
+    @Test
+    fun pickedTypeKeepsAReportedImageType() {
+        assertEquals("image/png", resolvePickedMimeType("image/png", "x.heic"))
+        assertEquals("image/heic", resolvePickedMimeType("IMAGE/HEIC", null))
+    }
+
+    @Test
+    fun pickedTypeFallsBackToTheFileNameForEveryAcceptedPhotoFormat() {
+        val expected = mapOf(
+            "a.HEIC" to "image/heic",
+            "a.heif" to "image/heif",
+            "a.png" to "image/png",
+            "a.jpg" to "image/jpeg",
+            "a.jpeg" to "image/jpeg",
+            "a.webp" to "image/webp",
+            "a.gif" to "image/gif",
+            "a.avif" to "image/avif",
+        )
+        for ((name, type) in expected) {
+            assertEquals(name, type, resolvePickedMimeType("application/octet-stream", name))
+            assertEquals(name, type, resolvePickedMimeType(null, name))
+            assertEquals(EventMediaKind.IMAGE, eventMediaKind(resolvePickedMimeType(null, name)))
+        }
+    }
+
+    @Test
+    fun pickedTypeLeavesAnUnknownFileUnsupported() {
+        assertEquals("application/octet-stream", resolvePickedMimeType("application/octet-stream", "notes.txt"))
+        assertNull(resolvePickedMimeType(null, null))
+        assertNull(eventMediaKind(resolvePickedMimeType(null, "notes.txt")))
+    }
 }

@@ -3,9 +3,12 @@ package com.yahpz.responder
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Matrix
 import android.media.ExifInterface
 import android.net.Uri
+import android.provider.OpenableColumns
 import com.yahpz.domain.EVENT_MEDIA_COMPRESS_FAIL
 import com.yahpz.domain.EVENT_MEDIA_HEIC_FAIL
 import com.yahpz.domain.EVENT_MEDIA_MAX_OUTPUT_BYTES
@@ -13,6 +16,7 @@ import com.yahpz.domain.EVENT_MEDIA_QUALITY_STEPS
 import com.yahpz.domain.jpegQualityPercent
 import com.yahpz.domain.nextJpegQuality
 import com.yahpz.domain.rejectOriginalFile
+import com.yahpz.domain.resolvePickedMimeType
 import com.yahpz.domain.targetDimensions
 import java.io.ByteArrayOutputStream
 
@@ -27,8 +31,18 @@ sealed class CompressEventImageResult {
     data class Error(val message: String) : CompressEventImageResult()
 }
 
+/** The picked file's type, falling back to its file name when the provider reports none. */
+fun pickedMimeType(context: Context, uri: Uri): String? {
+    val reported = runCatching { context.contentResolver.getType(uri) }.getOrNull()
+    val name = runCatching {
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+    }.getOrNull() ?: uri.lastPathSegment
+    return resolvePickedMimeType(reported, name)
+}
+
 fun compressEventImage(context: Context, uri: Uri): CompressEventImageResult {
-    val mime = context.contentResolver.getType(uri)?.ifBlank { "image/jpeg" } ?: "image/jpeg"
+    val mime = pickedMimeType(context, uri) ?: "image/jpeg"
     val size = context.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: 0L
     rejectOriginalFile(mime, size)?.let { return CompressEventImageResult.Error(it) }
 
@@ -49,13 +63,15 @@ fun compressEventImage(context: Context, uri: Uri): CompressEventImageResult {
     if (oriented !== decoded) decoded.recycle()
 
     val (targetW, targetH) = targetDimensions(oriented.width, oriented.height)
-    val scaled = if (oriented.width == targetW && oriented.height == targetH) {
+    val resized = if (oriented.width == targetW && oriented.height == targetH) {
         oriented
     } else {
         Bitmap.createScaledBitmap(oriented, targetW, targetH, true).also {
             if (it !== oriented) oriented.recycle()
         }
     }
+    // JPEG has no transparency: a see-through PNG or screenshot would turn black without this.
+    val scaled = if (resized.hasAlpha()) onWhite(resized).also { resized.recycle() } else resized
 
     return try {
         var qualityIndex = 0
@@ -82,6 +98,15 @@ fun compressEventImage(context: Context, uri: Uri): CompressEventImageResult {
     } finally {
         scaled.recycle()
     }
+}
+
+private fun onWhite(bitmap: Bitmap): Bitmap {
+    val opaque = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
+    Canvas(opaque).apply {
+        drawColor(Color.WHITE)
+        drawBitmap(bitmap, 0f, 0f, null)
+    }
+    return opaque
 }
 
 private fun applyExifOrientation(bitmap: Bitmap, orientation: Int): Bitmap {

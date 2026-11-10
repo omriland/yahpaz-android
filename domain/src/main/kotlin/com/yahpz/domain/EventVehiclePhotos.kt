@@ -9,24 +9,24 @@ data class PhotoCoveragePlate(
     val plateDigits: String,
 )
 
-/** Plate digits that already have at least one attached photo (any uploader). */
+/**
+ * Plate digits that already have at least one attached photo (any uploader).
+ * [mediaPlateIds] holds each photo's linked treated-plate ids.
+ */
 fun coveredPlateDigits(
-    media: List<EventMedia>,
+    mediaPlateIds: List<List<String>>,
     plates: List<PhotoCoveragePlate>,
 ): Set<String> {
     val digitsById = plates.associate { it.id to it.plateDigits }
     val covered = mutableSetOf<String>()
-    for (item in media) {
-        for (plateId in item.treatedPlateIds) {
+    for (plateIds in mediaPlateIds) {
+        for (plateId in plateIds) {
             val digits = digitsById[plateId].orEmpty()
             if (digits.isNotEmpty()) covered += digits
         }
     }
     return covered
 }
-
-fun coveragePlatesFromOptions(options: List<EventMediaPlateOption>): List<PhotoCoveragePlate> =
-    options.map { PhotoCoveragePlate(id = it.id, plateDigits = plateDigits(it.plateNumber)) }
 
 /**
  * Vehicles on this responder's log that have no photo on the event.
@@ -40,3 +40,22 @@ fun vehiclesMissingPhotos(
     val digits = plateDigits(plate.plateNumber)
     digits.isNotEmpty() && digits !in coveredDigits
 }
+
+/**
+ * Vehicles the "no photo for these vehicles" prompt names, or empty for no prompt.
+ * [covered] is null when the coverage read failed: then nobody is told a vehicle
+ * lacks a photo. A vehicle the person already skipped is not asked about again;
+ * one added after that is.
+ */
+fun vehiclePhotosPrompt(
+    plates: List<TreatedPlate>,
+    covered: Set<String>?,
+    skipped: Set<String> = emptySet(),
+): List<TreatedPlate> {
+    if (covered == null) return emptyList()
+    return vehiclesMissingPhotos(plates, covered).filter { plateDigits(it.plateNumber) !in skipped }
+}
+
+/** Plate digits of the vehicles a photo prompt named, to remember once the person skips. */
+fun skippedPhotoDigits(prompted: List<TreatedPlate>): List<String> =
+    prompted.map { plateDigits(it.plateNumber) }.filter { it.isNotEmpty() }
