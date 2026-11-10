@@ -103,6 +103,25 @@ val FormControlHeight = 56.dp
 
 @Composable
 fun StampChip(stamp: StampDescriptor, modifier: Modifier = Modifier) {
+    val caption = stamp.caption
+    if (caption.isNullOrBlank()) {
+        StampLabel(stamp, modifier)
+        return
+    }
+    Column(modifier = modifier, horizontalAlignment = Alignment.End) {
+        StampLabel(stamp)
+        Text(
+            text = caption,
+            style = TypeScale.caption,
+            color = FieldTheme.textSecondary,
+            maxLines = 1,
+            modifier = Modifier.padding(top = 2.dp),
+        )
+    }
+}
+
+@Composable
+private fun StampLabel(stamp: StampDescriptor, modifier: Modifier = Modifier) {
     Text(
         text = stamp.label,
         style = TypeScale.stamp,
@@ -121,7 +140,8 @@ fun StampWithNote(stamp: StampDescriptor, note: String? = null, modifier: Modifi
         return
     }
     Column(modifier = modifier, horizontalAlignment = Alignment.End) {
-        StampChip(stamp)
+        // A note replaces the stamp's own caption.
+        StampLabel(stamp)
         Text(
             text = note,
             style = TypeScale.caption,
@@ -780,7 +800,11 @@ fun ToastBanner(text: String, tone: StampTone) {
             Text(
                 text = text,
                 style = TypeScale.body,
-                color = FieldTheme.textPrimary,
+                // Done and alert read in the platform's own green and red, as on stamps and chips.
+                color = when (tone) {
+                    StampTone.DONE, StampTone.ALERT -> tone.ink
+                    else -> FieldTheme.textPrimary
+                },
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
             )
         }

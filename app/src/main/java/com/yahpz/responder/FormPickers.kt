@@ -302,6 +302,12 @@ fun CrewAssignmentSection(
     rowCaptions: Map<String, String> = emptyMap(),
     disabledIds: Set<String> = emptySet(),
     disabledHint: String? = null,
+    /** The people the sheet may offer before the search; defaults to everyone not selected. */
+    candidates: List<AssignableProfile>? = null,
+    /** Shown in the sheet above the list, e.g. why only some people are offered. */
+    pickerNote: String? = null,
+    /** Replaces [emptyQuery] when [candidates] is empty and the roster is not. */
+    emptyCandidates: String? = null,
 ) {
     var open by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
@@ -421,10 +427,8 @@ fun CrewAssignmentSection(
     }
 
     if (open) {
-        val visible = filterAssignableProfiles(
-            profiles.filter { it.id !in selectedIds },
-            query,
-        )
+        val pool = candidates ?: profiles.filter { it.id !in selectedIds }
+        val visible = filterAssignableProfiles(pool, query)
         ModalBottomSheet(onDismissRequest = { open = false }) {
             Column(
                 Modifier
@@ -439,6 +443,7 @@ fun CrewAssignmentSection(
                     placeholder = "חיפוש לפי שם או או״ק",
                 )
                 Text(caption, style = TypeScale.caption, color = FieldTheme.textMuted)
+                pickerNote?.let { Text(it, style = TypeScale.caption, color = FieldTheme.textMuted) }
                 Column(
                     modifier = Modifier
                         .heightIn(max = 360.dp)
@@ -446,7 +451,11 @@ fun CrewAssignmentSection(
                 ) {
                     if (visible.isEmpty()) {
                         Text(
-                            if (profiles.isEmpty()) emptyRoster else emptyQuery,
+                            when {
+                                profiles.isEmpty() -> emptyRoster
+                                pool.isEmpty() && emptyCandidates != null -> emptyCandidates
+                                else -> emptyQuery
+                            },
                             style = TypeScale.body,
                             color = FieldTheme.textMuted,
                             modifier = Modifier.padding(vertical = 16.dp),

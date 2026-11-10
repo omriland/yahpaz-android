@@ -61,6 +61,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import com.yahpz.domain.NO_LINKED_VEHICLE_FILL_HINT
 import com.yahpz.domain.odometerDelta
 import com.yahpz.domain.odometerRangeError
 import com.yahpz.domain.formatNumber
@@ -92,11 +93,10 @@ import com.yahpz.domain.mineParticipationStamp
 import com.yahpz.domain.plateDigits
 import com.yahpz.domain.removeTreatedPlate
 import com.yahpz.domain.setTreatedPlateLeftWhere
-import com.yahpz.domain.coveredPlateDigits
-import com.yahpz.domain.coveragePlatesFromOptions
 import com.yahpz.domain.treatedPlateCaption
 import com.yahpz.domain.validateResponderFillDraft
-import com.yahpz.domain.vehiclesMissingPhotos
+import com.yahpz.domain.skippedPhotoDigits
+import com.yahpz.domain.vehiclePhotosPrompt
 import com.yahpz.domain.VEHICLE_PHOTOS_BACK
 import com.yahpz.domain.VEHICLE_PHOTOS_PROCEED
 import com.yahpz.domain.VEHICLE_PHOTOS_TITLE
@@ -136,7 +136,8 @@ fun FillScreen(eventId: String, app: AppModel) {
     var plateScanOpen by remember { mutableStateOf(false) }
     var localSavedAt by remember { mutableLongStateOf(0L) }
     var restoredFromDevice by remember { mutableStateOf(false) }
-    var photoNotifyOk by remember { mutableStateOf(false) }
+    // Vehicles the responder chose to save without a photo; a vehicle added later is still asked about.
+    var photoSkippedDigits by remember { mutableStateOf<Set<String>>(emptySet()) }
     var missingPhotoPlates by remember { mutableStateOf<List<TreatedPlate>>(emptyList()) }
     var pendingPhotoSaveComplete by remember { mutableStateOf<Boolean?>(null) }
 
@@ -200,18 +201,12 @@ fun FillScreen(eventId: String, app: AppModel) {
             if (errors.eventMedia != null) pane = FillPane.MEDIA
             return
         }
-        if (!photoNotifyOk) {
-            val media = withContext(Dispatchers.IO) { YahpazAPI.listEventMedia(fill.eventId) }
-            val plates = withContext(Dispatchers.IO) { YahpazAPI.listEventMediaPlates(fill.eventId) }
-            val missing = vehiclesMissingPhotos(
-                draft.treatedPlates,
-                coveredPlateDigits(media, coveragePlatesFromOptions(plates)),
-            )
-            if (missing.isNotEmpty()) {
-                missingPhotoPlates = missing
-                pendingPhotoSaveComplete = complete
-                return
-            }
+        val covered = withContext(Dispatchers.IO) { YahpazAPI.fetchEventPhotoCoverage(fill.eventId) }
+        val missing = vehiclePhotosPrompt(draft.treatedPlates, covered, photoSkippedDigits)
+        if (missing.isNotEmpty()) {
+            missingPhotoPlates = missing
+            pendingPhotoSaveComplete = complete
+            return
         }
         if (complete) completing = true else savingDraft = true
         val error = YahpazAPI.saveFill(fill, draft, complete, unfinishedMediaDrafts)
@@ -488,7 +483,7 @@ fun FillScreen(eventId: String, app: AppModel) {
                         }
                         Text("הפרטים שלי", style = TypeScale.section, color = FieldTheme.textPrimary)
                         if (fill.vehicles.isEmpty()) {
-                            Text("לא מקושר רכב למשתמש. פנו למנהל המערכת.", style = TypeScale.caption, color = FieldTheme.alert)
+                            Text(NO_LINKED_VEHICLE_FILL_HINT, style = TypeScale.caption, color = FieldTheme.textSecondary)
                         } else {
                             val selectedLabel = fill.vehicles.firstOrNull { it.plate == draft.vehiclePlate }?.label ?: "בחירת רכב"
                             FormField(
@@ -577,45 +572,23 @@ fun FillScreen(eventId: String, app: AppModel) {
     }
 
     if (missingPhotoPlates.isNotEmpty()) {
-        ModalBottomSheet(onDismissRequest = {
-            missingPhotoPlates = emptyList()
-            pendingPhotoSaveComplete = null
-        }) {
-            Column(
-                Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text(VEHICLE_PHOTOS_TITLE, style = TypeScale.section, color = FieldTheme.textPrimary)
-                missingPhotoPlates.forEach { plate ->
-                    TreatedPlateCard(
-                        row = plate,
-                        removable = false,
-                        onRemove = {},
-                        onLeftWhereChange = { _, _ -> },
-                    )
+        VehiclePhotosPromptSheet(
+            plates = missingPhotoPlates,
+            onBack = {
+                missingPhotoPlates = emptyList()
+                pendingPhotoSaveComplete = null
+            },
+            onProceed = {
+                val fill = context
+                val complete = pendingPhotoSaveComplete
+                photoSkippedDigits = photoSkippedDigits + skippedPhotoDigits(missingPhotoPlates)
+                missingPhotoPlates = emptyList()
+                pendingPhotoSaveComplete = null
+                if (fill != null && complete != null) {
+                    scope.launch { persistFill(fill, complete) }
                 }
-                GhostButton(
-                    title = VEHICLE_PHOTOS_BACK,
-                    onClick = {
-                        missingPhotoPlates = emptyList()
-                        pendingPhotoSaveComplete = null
-                    },
-                )
-                PrimaryButton(
-                    title = VEHICLE_PHOTOS_PROCEED,
-                    onClick = {
-                        val fill = context
-                        val complete = pendingPhotoSaveComplete
-                        photoNotifyOk = true
-                        missingPhotoPlates = emptyList()
-                        pendingPhotoSaveComplete = null
-                        if (fill != null && complete != null) {
-                            scope.launch { persistFill(fill, complete) }
-                        }
-                    },
-                )
-            }
-        }
+            },
+        )
     }
 
     if (plateScanOpen) {
@@ -866,4 +839,32 @@ private fun OdometerTotal(start: String, end: String, fieldError: String?) {
     val reversed = odometerRangeError(start, end)
     if (reversed == null || reversed == fieldError) return
     Text(reversed, style = TypeScale.caption, color = FieldTheme.alert)
+}
+
+/** "לא צורפו תמונות לרכבים הבאים:" before a save; used by the fill and the shift-born report. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun VehiclePhotosPromptSheet(
+    plates: List<TreatedPlate>,
+    onBack: () -> Unit,
+    onProceed: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onBack) {
+        Column(
+            Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(VEHICLE_PHOTOS_TITLE, style = TypeScale.section, color = FieldTheme.textPrimary)
+            plates.forEach { plate ->
+                TreatedPlateCard(
+                    row = plate,
+                    removable = false,
+                    onRemove = {},
+                    onLeftWhereChange = { _, _ -> },
+                )
+            }
+            GhostButton(title = VEHICLE_PHOTOS_BACK, onClick = onBack)
+            PrimaryButton(title = VEHICLE_PHOTOS_PROCEED, onClick = onProceed)
+        }
+    }
 }

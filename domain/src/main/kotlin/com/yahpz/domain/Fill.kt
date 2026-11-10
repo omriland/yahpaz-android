@@ -84,6 +84,9 @@ fun odometerRangeError(odometerStart: String, odometerEnd: String): String? {
     return if (end.value < start.value) ODOMETER_ORDER_ERROR else null
 }
 
+const val NO_LINKED_VEHICLE_FILL_HINT =
+    "לא מקושר אליך רכב, לכן אין צורך בלוחית ובמד אוץ. הגעת ברכב שלך? פנו למנהל המערכת."
+
 fun validateResponderFillDraft(
     draft: ResponderFillDraft,
     mode: FillMode,
@@ -108,18 +111,23 @@ fun validateResponderFillDraft(
     if (end is ParsedNumber.Invalid) odometerEnd = "מד אוץ סיום חייב להיות מספר."
 
     if (mode == FillMode.COMPLETE) {
-        if (plate.isEmpty()) {
-            vehiclePlate = "יש לבחור רכב."
-        } else if (allowed.isNotEmpty() && plate !in allowed) {
-            vehiclePlate = "יש לבחור רכב מהרשימה המקושרת למשתמש."
-        } else if (allowed.isEmpty()) {
-            vehiclePlate = "לא מקושר רכב למשתמש. פנו למנהל המערכת."
-        }
-        if (start is ParsedNumber.Missing || start is ParsedNumber.Invalid) {
-            odometerStart = "יש למלא מד אוץ התחלה."
-        }
-        if (end is ParsedNumber.Missing || end is ParsedNumber.Invalid) {
-            odometerEnd = "יש למלא מד אוץ סיום."
+        // Only the first responder on an event must own a car; one without a linked
+        // car rode along, so there is no plate or odometer to report.
+        val rodeAlong = allowed.isEmpty() && plate.isEmpty()
+        if (!rodeAlong) {
+            if (plate.isEmpty()) {
+                vehiclePlate = "יש לבחור רכב."
+            } else if (allowed.isNotEmpty() && plate !in allowed) {
+                vehiclePlate = "יש לבחור רכב מהרשימה המקושרת למשתמש."
+            } else if (allowed.isEmpty()) {
+                vehiclePlate = "לא מקושר רכב למשתמש. פנו למנהל המערכת."
+            }
+            if (start is ParsedNumber.Missing || start is ParsedNumber.Invalid) {
+                odometerStart = "יש למלא מד אוץ התחלה."
+            }
+            if (end is ParsedNumber.Missing || end is ParsedNumber.Invalid) {
+                odometerEnd = "יש למלא מד אוץ סיום."
+            }
         }
         if (draft.route.trim().isEmpty()) route = "יש למלא נתיב נסיעה."
         treatmentDetail = treatmentDetailError(draft.treatmentDetail, mode, cancelled)

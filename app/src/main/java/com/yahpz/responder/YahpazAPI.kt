@@ -234,6 +234,8 @@ import io.github.jan.supabase.storage.storage
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.Headers
+import com.yahpz.domain.PhotoCoveragePlate
+import com.yahpz.domain.coveredPlateDigits
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
@@ -1489,7 +1491,7 @@ object YahpazAPI {
     }
 
     suspend fun fetchAssignableProfiles(): List<AssignableProfile> =
-        client.from("profiles").select(Columns.raw("id, full_name, callsign")) {
+        client.from("profiles").select(Columns.raw("id, full_name, callsign, volunteer_status, vehicles(id, archived)")) {
             filter { eq("active", true) }
             order("full_name", Order.ASCENDING)
         }.decodeList<AssignableProfileRow>().map { it.asProfile }
@@ -2800,17 +2802,34 @@ object YahpazAPI {
         }
     }
 
-    /** Plates the scan read off one uploaded photo (digits only). Never throws; any failure is no plates. */
-    suspend fun scanPlatesInMedia(mediaId: String): List<String> {
+    /**
+     * Plate digits with a saved photo link on the event, or null when any read failed.
+     * A failed read must not be taken as "no photos": the save prompt would then name
+     * vehicles the person did photograph. No signed URLs: this runs on every save.
+     */
+    suspend fun fetchEventPhotoCoverage(eventId: String): Set<String>? {
         return try {
-            val result = withTimeoutOrNull(30_000L) {
-                invokeEdge<PlateScanCall, PlateScanResponse>("plate-scan", PlateScanCall(mediaId), "")
+            val media = client.from("event_media").select(
+                Columns.raw("id, plates:event_media_plates(treated_plate_id)"),
+            ) {
+                filter { eq("event_id", eventId) }
+            }.decodeList<EventMediaCoverageRow>()
+            val eventKeyed = client.from("event_treated_plates").select(Columns.raw("id, plate_number")) {
+                filter { eq("event_id", eventId) }
+            }.decodeList<EventMediaPlateOptionRow>()
+            val responderKeyed = client.from("event_treated_plates").select(
+                Columns.raw("id, plate_number, event_responders!event_treated_plates_event_responder_id_fkey!inner(event_id)"),
+            ) {
+                filter { eq("event_responders.event_id", eventId) }
+            }.decodeList<EventMediaPlateOptionRow>()
+            val plates = (eventKeyed + responderKeyed).mapNotNull { row ->
+                row.plateNumber?.let { PhotoCoveragePlate(id = row.id, plateDigits = plateDigits(it)) }
             }
-            result?.getOrNull()?.plates.orEmpty().map(::plateDigits).filter { it.isNotEmpty() }
+            coveredPlateDigits(media.map { row -> row.plates.map { it.treatedPlateId } }, plates)
         } catch (error: CancellationException) {
             throw error
         } catch (_: Exception) {
-            emptyList()
+            null
         }
     }
 

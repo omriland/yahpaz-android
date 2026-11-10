@@ -27,7 +27,8 @@ enum class StampTone {
     DONE, PARTIAL, PENDING, DRAFT, ALERT
 }
 
-data class StampDescriptor(val label: String, val tone: StampTone)
+/** [caption]: small secondary line under the chip. */
+data class StampDescriptor(val label: String, val tone: StampTone, val caption: String? = null)
 
 const val MISSING_KM_STAMP_LABEL = "חסר ק״מ"
 
@@ -61,6 +62,19 @@ fun participationStamp(status: ParticipationStatus, isViewer: Boolean): StampDes
     }
     return StampDescriptor(if (isViewer) "ממתין לתיעוד" else "ממתין למתנדב", StampTone.PENDING)
 }
+
+const val LEAD_ENTERED_LABEL = "הוזן בהצלחה"
+const val AWAITING_RESPONDER_CAPTION = "ממתין למתנדב"
+
+/**
+ * Lead-facing: the אחמ״ש's part is complete and [openResponders] volunteers still owe
+ * their fill. One per-person card always gets the singular caption.
+ */
+fun leadEnteredStamp(openResponders: Int): StampDescriptor = StampDescriptor(
+    label = LEAD_ENTERED_LABEL,
+    tone = StampTone.DONE,
+    caption = if (openResponders > 1) "ממתין ל־$openResponders מתנדבים" else AWAITING_RESPONDER_CAPTION,
+)
 
 /** Responder finished fill; lead KM still missing. Replaces הושלם on their own stamp. */
 const val FILL_DONE_AWAITING_KM_LABEL = "סיימת לתעד"

@@ -344,8 +344,14 @@ data class EventListItem(
                 totalKm = row.totalKm,
                 startedAt = row.startedAt,
                 endedAt = row.endedAt,
+                responderId = row.responderId,
+                status = row.status,
             )
         },
+        status = status,
+        isCancelled = isCancelled,
+        shiftLeadId = shiftLeadId,
+        secondaryLeadIds = secondaryLeads.map { it.userId },
     )
 
     fun releasedToResponders(): Boolean = eventReleasedToResponders(
@@ -503,6 +509,13 @@ data class TreatedPlateWrite(
 @Serializable
 data class EventMediaPlateLink(
     @SerialName("treated_plate_id") val treatedPlateId: String,
+)
+
+/** One photo's vehicle links, for the save prompt's coverage read. */
+@Serializable
+data class EventMediaCoverageRow(
+    val id: String,
+    val plates: List<EventMediaPlateLink> = emptyList(),
 )
 
 @Serializable
@@ -957,16 +970,6 @@ data class UnitBroadcastRow(
 }
 
 @Serializable
-data class PlateScanCall(
-    @SerialName("media_id") val mediaId: String,
-)
-
-@Serializable
-data class PlateScanResponse(
-    val plates: List<String> = emptyList(),
-)
-
-@Serializable
 data class NotifyFillReadyCall(
     val action: String = "notify_fill_ready",
     @SerialName("event_responder_ids") val eventResponderIds: List<String>,
@@ -1361,9 +1364,25 @@ data class AssignableProfileRow(
     val id: String,
     @SerialName("full_name") val fullName: String = "",
     val callsign: String = "",
+    @SerialName("volunteer_status") val volunteerStatus: String? = null,
+    val vehicles: List<ProfileVehicleFlag>? = null,
 ) {
-    val asProfile: AssignableProfile get() = AssignableProfile(id = id, fullName = fullName, callsign = callsign)
+    val asProfile: AssignableProfile
+        get() = AssignableProfile(
+            id = id,
+            fullName = fullName,
+            callsign = callsign,
+            hasVehicle = vehicles.orEmpty().any { it.archived != true },
+            volunteerStatus = volunteerStatus,
+        )
 }
+
+/** `vehicles(id, archived)` embedded on a profile row, for the event picker. */
+@Serializable
+data class ProfileVehicleFlag(
+    val id: String,
+    val archived: Boolean? = null,
+)
 
 @Serializable
 data class ReportResponderRow(

@@ -32,7 +32,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
@@ -85,8 +84,6 @@ import com.yahpz.domain.EVENT_MEDIA_ADDED
 import com.yahpz.domain.EVENT_MEDIA_ASSIGN
 import com.yahpz.domain.EVENT_MEDIA_ASSIGN_HINT
 import com.yahpz.domain.EVENT_MEDIA_ASSIGN_SAVED
-import com.yahpz.domain.EVENT_MEDIA_AUTO_LINKED
-import com.yahpz.domain.EVENT_MEDIA_AUTO_LINK_UNDONE
 import com.yahpz.domain.EVENT_MEDIA_PLATES_TITLE
 import com.yahpz.domain.EVENT_MEDIA_BAD_TYPE
 import com.yahpz.domain.EVENT_MEDIA_CAMERA_FAILED
@@ -107,15 +104,14 @@ import com.yahpz.domain.EventMedia
 import com.yahpz.domain.EventMediaPlateOption
 import com.yahpz.domain.EventMediaTakenWhen
 import com.yahpz.domain.StampTone
-import com.yahpz.domain.autoLinkPlateIds
-import com.yahpz.domain.EVENT_MEDIA_NO_VEHICLE
+import com.yahpz.domain.EVENT_MEDIA_UNASSIGNED_LABEL
 import com.yahpz.domain.EVENT_MEDIA_STEP_TITLE
 import com.yahpz.domain.EVENT_MEDIA_VEHICLE_PROMPT
 import com.yahpz.domain.PhotoAttachWrite
 import com.yahpz.domain.canAddMoreMedia
-import com.yahpz.domain.nextPhotoVehicleId
 import com.yahpz.domain.photoAttachWrite
 import com.yahpz.domain.photoStepCanSave
+import com.yahpz.domain.photoStepVehicleNote
 import com.yahpz.domain.canDeleteEventMedia
 import com.yahpz.domain.captionError
 import com.yahpz.domain.eventMediaTakenWhenLabel
@@ -146,9 +142,6 @@ private data class MediaDraft(
     val uploading: Boolean = false,
     val error: String? = null,
 )
-
-/** An inline line offering to undo a plate the scan linked to a just-uploaded photo. */
-private data class AutoLink(val mediaId: String, val plateId: String)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -184,7 +177,6 @@ fun FillMediaTab(
     var assignPlateIds by remember { mutableStateOf<List<String>>(emptyList()) }
     var assignError by remember { mutableStateOf<String?>(null) }
     var assigning by remember { mutableStateOf(false) }
-    var autoLinks by remember(eventId) { mutableStateOf<List<AutoLink>>(emptyList()) }
 
     val inFlight = drafts.count { it.uploading }
     val addEnabled = canWrite && canAddMoreMedia(items.size, inFlight)
@@ -200,12 +192,11 @@ fun FillMediaTab(
         onUnfinishedChange(drafts.count { it.takenWhen == null })
     }
     LaunchedEffect(plates) {
-        val ids = plates.map { it.id }
+        // Keeps the person's choice while its vehicle is still on the event; never picks one for them.
+        val ids = plates.map { it.id }.toSet()
         drafts = drafts.map { draft ->
-            if (draft.uploading) return@map draft
-            val next = nextPhotoVehicleId(ids, draft.treatedPlateIds.firstOrNull())
-            if (draft.treatedPlateIds.singleOrNull() == next) draft
-            else draft.copy(treatedPlateIds = listOfNotNull(next))
+            if (draft.uploading || draft.treatedPlateIds.all { it in ids }) draft
+            else draft.copy(treatedPlateIds = draft.treatedPlateIds.filter { it in ids })
         }
     }
     LaunchedEffect(dropUnfinishedTick) {
@@ -215,10 +206,9 @@ fun FillMediaTab(
     }
 
     fun addPicked(uris: List<Uri>) {
-        val picked = uris.map { uri -> uri to context.contentResolver.getType(uri) }
+        val picked = uris.map { uri -> uri to pickedMimeType(context, uri) }
         val supported = picked.filter { (_, type) -> eventMediaKind(type) != null }
         if (supported.size < picked.size) onToast(EVENT_MEDIA_BAD_TYPE, StampTone.PENDING)
-        val presetVehicleId = nextPhotoVehicleId(plates.map { it.id }, null)
         drafts = drafts + supported.take(remaining).map { (uri, type) ->
             val kind = eventMediaKind(type) ?: EventMediaKind.IMAGE
             MediaDraft(
@@ -226,7 +216,6 @@ fun FillMediaTab(
                 uri = uri,
                 kind = kind,
                 videoMimeType = type.takeIf { kind == EventMediaKind.VIDEO },
-                treatedPlateIds = listOfNotNull(presetVehicleId),
             )
         }
         scope.launch {
@@ -290,38 +279,6 @@ fun FillMediaTab(
         drafts = drafts.map { if (it.key == key) it.patch() else it }
     }
 
-    // After a photo uploads: read its plate, link the saved vehicles it matches. Every failure is silent.
-    suspend fun autoLinkScannedPlates(mediaId: String) {
-        // Nothing on the event to match: skip the scan (it is a paid model call).
-        if (plates.isEmpty()) return
-        val scanned = withContext(Dispatchers.IO) { YahpazAPI.scanPlatesInMedia(mediaId) }
-        val current = items.firstOrNull { it.id == mediaId } ?: return
-        val added = autoLinkPlateIds(scanned, plates, current.treatedPlateIds)
-        if (added.isEmpty()) return
-        val all = uniquePlateIds(current.treatedPlateIds + added)
-        val result = withContext(Dispatchers.IO) { YahpazAPI.replaceMediaPlates(mediaId, all) }
-        if (result != EventMediaWriteResult.Done) return
-        items = items.map { if (it.id == mediaId) it.copy(treatedPlateIds = all) else it }
-        autoLinks = autoLinks + added.map { AutoLink(mediaId, it) }
-    }
-
-    fun undoAutoLink(link: AutoLink) {
-        val media = items.firstOrNull { it.id == link.mediaId } ?: return
-        val rest = media.treatedPlateIds - link.plateId
-        scope.launch {
-            val result = withContext(Dispatchers.IO) { YahpazAPI.replaceMediaPlates(media.id, rest) }
-            when (result) {
-                EventMediaWriteResult.Done -> {
-                    items = items.map { if (it.id == media.id) it.copy(treatedPlateIds = rest) else it }
-                    autoLinks = autoLinks - link
-                    onToast(EVENT_MEDIA_AUTO_LINK_UNDONE, StampTone.DONE)
-                }
-                is EventMediaWriteResult.Error -> onToast(result.message, StampTone.PENDING)
-                is EventMediaWriteResult.Uploaded -> Unit
-            }
-        }
-    }
-
     fun startUpload(key: String, takenWhen: EventMediaTakenWhen, write: PhotoAttachWrite) {
         val draft = drafts.firstOrNull { it.key == key } ?: return
         if (write.blocked) return
@@ -359,9 +316,6 @@ fun FillMediaTab(
                     items = items + result.media
                     val added = if (draft.kind == EventMediaKind.VIDEO) EVENT_MEDIA_VIDEO_ADDED else EVENT_MEDIA_ADDED
                     onToast(added, StampTone.DONE)
-                    if (draft.kind == EventMediaKind.IMAGE) {
-                        scope.launch { autoLinkScannedPlates(result.media.id) }
-                    }
                 }
                 is EventMediaWriteResult.Error -> {
                     patchDraft(key) { copy(uploading = false, error = result.message) }
@@ -451,12 +405,6 @@ fun FillMediaTab(
                 onAssign = ::openAssign,
                 onRemove = ::removeFromTile,
             )
-            autoLinks.forEach { link ->
-                val plate = plates.firstOrNull { it.id == link.plateId }
-                if (plate != null && items.any { it.id == link.mediaId }) {
-                    AutoLinkLine(plate = plate, onUndo = { undoAutoLink(link) })
-                }
-            }
             drafts.firstOrNull()?.let { draft ->
                 val write = photoAttachWrite(draft.caption, draft.treatedPlateIds.firstOrNull())
                 val canSave = photoStepCanSave(
@@ -578,7 +526,6 @@ fun FillMediaTab(
                             EventMediaWriteResult.Done -> {
                                 val linkedIds = uniquePlateIds(assignPlateIds)
                                 items = items.map { if (it.id == target.id) it.copy(treatedPlateIds = linkedIds) else it }
-                                autoLinks = autoLinks.filterNot { it.mediaId == target.id }
                                 assignTarget = null
                                 onToast(EVENT_MEDIA_ASSIGN_SAVED, StampTone.DONE)
                             }
@@ -717,7 +664,6 @@ fun FillMediaTab(
                                             caption = editCaption.trim().ifEmpty { null },
                                         )
                                         items = items.map { if (it.id == next.id) next else it }
-                                        autoLinks = autoLinks.filterNot { it.mediaId == next.id }
                                         viewer = next
                                         editing = false
                                         onToast(EVENT_MEDIA_UPDATED, StampTone.DONE)
@@ -741,7 +687,7 @@ fun FillMediaTab(
                             )
                             Text("רכבים בתמונה", style = TypeScale.label, color = FieldTheme.textSecondary)
                             if (linked.isEmpty()) {
-                                Text("—", style = TypeScale.body, color = FieldTheme.textPrimary)
+                                Text(EVENT_MEDIA_UNASSIGNED_LABEL, style = TypeScale.body, color = FieldTheme.textPrimary)
                             } else {
                                 linked.forEach { plate -> MediaPlateRow(plate) }
                             }
@@ -906,8 +852,6 @@ private fun MediaDraftCard(
         }
         if (!platesLoaded) {
             Text("טוען רכבים…", style = TypeScale.caption, color = FieldTheme.textMuted)
-        } else if (plates.isEmpty()) {
-            Text(EVENT_MEDIA_NO_VEHICLE, style = TypeScale.body, color = FieldTheme.textSecondary)
         } else {
             MediaPlateChips(
                 plates = plates,
@@ -916,6 +860,9 @@ private fun MediaDraftCard(
                 single = true,
                 onChange = onPlates,
             )
+            photoStepVehicleNote(plates.size)?.let {
+                Text(it, style = TypeScale.caption, color = FieldTheme.textSecondary)
+            }
         }
         FormField(
             label = "תיאור",
@@ -986,7 +933,10 @@ private fun TakenWhenPicker(
     }
 }
 
-/** One toggle chip per saved treated vehicle: logo + plate, accent border, tint and a check when linked. */
+/**
+ * One toggle chip per saved treated vehicle (logo + plate) and one "ללא שיוך לרכב" chip,
+ * which is on while no vehicle is chosen. Accent border, tint and a check when on.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun MediaPlateChips(
@@ -996,7 +946,6 @@ private fun MediaPlateChips(
     onChange: (List<String>) -> Unit,
     single: Boolean = false,
 ) {
-    if (plates.isEmpty()) return
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             if (single) EVENT_MEDIA_VEHICLE_PROMPT else EVENT_MEDIA_PLATES_TITLE,
@@ -1008,73 +957,74 @@ private fun MediaPlateChips(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             plates.forEach { plate ->
-                val checked = plate.id in selected
-                val label = mediaPlateLabel(plate)
-                val state = if (checked) "נבחר" else "לא נבחר"
-                Row(
-                    modifier = Modifier
-                        .heightIn(min = 48.dp)
-                        .clip(fieldShape)
-                        .background(if (checked) FieldTheme.accentSubtle else FieldTheme.raised)
-                        .border(
-                            if (checked) 2.dp else 1.dp,
-                            if (checked) FieldTheme.accent else FieldTheme.strong,
-                            fieldShape,
-                        )
-                        .toggleable(
-                            value = checked,
-                            enabled = enabled,
-                            role = if (single) Role.RadioButton else Role.Checkbox,
-                            onValueChange = {
-                                onChange(if (single) listOf(plate.id) else togglePlateId(selected, plate.id))
-                            },
-                        )
-                        .clearAndSetSemantics {
-                            contentDescription = label
-                            stateDescription = state
-                        }
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                MediaChoiceChip(
+                    checked = plate.id in selected,
+                    label = mediaPlateLabel(plate),
+                    enabled = enabled,
+                    single = single,
+                    onToggle = { onChange(if (single) listOf(plate.id) else togglePlateId(selected, plate.id)) },
                 ) {
                     CarLogo(slug = plate.logoSlug)
                     LicensePlate(plate = plate.plateNumber)
-                    Box(modifier = Modifier.size(18.dp), contentAlignment = Alignment.Center) {
-                        if (checked) {
-                            Icon(
-                                Icons.Outlined.Check,
-                                contentDescription = null,
-                                tint = FieldTheme.accent,
-                                modifier = Modifier.size(18.dp),
-                            )
-                        }
-                    }
                 }
+            }
+            MediaChoiceChip(
+                checked = selected.isEmpty(),
+                label = EVENT_MEDIA_UNASSIGNED_LABEL,
+                enabled = enabled,
+                single = single,
+                onToggle = { onChange(emptyList()) },
+            ) {
+                Text(EVENT_MEDIA_UNASSIGNED_LABEL, style = TypeScale.body, color = FieldTheme.textPrimary)
             }
         }
     }
 }
 
-/** Shown in the media section after the scan linked a vehicle; ביטול unlinks just that plate. */
 @Composable
-private fun AutoLinkLine(plate: EventMediaPlateOption, onUndo: () -> Unit) {
+private fun MediaChoiceChip(
+    checked: Boolean,
+    label: String,
+    enabled: Boolean,
+    single: Boolean,
+    onToggle: () -> Unit,
+    content: @Composable () -> Unit,
+) {
     Row(
         modifier = Modifier
-            .fillMaxWidth()
-            .background(FieldTheme.doneTint, fieldShape)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+            .heightIn(min = 48.dp)
+            .clip(fieldShape)
+            .background(if (checked) FieldTheme.accentSubtle else FieldTheme.raised)
+            .border(
+                if (checked) 2.dp else 1.dp,
+                if (checked) FieldTheme.accent else FieldTheme.strong,
+                fieldShape,
+            )
+            .toggleable(
+                value = checked,
+                enabled = enabled,
+                role = if (single) Role.RadioButton else Role.Checkbox,
+                onValueChange = { onToggle() },
+            )
+            .clearAndSetSemantics {
+                contentDescription = label
+                stateDescription = if (checked) "נבחר" else "לא נבחר"
+            }
+            .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text(
-            EVENT_MEDIA_AUTO_LINKED,
-            style = TypeScale.body,
-            color = FieldTheme.textPrimary,
-            modifier = Modifier.weight(1f, fill = false),
-        )
-        LicensePlate(plate = plate.plateNumber)
-        Spacer(Modifier.weight(1f))
-        GhostButton(title = "ביטול", onClick = onUndo, modifier = Modifier.width(88.dp))
+        content()
+        Box(modifier = Modifier.size(18.dp), contentAlignment = Alignment.Center) {
+            if (checked) {
+                Icon(
+                    Icons.Outlined.Check,
+                    contentDescription = null,
+                    tint = FieldTheme.accent,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
     }
 }
 

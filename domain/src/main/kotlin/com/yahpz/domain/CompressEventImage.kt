@@ -6,6 +6,29 @@ const val EVENT_MEDIA_MAX_LONG_EDGE = 1600
 const val EVENT_MEDIA_TARGET_BYTES = 700 * 1024
 val EVENT_MEDIA_QUALITY_STEPS = listOf(0.72, 0.6, 0.5)
 
+/** Photo types the picker accepts by file name when the provider reports no usable type. */
+private val IMAGE_MIME_BY_EXTENSION = mapOf(
+    "jpg" to "image/jpeg",
+    "jpeg" to "image/jpeg",
+    "png" to "image/png",
+    "webp" to "image/webp",
+    "gif" to "image/gif",
+    "heic" to "image/heic",
+    "heif" to "image/heif",
+    "avif" to "image/avif",
+)
+
+/**
+ * The picked file's type. Some providers report HEIC or AVIF as null or
+ * application/octet-stream; the file name's extension then decides.
+ */
+fun resolvePickedMimeType(reported: String?, fileName: String?): String? {
+    val type = reported?.trim()?.lowercase()?.ifEmpty { null }
+    if (type != null && type != "application/octet-stream") return type
+    val extension = fileName?.substringAfterLast('.', "")?.lowercase().orEmpty()
+    return IMAGE_MIME_BY_EXTENSION[extension] ?: type
+}
+
 fun rejectOriginalFile(mimeType: String, byteSize: Long): String? {
     if (byteSize <= 0L) return EVENT_MEDIA_BAD_TYPE
     if (!mimeType.startsWith("image/")) return EVENT_MEDIA_BAD_TYPE
