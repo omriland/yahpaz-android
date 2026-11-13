@@ -70,6 +70,7 @@ import com.yahpz.domain.shiftBornReadOnlyNotice
 import com.yahpz.domain.skippedPhotoDigits
 import com.yahpz.domain.treatmentDetailCounter
 import com.yahpz.domain.vehiclePhotosPrompt
+import com.yahpz.domain.unlinkedPhotosNote
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -113,6 +114,7 @@ fun ShiftBornFillScreen(eventId: String, app: AppModel) {
     var dropUnfinishedTick by remember(eventId) { mutableIntStateOf(0) }
     var mediaError by remember(eventId) { mutableStateOf<String?>(null) }
     var missingPhotoPlates by remember(eventId) { mutableStateOf<List<TreatedPlate>>(emptyList()) }
+    var unlinkedPhotoNote by remember(eventId) { mutableStateOf<String?>(null) }
     var pendingPhotoSaveComplete by remember(eventId) { mutableStateOf<Boolean?>(null) }
     // Vehicles the user chose to save without a photo; a vehicle added later is still asked about.
     var photoSkippedDigits by remember(eventId) { mutableStateOf<Set<String>>(emptySet()) }
@@ -223,6 +225,9 @@ fun ShiftBornFillScreen(eventId: String, app: AppModel) {
         val covered = withContext(Dispatchers.IO) { YahpazAPI.fetchEventPhotoCoverage(eventId) }
         val missing = vehiclePhotosPrompt(draft.treatedPlates, covered, photoSkippedDigits)
         if (missing.isEmpty()) return false
+        unlinkedPhotoNote = unlinkedPhotosNote(
+            withContext(Dispatchers.IO) { YahpazAPI.fetchUnlinkedOwnPhotoCount(eventId, ui.userId) },
+        )
         missingPhotoPlates = missing
         pendingPhotoSaveComplete = complete
         return true
@@ -505,6 +510,7 @@ fun ShiftBornFillScreen(eventId: String, app: AppModel) {
     if (missingPhotoPlates.isNotEmpty()) {
         VehiclePhotosPromptSheet(
             plates = missingPhotoPlates,
+            note = unlinkedPhotoNote,
             onBack = {
                 missingPhotoPlates = emptyList()
                 pendingPhotoSaveComplete = null
