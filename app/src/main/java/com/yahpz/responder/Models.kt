@@ -516,6 +516,8 @@ data class EventMediaPlateLink(
 data class EventMediaCoverageRow(
     val id: String,
     val plates: List<EventMediaPlateLink> = emptyList(),
+    @SerialName("uploaded_by") val uploadedBy: String? = null,
+    @SerialName("not_vehicle") val notVehicle: Boolean = false,
 )
 
 @Serializable

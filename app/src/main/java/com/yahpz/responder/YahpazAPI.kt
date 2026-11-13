@@ -235,6 +235,7 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.Headers
 import com.yahpz.domain.PhotoCoveragePlate
+import com.yahpz.domain.unlinkedOwnPhotoCount
 import com.yahpz.domain.coveredPlateDigits
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withTimeoutOrNull
@@ -2836,6 +2837,20 @@ object YahpazAPI {
         } catch (_: Exception) {
             null
         }
+    }
+
+    /** The viewer's own photos on the event with no vehicle; 0 when the read fails. */
+    suspend fun fetchUnlinkedOwnPhotoCount(eventId: String, viewerId: String?): Int = try {
+        val media = client.from("event_media").select(
+            Columns.raw("id, uploaded_by, not_vehicle, plates:event_media_plates(treated_plate_id)"),
+        ) {
+            filter { eq("event_id", eventId) }
+        }.decodeList<EventMediaCoverageRow>()
+        unlinkedOwnPhotoCount(media.map { Triple(it.uploadedBy.orEmpty(), it.notVehicle, it.plates.size) }, viewerId)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        0
     }
 
     private suspend fun signedUrlFor(storagePath: String): String? {

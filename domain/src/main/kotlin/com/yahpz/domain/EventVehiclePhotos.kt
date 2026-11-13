@@ -4,6 +4,24 @@ const val VEHICLE_PHOTOS_TITLE = "לא צורפו תמונות לרכבים הב
 const val VEHICLE_PHOTOS_BACK = "חזרה לעריכה"
 const val VEHICLE_PHOTOS_PROCEED = "שמירה ללא תמונות נוספות"
 
+/**
+ * Under the vehicle list when the person has photos with no vehicle: the photo was
+ * saved, it just is not linked. Mirrors web `unlinkedPhotosNote`.
+ */
+fun unlinkedPhotosNote(count: Int): String? {
+    if (count <= 0) return null
+    val lead = if (count == 1) "יש לך תמונה אחת ללא שיוך לרכב." else "יש לך $count תמונות ללא שיוך לרכב."
+    return "$lead כדי לשייך: חזרה לעריכה, פתיחת התמונה ובחירת הרכב."
+}
+
+/** The viewer's own photos that have no vehicle and are not marked as not-a-vehicle. */
+fun unlinkedOwnPhotoCount(
+    photos: List<Triple<String, Boolean, Int>>,
+    viewerId: String?,
+): Int = if (viewerId.isNullOrBlank()) 0 else photos.count { (uploadedBy, notVehicle, links) ->
+    uploadedBy == viewerId && !notVehicle && links == 0
+}
+
 data class PhotoCoveragePlate(
     val id: String,
     val plateDigits: String,

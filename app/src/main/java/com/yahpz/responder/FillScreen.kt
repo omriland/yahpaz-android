@@ -100,6 +100,7 @@ import com.yahpz.domain.vehiclePhotosPrompt
 import com.yahpz.domain.VEHICLE_PHOTOS_BACK
 import com.yahpz.domain.VEHICLE_PHOTOS_PROCEED
 import com.yahpz.domain.VEHICLE_PHOTOS_TITLE
+import com.yahpz.domain.unlinkedPhotosNote
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -139,6 +140,7 @@ fun FillScreen(eventId: String, app: AppModel) {
     // Vehicles the responder chose to save without a photo; a vehicle added later is still asked about.
     var photoSkippedDigits by remember { mutableStateOf<Set<String>>(emptySet()) }
     var missingPhotoPlates by remember { mutableStateOf<List<TreatedPlate>>(emptyList()) }
+    var unlinkedPhotoNote by remember { mutableStateOf<String?>(null) }
     var pendingPhotoSaveComplete by remember { mutableStateOf<Boolean?>(null) }
 
     fun commitPendingPlate(pendingOverride: String? = null) {
@@ -204,6 +206,9 @@ fun FillScreen(eventId: String, app: AppModel) {
         val covered = withContext(Dispatchers.IO) { YahpazAPI.fetchEventPhotoCoverage(fill.eventId) }
         val missing = vehiclePhotosPrompt(draft.treatedPlates, covered, photoSkippedDigits)
         if (missing.isNotEmpty()) {
+            unlinkedPhotoNote = unlinkedPhotosNote(
+                withContext(Dispatchers.IO) { YahpazAPI.fetchUnlinkedOwnPhotoCount(fill.eventId, ui.userId) },
+            )
             missingPhotoPlates = missing
             pendingPhotoSaveComplete = complete
             return
@@ -574,6 +579,7 @@ fun FillScreen(eventId: String, app: AppModel) {
     if (missingPhotoPlates.isNotEmpty()) {
         VehiclePhotosPromptSheet(
             plates = missingPhotoPlates,
+            note = unlinkedPhotoNote,
             onBack = {
                 missingPhotoPlates = emptyList()
                 pendingPhotoSaveComplete = null
@@ -846,6 +852,7 @@ private fun OdometerTotal(start: String, end: String, fieldError: String?) {
 @Composable
 internal fun VehiclePhotosPromptSheet(
     plates: List<TreatedPlate>,
+    note: String? = null,
     onBack: () -> Unit,
     onProceed: () -> Unit,
 ) {
@@ -863,6 +870,7 @@ internal fun VehiclePhotosPromptSheet(
                     onLeftWhereChange = { _, _ -> },
                 )
             }
+            note?.let { Text(it, style = TypeScale.body, color = FieldTheme.textSecondary) }
             GhostButton(title = VEHICLE_PHOTOS_BACK, onClick = onBack)
             PrimaryButton(title = VEHICLE_PHOTOS_PROCEED, onClick = onProceed)
         }
