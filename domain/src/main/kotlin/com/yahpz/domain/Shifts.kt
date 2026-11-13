@@ -12,8 +12,8 @@ enum class ShiftStatus(val raw: String) {
 }
 
 fun shiftStamp(status: ShiftStatus): StampDescriptor = when (status) {
-    ShiftStatus.IN_PROGRESS -> StampDescriptor("פתוחה", StampTone.PENDING)
-    ShiftStatus.DRAFT -> StampDescriptor("טיוטה", StampTone.DRAFT)
+    ShiftStatus.IN_PROGRESS -> StampDescriptor("ממתין לתיעוד", StampTone.DRAFT)
+    ShiftStatus.DRAFT -> StampDescriptor("תועד חלקית", StampTone.PENDING)
     ShiftStatus.CLOSED -> StampDescriptor("נסגרה", StampTone.DONE)
 }
 

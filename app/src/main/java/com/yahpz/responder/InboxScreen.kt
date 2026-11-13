@@ -162,9 +162,15 @@ fun InboxScreen(app: AppModel, ui: AppUiState) {
                 style = TypeScale.body,
                 color = FieldTheme.textSecondary,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TabChip(minePendingTabLabel(pending.size), tab == MineInboxTab.PENDING) { tab = MineInboxTab.PENDING }
-                TabChip(MINE_LOGGED_TAB_LABEL, tab == MineInboxTab.LOGGED) { tab = MineInboxTab.LOGGED }
+            // Nothing to document or look back on: the tabs (and the logged search) would
+            // only filter an empty list, so the empty state stands alone. Mirrors web.
+            val mineHasNoEvents = !ui.eventsFailed && !(ui.eventsLoading && ui.events.isEmpty()) &&
+                pending.isEmpty() && logged.isEmpty() && !loggedWindow.hasMoreLogged
+            if (!mineHasNoEvents) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TabChip(minePendingTabLabel(pending.size), tab == MineInboxTab.PENDING) { tab = MineInboxTab.PENDING }
+                    TabChip(MINE_LOGGED_TAB_LABEL, tab == MineInboxTab.LOGGED) { tab = MineInboxTab.LOGGED }
+                }
             }
             when {
                 ui.eventsFailed -> EmptyState(
@@ -173,7 +179,7 @@ fun InboxScreen(app: AppModel, ui: AppUiState) {
                     onAction = { scope.launch { app.reloadEvents() } },
                 )
                 ui.eventsLoading && ui.events.isEmpty() -> BoxCentered("טוען את הדיווחים שלך…")
-                tab == MineInboxTab.PENDING ->                 PendingList(
+                mineHasNoEvents || tab == MineInboxTab.PENDING -> PendingList(
                     pending = pending,
                     userId = ui.userId,
                     loggedIsEmpty = logged.isEmpty(),

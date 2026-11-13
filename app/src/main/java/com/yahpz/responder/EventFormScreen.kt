@@ -18,7 +18,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -122,6 +125,10 @@ import com.yahpz.domain.patrolCallsignNumberForInput
 import com.yahpz.domain.patrolCallsignPrefixForInput
 import com.yahpz.domain.POLICE_EVENT_ID_DUPLICATE_ERROR
 import com.yahpz.domain.policeEventIdForInput
+import com.yahpz.domain.isUnitEventId
+import com.yahpz.domain.showUnitEventToggle
+import com.yahpz.domain.UNIT_EVENT_ID_LABEL
+import com.yahpz.domain.UNIT_EVENT_ISSUE_ERROR
 import com.yahpz.domain.returnDateToInput
 import com.yahpz.domain.shouldShowCockpitDelete
 import com.yahpz.domain.toggleEventResponder
@@ -146,6 +153,9 @@ fun EventFormScreen(
     val scope = rememberCoroutineScope()
     var eventDate by remember { mutableStateOf(returnDateToInput(israelToday())) }
     var policeEventId by remember { mutableStateOf("") }
+    // אירוע יחידתי is offered on a form opened to create an event.
+    val openedToCreate = remember { eventId == null }
+    var issuingUnitId by remember { mutableStateOf(false) }
     var patrolCallsignPrefix by remember { mutableStateOf("") }
     var patrolCallsignNumber by remember { mutableStateOf("") }
     var startTime by remember { mutableStateOf(if (editing) "" else israelNowTime()) }
@@ -673,18 +683,47 @@ fun EventFormScreen(
                         error = errors.eventType,
                         modifier = Modifier.weight(1f),
                     )
+                    val unitEvent = isUnitEventId(policeEventId)
                     FormField(
-                        label = "מספר אירוע",
+                        label = if (unitEvent) UNIT_EVENT_ID_LABEL else "מספר אירוע",
                         value = policeEventId,
                         onValueChange = {
+                            if (unitEvent) return@FormField
                             policeEventId = policeEventIdForInput(it)
                             if (formError == POLICE_EVENT_ID_DUPLICATE_ERROR) formError = null
                         },
                         keyboardType = KeyboardType.Number,
                         mono = true,
                         ltr = true,
+                        enabled = !unitEvent,
                         error = if (formError == POLICE_EVENT_ID_DUPLICATE_ERROR) formError else null,
                         modifier = Modifier.weight(1f),
+                    )
+                }
+                if (showUnitEventToggle(ui.canManageUnit, openedToCreate, policeEventId)) {
+                    UnitEventToggle(
+                        checked = isUnitEventId(policeEventId),
+                        busy = issuingUnitId,
+                        onCheckedChange = { on ->
+                            if (formError == POLICE_EVENT_ID_DUPLICATE_ERROR) formError = null
+                            if (!on) {
+                                // Back to a police number; the unit ID stays retired.
+                                policeEventId = ""
+                                persist(allowPartial = true, quiet = true)
+                            } else {
+                                scope.launch {
+                                    issuingUnitId = true
+                                    val code = YahpazAPI.issueUnitEventId()
+                                    issuingUnitId = false
+                                    if (code == null) {
+                                        app.showToast(UNIT_EVENT_ISSUE_ERROR, StampTone.ALERT)
+                                    } else {
+                                        policeEventId = code
+                                        persist(allowPartial = true, quiet = true)
+                                    }
+                                }
+                            }
+                        },
                     )
                 }
                 if (isOtherEventTypeId(eventTypeId, ui.lookups.eventTypes)) {
@@ -1097,5 +1136,46 @@ private fun StepperButton(label: String, enabled: Boolean, onClick: () -> Unit) 
             color = if (enabled) FieldTheme.accent else FieldTheme.textMuted,
             textAlign = TextAlign.Center,
         )
+    }
+}
+
+/** אירוע יחידתי: a compact switch row under מספר אירוע, with its explanation behind the "?". */
+@Composable
+private fun UnitEventToggle(checked: Boolean, busy: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    var showTip by remember { mutableStateOf(false) }
+    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                com.yahpz.domain.UNIT_EVENT_TOGGLE_LABEL,
+                style = TypeScale.label,
+                color = if (checked) FieldTheme.accent else FieldTheme.textSecondary,
+            )
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .border(1.dp, FieldTheme.strong, CircleShape)
+                    .clickable { showTip = !showTip }
+                    .semantics { contentDescription = "מה זה אירוע יחידתי" },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("?", style = TypeScale.caption, color = FieldTheme.textSecondary)
+            }
+            Spacer(Modifier.weight(1f))
+            androidx.compose.material3.Switch(
+                checked = checked,
+                onCheckedChange = onCheckedChange,
+                enabled = !busy,
+                modifier = Modifier.semantics {
+                    contentDescription = com.yahpz.domain.UNIT_EVENT_TOGGLE_LABEL
+                },
+            )
+        }
+        if (showTip) {
+            Text(com.yahpz.domain.UNIT_EVENT_TIP, style = TypeScale.caption, color = FieldTheme.textMuted)
+        }
     }
 }
