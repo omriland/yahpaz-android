@@ -37,6 +37,18 @@ class EventIncompleteTest {
     )
 
     @Test
+    fun `an event with nobody assigned is missing מתנדב`() {
+        assertEquals(setOf(IncompleteField.RESPONDERS), missingEventFields(event(responders = emptyList())))
+        assertEquals(listOf("מתנדב"), incompleteFieldLabels(setOf(IncompleteField.RESPONDERS)))
+    }
+
+    @Test
+    fun `a cancelled event with nobody assigned is not missing מתנדב`() {
+        val cancelled = event(responders = emptyList()).copy(isCancelled = true)
+        assertFalse(IncompleteField.RESPONDERS in missingEventFields(cancelled))
+    }
+
+    @Test
     fun `complete event has no missing fields`() {
         assertEquals(emptySet<IncompleteField>(), missingEventFields(event()))
         assertFalse(isEventIncomplete(event()))
@@ -128,7 +140,7 @@ class EventIncompleteTest {
             incompleteLeadNoticeLabels(event(policeEventId = null)),
         )
         assertEquals(
-            listOf("מספר אירוע"),
+            listOf("מספר אירוע", "מתנדב"),
             incompleteLeadNoticeLabels(event(policeEventId = null, responders = emptyList())),
         )
         assertEquals(

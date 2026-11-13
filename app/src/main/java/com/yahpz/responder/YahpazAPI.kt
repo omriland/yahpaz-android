@@ -9,6 +9,7 @@ import com.yahpz.domain.shiftOdometerError
 import com.yahpz.domain.SHIFT_ODOMETER_NOT_ALLOWED
 import com.yahpz.domain.SHIFT_ODOMETER_SAVE_FAILED
 import com.yahpz.domain.policeEventIdForInput
+import com.yahpz.domain.policeEventIdKey
 import com.yahpz.domain.odometerDelta
 import com.yahpz.domain.mapShiftSaveError
 import com.yahpz.domain.AssignableProfile
@@ -117,7 +118,6 @@ import com.yahpz.domain.closedListNameError
 import com.yahpz.domain.deriveEventStatusAfterParticipation
 import com.yahpz.domain.duplicateEventsReportRows
 import com.yahpz.domain.createIncludesSelfAssign
-import com.yahpz.domain.digitsOnly
 import com.yahpz.domain.ownResumableEventId
 import com.yahpz.domain.POLICE_EVENT_ID_DUPLICATE_ERROR
 import com.yahpz.domain.sameDayPoliceEventIdCollides
@@ -1521,6 +1521,11 @@ object YahpazAPI {
         }.decodeList<CrewVehicleRow>().filter { it.archived != true }
     }
 
+    /** אירוע יחידתי: a fresh unit ID for the caller (lead/admin). The event claims it on its next save. */
+    suspend fun issueUnitEventId(): String? = runCatching {
+        client.postgrest.rpc("issue_unit_event_id").decodeAs<String>()
+    }.getOrNull()
+
     /** Insert the event then its pending crew. Mirrors the web `saveEventForm` create path. */
     suspend fun createUnitEvent(
         draft: EventDraft,
@@ -1636,7 +1641,7 @@ object YahpazAPI {
         allowPartial: Boolean,
         eventTypes: List<LookupOption>,
     ): String? {
-        val policeId = digitsOnly(draft.policeEventId)
+        val policeId = policeEventIdKey(draft.policeEventId)
         if (policeId.isEmpty()) return null
         val existing = runCatching {
             client.from("events").select(Columns.raw("id, shift_lead_id, is_cancelled, police_event_id")) {
@@ -1646,7 +1651,7 @@ object YahpazAPI {
                     eq("is_cancelled", false)
                 }
             }.decodeList<SameDayPoliceEventApiRow>().filter {
-                digitsOnly(it.policeEventId.orEmpty()) == policeId
+                policeEventIdKey(it.policeEventId.orEmpty()) == policeId
             }
         }.getOrDefault(emptyList())
         val recovered = ownResumableEventId(
@@ -1852,7 +1857,7 @@ object YahpazAPI {
         policeEventId: String,
         currentEventId: String?,
     ): String? {
-        val policeId = digitsOnly(policeEventId)
+        val policeId = policeEventIdKey(policeEventId)
         if (policeId.isEmpty()) return null
         val existing = fetchSameDayPoliceEventIdRows(eventDate, policeId) ?: return EVENT_DRAFT_SAVE_FAILED
         return if (

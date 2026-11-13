@@ -43,8 +43,8 @@ class MineShiftsTest {
 
     @Test
     fun shiftStamps() {
-        assertEquals("פתוחה", shiftStamp(ShiftStatus.IN_PROGRESS).label)
-        assertEquals("טיוטה", shiftStamp(ShiftStatus.DRAFT).label)
+        assertEquals("ממתין לתיעוד", shiftStamp(ShiftStatus.IN_PROGRESS).label)
+        assertEquals("תועד חלקית", shiftStamp(ShiftStatus.DRAFT).label)
         assertEquals("נסגרה", shiftStamp(ShiftStatus.CLOSED).label)
     }
 

@@ -14,6 +14,7 @@ enum class IncompleteField {
     EVENT_TYPE,
     ROAD,
     LOCATION,
+    RESPONDERS,
     RESPONDER_KM,
     EVENT_TIMES,
 }
@@ -25,6 +26,7 @@ val INCOMPLETE_FIELD_LABELS: Map<IncompleteField, String> = mapOf(
     IncompleteField.EVENT_TYPE to "סוג אירוע",
     IncompleteField.ROAD to "כביש",
     IncompleteField.LOCATION to "מיקום",
+    IncompleteField.RESPONDERS to "מתנדב",
     IncompleteField.RESPONDER_KM to "ק״מ",
     IncompleteField.EVENT_TIMES to "שעות",
 )
@@ -72,6 +74,8 @@ fun missingEventFields(event: IncompleteEventSnapshot): Set<IncompleteField> {
     if (!event.hasEventType) missing += IncompleteField.EVENT_TYPE
     if (!event.hasRoad) missing += IncompleteField.ROAD
     if (isMissing(event.location)) missing += IncompleteField.LOCATION
+    // A cancelled event may close with nobody on it.
+    if (event.responders.isEmpty() && !event.isCancelled) missing += IncompleteField.RESPONDERS
 
     if (event.startedAt != null || event.endedAt != null) {
         if (isMissing(event.startedAt) || isMissing(event.endedAt)) {

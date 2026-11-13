@@ -559,14 +559,14 @@ fun sameDayPoliceEventIdCollides(
     currentEventId: String?,
     existing: List<SameDayPoliceEventRow>,
 ): Boolean {
-    val policeId = digitsOnly(policeEventId)
+    val policeId = policeEventIdKey(policeEventId)
     val date = eventDate.trim()
     if (policeId.isEmpty() || date.isEmpty()) return false
     return existing.any { row ->
         if (row.isCancelled) return@any false
         if (!currentEventId.isNullOrBlank() && row.id == currentEventId) return@any false
         if (row.eventDate.isNotEmpty() && row.eventDate.trim() != date) return@any false
-        digitsOnly(row.policeEventId.orEmpty()) == policeId
+        policeEventIdKey(row.policeEventId.orEmpty()) == policeId
     }
 }
 

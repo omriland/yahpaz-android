@@ -10,7 +10,25 @@ fun digitsOnly(value: String): String = value.filter { it.isDigit() }
 
 const val POLICE_EVENT_ID_MAX_LENGTH = 5
 
-fun policeEventIdForInput(raw: String): String = digitsOnly(raw).take(POLICE_EVENT_ID_MAX_LENGTH)
+private val UNIT_EVENT_ID_SHAPE = Regex("^[0-9A-Z]{6}$")
+private val HAS_LETTER = Regex("[A-Z]")
+
+/**
+ * אירוע יחידתי ID: 6 of 0-9/A-Z with at least one letter, so it can never equal a
+ * police number. Issued by the issue_unit_event_id RPC and stored in police_event_id.
+ * Mirrors web `isUnitEventId`.
+ */
+fun isUnitEventId(value: String?): Boolean {
+    val trimmed = value?.trim().orEmpty()
+    return UNIT_EVENT_ID_SHAPE.matches(trimmed) && HAS_LETTER.containsMatchIn(trimmed)
+}
+
+/** A unit ID passes through whole; anything else is a police number. */
+fun policeEventIdForInput(raw: String): String =
+    if (isUnitEventId(raw)) raw.trim() else digitsOnly(raw).take(POLICE_EVENT_ID_MAX_LENGTH)
+
+/** Comparison key for same-day duplicate checks. */
+fun policeEventIdKey(raw: String): String = if (isUnitEventId(raw)) raw.trim() else digitsOnly(raw)
 
 fun plateDigits(value: String): String = digitsOnly(value)
 
@@ -176,4 +194,21 @@ fun addCalendarDays(ymd: String, days: Int): String {
     val parts = ymd.split("-").mapNotNull { it.toIntOrNull() }
     if (parts.size != 3) return ymd
     return LocalDate.of(parts[0], parts[1], parts[2]).plusDays(days.toLong()).toString()
+}
+
+/**
+ * Day heading for a date-grouped list, like web `formatDayHeading`: the last week
+ * reads relative ("היום · 13.11.2026"), anything older is the date alone.
+ */
+fun formatDayHeading(value: String, today: LocalDate = israelTodayDate()): String {
+    val date = runCatching { LocalDate.parse(value.take(10)) }.getOrNull() ?: return formatDate(value)
+    val days = java.time.temporal.ChronoUnit.DAYS.between(today, date)
+    val relative = when (days) {
+        0L -> "היום"
+        -1L -> "אתמול"
+        -2L -> "שלשום"
+        in -6L..-3L -> "לפני ${-days} ימים"
+        else -> null
+    }
+    return if (relative != null) "$relative · ${formatDate(value)}" else formatDate(value)
 }

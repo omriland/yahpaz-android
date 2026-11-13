@@ -36,6 +36,7 @@ import com.yahpz.domain.canDocumentShift
 import com.yahpz.domain.israelToday
 import com.yahpz.domain.fieldsMatchQuery
 import com.yahpz.domain.formatDate
+import com.yahpz.domain.formatDayHeading
 import com.yahpz.domain.formatPlate
 import com.yahpz.domain.hebrewWeekdayLetter
 import com.yahpz.domain.shiftStamp
@@ -113,7 +114,16 @@ fun UnitShiftsScreen(app: AppModel, ui: AppUiState) {
                         style = TypeScale.caption,
                         color = FieldTheme.textMuted,
                     )
-                    shifts.forEach { shift -> UnitShiftRow(shift) { detail = shift } }
+                    // Grouped by day, newest first (the list is already sorted by date).
+                    shifts.groupBy { it.shiftDate }.forEach { (day, dayShifts) ->
+                        Text(
+                            formatDayHeading(day),
+                            style = TypeScale.label,
+                            color = FieldTheme.textSecondary,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                        dayShifts.forEach { shift -> UnitShiftRow(shift) { detail = shift } }
+                    }
                     Spacer(Modifier.height(88.dp))
                 }
             }
