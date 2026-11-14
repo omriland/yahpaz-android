@@ -29,7 +29,7 @@ import com.yahpz.domain.EVENT_FORM_LEADS_SECTION
 import com.yahpz.domain.EVENT_NEW_TITLE
 import com.yahpz.domain.EVENT_START_TIME_LABEL
 import com.yahpz.domain.LookupOption
-import com.yahpz.domain.eventFormPrimarySaveTitle
+import com.yahpz.domain.EVENT_SAVE_TITLE
 
 /** `adb shell am start -n com.yahpz.responder/.EventFormPreviewActivity --es state default|scrolled|error|saving` */
 class EventFormPreviewActivity : ComponentActivity() {
@@ -53,7 +53,7 @@ class EventFormPreviewActivity : ComponentActivity() {
                     Column(Modifier.fillMaxSize().background(FieldTheme.page).statusBarsPadding()) {
                         EventCreateHeader(
                             title = EVENT_NEW_TITLE,
-                            saveTitle = eventFormPrimarySaveTitle(editing = false),
+                            saveTitle = EVENT_SAVE_TITLE,
                             saving = state == "saving",
                             enabled = true,
                             error = if (state == "error") EVENT_DRAFT_FORM_ERROR else null,
