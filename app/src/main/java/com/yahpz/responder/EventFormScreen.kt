@@ -41,7 +41,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.yahpz.domain.AssignableProfile
 import com.yahpz.domain.CockpitDeleteClick
-import com.yahpz.domain.CockpitDeleteViewer
 import com.yahpz.domain.ASSIGNED_VOLUNTEER_EVENT_EDIT_ERROR
 import com.yahpz.domain.EVENT_ASSIGN_CLOSE
 import com.yahpz.domain.EVENT_ASSIGN_EMPTY
@@ -60,7 +59,6 @@ import com.yahpz.domain.EVENT_NEW_TITLE
 import com.yahpz.domain.EVENT_DELETE_ACTION
 import com.yahpz.domain.EVENT_DELETE_CONFIRM
 import com.yahpz.domain.EVENT_DELETE_CONFIRM_WITH_RESPONDERS
-import com.yahpz.domain.EVENT_DELETE_TITLE
 import com.yahpz.domain.EVENT_EDIT_LOCKED_TOOLTIP
 import com.yahpz.domain.canDeleteUnassignedEvent
 import com.yahpz.domain.EVENT_FORM_DETAILS_SECTION
@@ -69,8 +67,7 @@ import com.yahpz.domain.EVENT_FORM_RESPONDERS_SECTION
 import com.yahpz.domain.EVENT_END_TIME_LABEL
 import com.yahpz.domain.EVENT_START_TIME_LABEL
 import com.yahpz.domain.EventFormFieldNoteId
-import com.yahpz.domain.eventFormPrimarySaveTitle
-import com.yahpz.domain.eventFormSecondarySaveTitle
+import com.yahpz.domain.EVENT_SAVE_TITLE
 import com.yahpz.domain.PATROL_CALLSIGN_NUMBER_LABEL
 import com.yahpz.domain.PATROL_CALLSIGN_PREFIX_LABEL
 import com.yahpz.domain.FOREIGN_EVENT_EDIT_BODY
@@ -84,9 +81,6 @@ import com.yahpz.domain.StampTone
 import com.yahpz.domain.roadIdAfterJunctionSelection
 import com.yahpz.domain.blocksAssignedVolunteerEdit
 import com.yahpz.domain.canManageSecondaryLeads
-import com.yahpz.domain.cockpitDeleteBlock
-import com.yahpz.domain.cockpitDeleteClick
-import com.yahpz.domain.cockpitDeleteHint
 import com.yahpz.domain.foreignEventEditLeadName
 import com.yahpz.domain.foreignEventEditTitle
 import com.yahpz.domain.isForeignShiftLeadEvent
@@ -130,7 +124,6 @@ import com.yahpz.domain.showUnitEventToggle
 import com.yahpz.domain.UNIT_EVENT_ID_LABEL
 import com.yahpz.domain.UNIT_EVENT_ISSUE_ERROR
 import com.yahpz.domain.returnDateToInput
-import com.yahpz.domain.shouldShowCockpitDelete
 import com.yahpz.domain.toggleEventResponder
 import com.yahpz.domain.treatedQuantity
 import com.yahpz.domain.updateEventResponder
@@ -188,7 +181,8 @@ fun EventFormScreen(
     var topSaveTried by remember { mutableStateOf(false) }
     var confirmDelete by remember(eventId) { mutableStateOf(false) }
     var deleting by remember(eventId) { mutableStateOf(false) }
-    var deleteHint by remember(eventId) { mutableStateOf<String?>(null) }
+    /** Set once מחיקה goes through: nothing may save or stash the event again. */
+    var discarded by remember { mutableStateOf(false) }
     var vehicleOwnerIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var detailResponderId by remember { mutableStateOf<String?>(null) }
     var removeResponderId by remember { mutableStateOf<String?>(null) }
@@ -236,7 +230,6 @@ fun EventFormScreen(
 
     LaunchedEffect(responders.size) {
         confirmDelete = false
-        deleteHint = null
     }
 
     LaunchedEffect(Unit) {
@@ -346,7 +339,7 @@ fun EventFormScreen(
             !foreignEditAcked
 
     fun persist(allowPartial: Boolean, quiet: Boolean = false) {
-        if (deleting) return
+        if (deleting || discarded) return
         if (saving || quietSaving) {
             if (quiet) quietPending = true else pendingSave = allowPartial
             return
@@ -439,7 +432,8 @@ fun EventFormScreen(
     leaveFlush.previous = persistedDraft
     leaveFlush.previousCancelled = previousIsCancelled
     leaveFlush.replaceExisting = eventId == null
-    leaveFlush.skip = assignedBlocked ||
+    leaveFlush.skip = discarded ||
+        assignedBlocked ||
         foreignEditPending ||
         (editing && !loaded) ||
         (editing && isEventEditAgeLocked(createdAt, ui.roles))
@@ -447,6 +441,7 @@ fun EventFormScreen(
     DisposableEffect(formSession) {
         onDispose {
             val snapshot = leaveFlush.draft ?: return@onDispose
+            if (discarded) return@onDispose
             if (!editing && leaveFlush.eventId == null && snapshot.hasDetailBeyondOpen()) {
                 EventDraftStore.stash(snapshot)
             }
@@ -481,44 +476,27 @@ fun EventFormScreen(
         persist(allowPartial = true, quiet = true)
     }
 
-    val deleteViewer = CockpitDeleteViewer(userId = ui.userId, isAdmin = ui.canAdmin)
-    val showEventDelete = editing && loaded && !loadFailed && ui.canManageUnit &&
-        shouldShowCockpitDelete(
-            cockpitDeleteBlock(responders.size, shiftLeadId, deleteViewer),
-        )
+    val mayDeleteEvent = !editing ||
+        canDeleteUnassignedEvent(ui.canManageUnit, ui.canAdmin, ui.userId, shiftLeadId)
 
-    fun onDeletePressed() {
-        val id = eventId ?: return
-        if (saving || deleting) return
-        when (
-            val result = cockpitDeleteClick(
-                armed = confirmDelete,
-                responderCount = responders.size,
-                shiftLeadId = shiftLeadId,
-                viewer = deleteViewer,
-            )
-        ) {
-            is CockpitDeleteClick.Blocked -> {
+    /** Deletes the saved event, or for a new event that never reached the server just drops it. */
+    fun deleteEvent() {
+        if (deleting) return
+        scope.launch {
+            deleting = true
+            // A save already running may still be creating the event: let it land first.
+            while (saving || quietSaving) delay(50)
+            val id = eventId ?: createdEventId
+            val error = id?.let { app.deleteUnitEvent(it) }
+            deleting = false
+            if (error != null) {
+                formError = error
                 confirmDelete = false
-                deleteHint = cockpitDeleteHint(result.block)
+                return@launch
             }
-            CockpitDeleteClick.Arm -> {
-                confirmDelete = true
-                deleteHint = cockpitDeleteHint(null)
-            }
-            CockpitDeleteClick.Delete -> {
-                scope.launch {
-                    deleting = true
-                    val error = app.deleteUnitEvent(id)
-                    deleting = false
-                    if (error != null) {
-                        formError = error
-                        confirmDelete = false
-                    } else {
-                        onBack()
-                    }
-                }
-            }
+            discarded = true
+            EventDraftStore.clear()
+            onBack()
         }
     }
 
@@ -540,7 +518,7 @@ fun EventFormScreen(
     if (topSave) {
         EventCreateHeader(
             title = EVENT_NEW_TITLE,
-            saveTitle = eventFormPrimarySaveTitle(editing = false),
+            saveTitle = EVENT_SAVE_TITLE,
             saving = saving,
             enabled = !deleting,
             // Errors otherwise land beside the bottom buttons, out of sight.
@@ -583,43 +561,15 @@ fun EventFormScreen(
                     actionTitle = "חזרה",
                     onAction = onBack,
                 )
-                if (canDeleteUnassignedEvent(ui.canManageUnit, ui.canAdmin, ui.userId, shiftLeadId)) {
-                    if (confirmDelete) {
-                        Text(
-                            if (responders.isNotEmpty()) {
-                                EVENT_DELETE_CONFIRM_WITH_RESPONDERS
-                            } else {
-                                EVENT_DELETE_CONFIRM
-                            },
-                            style = TypeScale.body,
-                            color = FieldTheme.textSecondary,
-                        )
-                        GhostButton(
-                            title = EVENT_DELETE_ACTION,
-                            danger = true,
-                            enabled = !deleting,
-                            onClick = {
-                                val id = eventId ?: return@GhostButton
-                                scope.launch {
-                                    deleting = true
-                                    val error = app.deleteUnitEvent(id)
-                                    deleting = false
-                                    if (error != null) {
-                                        formError = error
-                                        confirmDelete = false
-                                    } else {
-                                        onBack()
-                                    }
-                                }
-                            },
-                        )
-                    } else {
-                        GhostButton(
-                            title = EVENT_DELETE_TITLE,
-                            danger = true,
-                            onClick = { confirmDelete = true },
-                        )
-                    }
+                if (mayDeleteEvent) {
+                    EventFormDeleteControls(
+                        confirmArmed = confirmDelete,
+                        hasResponders = responders.isNotEmpty(),
+                        deleting = deleting,
+                        onArm = { confirmDelete = true },
+                        onCancel = { confirmDelete = false },
+                        onConfirm = { deleteEvent() },
+                    )
                 }
             }
             foreignEditPending -> { /* confirm sheet below */ }
@@ -910,23 +860,21 @@ fun EventFormScreen(
                     }
                 }
                 PrimaryButton(
-                    title = eventFormPrimarySaveTitle(editing),
+                    title = EVENT_SAVE_TITLE,
                     busy = saving,
                     enabled = !deleting,
                     onClick = { persist(allowPartial = false) },
                 )
-                GhostButton(
-                    title = eventFormSecondarySaveTitle(editing),
-                    enabled = !saving && !deleting,
-                    onClick = { persist(allowPartial = true) },
-                )
-                EventDeleteControls(
-                    visible = showEventDelete,
-                    confirmArmed = confirmDelete,
-                    hint = deleteHint,
-                    deleting = deleting,
-                    onClick = { onDeletePressed() },
-                )
+                if (mayDeleteEvent) {
+                    EventFormDeleteControls(
+                        confirmArmed = confirmDelete,
+                        hasResponders = responders.isNotEmpty(),
+                        deleting = deleting,
+                        onArm = { confirmDelete = true },
+                        onCancel = { confirmDelete = false },
+                        onConfirm = { deleteEvent() },
+                    )
+                }
             }
         }
         Spacer(Modifier.height(24.dp))
@@ -1178,4 +1126,27 @@ private fun UnitEventToggle(checked: Boolean, busy: Boolean, onCheckedChange: (B
             Text(com.yahpz.domain.UNIT_EVENT_TIP, style = TypeScale.caption, color = FieldTheme.textMuted)
         }
     }
+}
+
+/** מחיקה, then an inline confirm that says what is lost (the volunteers' data too, if any). */
+@Composable
+private fun EventFormDeleteControls(
+    confirmArmed: Boolean,
+    hasResponders: Boolean,
+    deleting: Boolean,
+    onArm: () -> Unit,
+    onCancel: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    if (!confirmArmed) {
+        GhostButton(title = EVENT_DELETE_ACTION, danger = true, enabled = !deleting, onClick = onArm)
+        return
+    }
+    Text(
+        if (hasResponders) EVENT_DELETE_CONFIRM_WITH_RESPONDERS else EVENT_DELETE_CONFIRM,
+        style = TypeScale.body,
+        color = FieldTheme.textSecondary,
+    )
+    GhostButton(title = EVENT_DELETE_ACTION, danger = true, enabled = !deleting, onClick = onConfirm)
+    GhostButton(title = "ביטול", enabled = !deleting, onClick = onCancel)
 }
