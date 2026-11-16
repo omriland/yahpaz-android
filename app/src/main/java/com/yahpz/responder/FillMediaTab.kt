@@ -56,6 +56,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -405,7 +406,9 @@ fun FillMediaTab(
                 onAssign = ::openAssign,
                 onRemove = ::removeFromTile,
             )
-            drafts.firstOrNull()?.let { draft ->
+            // Keyed per photo: a sheet that is swiped away but stays composed keeps an invisible
+            // window over the screen that swallows every touch. The next photo gets a fresh sheet.
+            drafts.firstOrNull()?.let { draft -> key(draft.key) {
                 val write = photoAttachWrite(draft.caption, draft.treatedPlateIds.firstOrNull())
                 val canSave = photoStepCanSave(
                     caption = draft.caption,
@@ -452,7 +455,7 @@ fun FillMediaTab(
                         }
                     }
                 }
-            }
+            } }
         }
         if (canWrite) {
             Column(
