@@ -1,6 +1,6 @@
 package com.yahpz.domain
 
-const val MY_ACTIVE_EVENTS_EMPTY = "אין אירועים פעילים באחמו\"ש שלך"
+const val MY_ACTIVE_EVENTS_EMPTY = "אין אירועים פעילים באחמו״ש שלך"
 
 data class ActivePref(val eventId: String, val kind: String)
 

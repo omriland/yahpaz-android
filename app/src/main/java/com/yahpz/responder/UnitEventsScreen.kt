@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -1195,19 +1197,23 @@ private fun UnitEventRow(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
+            val interaction = remember { MutableInteractionSource() }
+            val pressed by interaction.collectIsPressedAsState()
             // Offset toward the end so the glyph lines up with the pill above, not the touch box.
             IconButton(
                 onClick = onBoardAction,
                 enabled = boardActionEnabled,
+                interactionSource = interaction,
                 modifier = Modifier.offset(x = 12.dp),
             ) {
                 Icon(
                     if (boardActionAdds) Icons.Outlined.AddCircleOutline else Icons.Outlined.RemoveCircleOutline,
                     contentDescription = if (boardActionAdds) MY_ACTIVE_ADD else MY_ACTIVE_REMOVE_SPOKEN,
-                    tint = if (boardActionEnabled && !boardActionMuted && !cancelled) {
-                        FieldTheme.accent
-                    } else {
-                        FieldTheme.textMuted
+                    // Neutral at rest so the card's title leads; "+" takes the accent only while pressed.
+                    tint = when {
+                        !boardActionEnabled || boardActionMuted || cancelled -> FieldTheme.textSecondary.copy(alpha = 0.38f)
+                        boardActionAdds && pressed -> FieldTheme.accent
+                        else -> FieldTheme.textSecondary
                     },
                 )
             }
