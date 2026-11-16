@@ -81,6 +81,11 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    testOptions {
+        // Screenshot tests render real fonts and resources under Robolectric.
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 dependencies {
@@ -115,6 +120,15 @@ dependencies {
     implementation(libs.play.services.maps)
     implementation(libs.android.maps.utils)
     implementation(libs.places)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.roborazzi)
+    testImplementation(libs.roborazzi.compose)
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    // Registers the empty ComponentActivity the compose test rule launches (debug builds only).
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
 
 tasks.matching { it.name == "processApplicationManifestReleaseForBundle" }.configureEach {

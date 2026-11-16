@@ -135,9 +135,44 @@ private const val UNIT_EVENTS_CAPTION =
 
 private enum class ActiveDragSource { ACTIVE, CATALOG }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** Everything the events tab does to the app, so the UI can run on plain state (and in tests). */
+class UnitEventsActions(
+    val reload: suspend () -> Unit,
+    val setShowShiftEvents: (Boolean) -> Unit,
+    val setShowOlderUnitEvents: (Boolean) -> Unit,
+    val setShowOthersCreatedEvents: (Boolean) -> Unit,
+    val addToMyActive: suspend (eventId: String) -> Unit,
+    val removeFromMyActive: suspend (eventId: String) -> Unit,
+    val openEditEvent: (eventId: String) -> Unit,
+    val openFill: (eventId: String) -> Unit,
+    val deleteEvent: suspend (eventId: String) -> String?,
+    val showToast: (text: String, tone: StampTone) -> Unit,
+    val loadDetailResponders: suspend (eventId: String) -> UnitEventDetailRespondersWrap,
+)
+
 @Composable
 fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
+    val actions = remember(app) {
+        UnitEventsActions(
+            reload = app::reloadUnitEvents,
+            setShowShiftEvents = app::setShowShiftEvents,
+            setShowOlderUnitEvents = app::setShowOlderUnitEvents,
+            setShowOthersCreatedEvents = app::setShowOthersCreatedEvents,
+            addToMyActive = app::addEventToMyActiveBoard,
+            removeFromMyActive = app::removeEventFromMyActiveBoard,
+            openEditEvent = app::openEditEvent,
+            openFill = app::openFill,
+            deleteEvent = app::deleteUnitEvent,
+            showToast = app::showToast,
+            loadDetailResponders = YahpazAPI::fetchUnitEventDetailResponders,
+        )
+    }
+    UnitEventsContent(ui = ui, actions = actions)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun UnitEventsContent(ui: AppUiState, actions: UnitEventsActions) {
     val scope = rememberCoroutineScope()
     var query by remember { mutableStateOf("") }
     var detail by remember { mutableStateOf<EventListItem?>(null) }
@@ -157,7 +192,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
         catalogDropZone.contains(fingerInRoot)
 
     LaunchedEffect(ui.userId) {
-        if (ui.userId != null && ui.unitEvents.isEmpty()) app.reloadUnitEvents()
+        if (ui.userId != null && ui.unitEvents.isEmpty()) actions.reload()
     }
 
     fun tryOpenEdit(event: EventListItem): Boolean {
@@ -166,10 +201,10 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
             return false
         }
         if (isEventEditAgeLocked(event.createdAt, ui.roles)) {
-            app.showToast(EVENT_EDIT_LOCKED_TOOLTIP, StampTone.PENDING)
+            actions.showToast(EVENT_EDIT_LOCKED_TOOLTIP, StampTone.PENDING)
             return false
         }
-        app.openEditEvent(event.id)
+        actions.openEditEvent(event.id)
         return true
     }
 
@@ -236,7 +271,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
         pendingBoardIds = pendingBoardIds + eventId
         scope.launch {
             try {
-                app.removeEventFromMyActiveBoard(eventId)
+                actions.removeFromMyActive(eventId)
             } finally {
                 pendingBoardIds = pendingBoardIds - eventId
             }
@@ -248,7 +283,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
         pendingBoardIds = pendingBoardIds + eventId
         scope.launch {
             try {
-                app.addEventToMyActiveBoard(eventId)
+                actions.addToMyActive(eventId)
             } finally {
                 pendingBoardIds = pendingBoardIds - eventId
             }
@@ -260,7 +295,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
         onRefresh = {
             scope.launch {
                 refreshing = true
-                app.reloadUnitEvents()
+                actions.reload()
                 refreshing = false
             }
         },
@@ -275,12 +310,12 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                 .padding(top = 8.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            UnitEventsHeader(app = app, ui = ui, query = query, onQueryChange = { query = it })
+            UnitEventsHeader(actions = actions, ui = ui, query = query, onQueryChange = { query = it })
             when {
                 ui.unitEventsFailed -> EmptyState(
                     title = UNIT_EVENTS_LOAD_FAILED,
                     actionTitle = "רענון",
-                    onAction = { scope.launch { app.reloadUnitEvents() } },
+                    onAction = { scope.launch { actions.reload() } },
                 )
                 ui.unitEventsLoading && ui.unitEvents.isEmpty() && ui.myActiveUnitEvents.isEmpty() ->
                     LoadingBlock("טוען אירועים…")
@@ -507,7 +542,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                                 },
                                 onAction = when {
                                     trimmed.isNotEmpty() -> ({ query = "" })
-                                    olderHidden -> ({ app.setShowOlderUnitEvents(true) })
+                                    olderHidden -> ({ actions.setShowOlderUnitEvents(true) })
                                     else -> null
                                 },
                             )
@@ -537,7 +572,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
         LaunchedEffect(current.id) {
             expandedResponderIds = emptySet()
             detailRows = runCatching {
-                YahpazAPI.fetchUnitEventDetailResponders(current.id)
+                actions.loadDetailResponders(current.id)
             }.getOrNull()
         }
 
@@ -658,7 +693,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                         PrimaryButton(title = label, onClick = {
                             val id = current.id
                             detail = null
-                            app.openFill(id)
+                            actions.openFill(id)
                         })
                     }
                 }
@@ -703,10 +738,10 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                                 val id = current.id
                                 scope.launch {
                                     deleting = true
-                                    val error = app.deleteUnitEvent(id)
+                                    val error = actions.deleteEvent(id)
                                     deleting = false
                                     if (error != null) {
-                                        app.showToast(error, StampTone.PENDING)
+                                        actions.showToast(error, StampTone.PENDING)
                                         confirmDelete = false
                                     } else {
                                         detail = null
@@ -737,7 +772,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
 /** Pinned above the list, like the other tabs' title and search. */
 @Composable
 private fun UnitEventsHeader(
-    app: AppModel,
+    actions: UnitEventsActions,
     ui: AppUiState,
     query: String,
     onQueryChange: (String) -> Unit,
@@ -777,14 +812,14 @@ private fun UnitEventsHeader(
                     label = SHIFT_EVENTS_CHIP,
                     spokenLabel = SHOW_SHIFT_EVENTS_LABEL,
                     selected = ui.showShiftEvents,
-                    onSelectedChange = { app.setShowShiftEvents(it) },
+                    onSelectedChange = { actions.setShowShiftEvents(it) },
                 )
                 if (shouldApplyShiftLeadRecentWindow(ui.roles)) {
                     ScopeChip(
                         label = OLDER_EVENTS_CHIP,
                         spokenLabel = SHOW_OLDER_UNIT_EVENTS_LABEL,
                         selected = ui.showOlderUnitEvents,
-                        onSelectedChange = { app.setShowOlderUnitEvents(it) },
+                        onSelectedChange = { actions.setShowOlderUnitEvents(it) },
                     )
                 }
                 if (shouldFilterUnitEventsToOwnCreated(ui.roles)) {
@@ -792,7 +827,7 @@ private fun UnitEventsHeader(
                         label = OTHERS_EVENTS_CHIP,
                         spokenLabel = SHOW_OTHERS_CREATED_EVENTS_LABEL,
                         selected = ui.showOthersCreatedEvents,
-                        onSelectedChange = { app.setShowOthersCreatedEvents(it) },
+                        onSelectedChange = { actions.setShowOthersCreatedEvents(it) },
                     )
                 }
             }
