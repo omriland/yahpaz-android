@@ -72,6 +72,9 @@ object TypeScale {
         @Composable get() = TextStyle(fontFamily = plex, fontWeight = FontWeight.Normal, fontSize = 17.sp)
     val bodyStrong: TextStyle
         @Composable get() = TextStyle(fontFamily = plex, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+    /** Secondary lines under a title: date, place, a short notice. */
+    val meta: TextStyle
+        @Composable get() = TextStyle(fontFamily = plex, fontWeight = FontWeight.Normal, fontSize = 14.sp)
     val label: TextStyle
         @Composable get() = TextStyle(fontFamily = plex, fontWeight = FontWeight.Medium, fontSize = 13.sp, letterSpacing = 0.13.sp)
     val caption: TextStyle

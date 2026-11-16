@@ -9,15 +9,23 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.unit.LayoutDirection
 import com.github.takahirom.roborazzi.captureRoboImage
 import com.github.takahirom.roborazzi.captureScreenRoboImage
 import com.yahpz.domain.EventStatus
 import com.yahpz.domain.ParticipationStatus
+import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TestRule
 import org.junit.runner.RunWith
+import org.junit.runners.model.Statement
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
@@ -34,7 +42,18 @@ import java.time.temporal.ChronoUnit
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [35], qualifiers = "he-w411dp-h914dp-420dpi")
 class UnitEventsScreenshotTest {
-    @get:Rule
+    /** The test activity is registered only in debug (ui-test-manifest), so release skips. */
+    @get:Rule(order = 0)
+    val debugOnly = TestRule { base, _ ->
+        object : Statement() {
+            override fun evaluate() {
+                assumeTrue("screenshot tests run on the debug variant", BuildConfig.DEBUG)
+                base.evaluate()
+            }
+        }
+    }
+
+    @get:Rule(order = 1)
     val compose = createComposeRule()
 
     init {
@@ -45,6 +64,22 @@ class UnitEventsScreenshotTest {
     fun list() {
         render(UnitEventsFixtures.leadState())
         compose.onRoot().captureRoboImage("$OUT/list.png")
+    }
+
+    @Test
+    fun listScrolled() {
+        render(UnitEventsFixtures.leadState())
+        compose.onRoot().performTouchInput { swipeUp(startY = bottom * 0.9f, endY = top, durationMillis = 600) }
+        compose.waitForIdle()
+        compose.onRoot().captureRoboImage("$OUT/list-scrolled.png")
+    }
+
+    @Test
+    fun filtersSheet() {
+        render(UnitEventsFixtures.leadState())
+        compose.onNode(hasContentDescription("סינון", substring = true) and hasClickAction()).performClick()
+        compose.waitForIdle()
+        captureScreenRoboImage("$OUT/filters-sheet.png")
     }
 
     @Test
