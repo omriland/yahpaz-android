@@ -30,6 +30,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.time.Instant
+import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 
 /**
@@ -89,7 +90,7 @@ class UnitEventsScreenshotTest {
     }
 
     private fun render(ui: AppUiState) {
-        compose.setContent { YahpazTestTheme { Box(Modifier.fillMaxSize()) { UnitEventsContent(ui, UnitEventsFixtures.noOpActions) } } }
+        compose.setContent { YahpazTestTheme { Box(Modifier.fillMaxSize()) { UnitEventsContent(ui, UnitEventsFixtures.noOpActions, today = UnitEventsFixtures.TODAY) } } }
         compose.waitForIdle()
     }
 
@@ -119,6 +120,9 @@ fun YahpazTestTheme(content: @Composable () -> Unit) {
 
 object UnitEventsFixtures {
     const val VIEWER = "lead-omri"
+
+    /** Fixed so "היום" / "אתמול" render the same on any day. */
+    val TODAY: LocalDate = LocalDate.of(2026, 11, 16)
 
     private fun hoursAgo(h: Long) = Instant.now().minus(h, ChronoUnit.HOURS).toString()
 
@@ -249,12 +253,13 @@ object UnitEventsFixtures {
         shiftLead = otherLead,
     )
 
+    /** Dated three days back to show the older-date format. */
     private val shiftBorn = EventListItem(
         id = "e7",
-        eventDate = "2026-11-15",
+        eventDate = "2026-11-13",
         policeEventId = "4359",
-        startedAt = "2026-11-15T12:00:00+02:00",
-        endedAt = "2026-11-15T12:40:00+02:00",
+        startedAt = "2026-11-13T12:00:00+02:00",
+        endedAt = "2026-11-13T12:40:00+02:00",
         createdAt = hoursAgo(11),
         location = "מחלף חמד",
         status = EventStatus.DONE,
