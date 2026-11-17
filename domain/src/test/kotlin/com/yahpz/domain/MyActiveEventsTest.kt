@@ -8,7 +8,7 @@ import org.junit.Test
 class MyActiveEventsTest {
     @Test
     fun `empty active copy is the lead-facing line`() {
-        assertEquals("אין אירועים פעילים באחמו\"ש שלך", MY_ACTIVE_EVENTS_EMPTY)
+        assertEquals("אין אירועים פעילים באחמו״ש שלך", MY_ACTIVE_EVENTS_EMPTY)
     }
 
     @Test

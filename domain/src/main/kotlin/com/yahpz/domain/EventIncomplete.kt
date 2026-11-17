@@ -103,6 +103,18 @@ fun incompleteFieldLabels(fields: Set<IncompleteField>): List<String> =
 fun incompleteNoticeLabel(fields: Set<IncompleteField>): String =
     "חסרים: ${incompleteFieldLabels(fields).joinToString(" · ")}"
 
+/** Gaps only the אחמ״ש can close; responder km and hours stay with the status stamp. */
+private val LEAD_CARD_GAP_FIELDS = setOf(
+    IncompleteField.POLICE_EVENT_ID,
+    IncompleteField.PATROL_CALLSIGN,
+    IncompleteField.EVENT_TYPE,
+    IncompleteField.ROAD,
+)
+
+/** What the unit event card asks the lead to fill, in field order. */
+fun leadCardGapLabels(event: IncompleteEventSnapshot): List<String> =
+    incompleteFieldLabels(missingEventFields(event) intersect LEAD_CARD_GAP_FIELDS)
+
 fun incompleteLeadNoticeLabels(event: IncompleteEventSnapshot): List<String> {
     val missing = missingEventFields(event)
     val labels = incompleteFieldLabels(missing)

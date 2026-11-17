@@ -4,61 +4,65 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.outlined.AcUnit
+import androidx.compose.material.icons.outlined.AddCircleOutline
+import androidx.compose.material.icons.outlined.RemoveCircleOutline
+import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.FilterList
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInRoot
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.yahpz.domain.EVENT_DELETE_ACTION
@@ -71,12 +75,10 @@ import com.yahpz.domain.formatPatrolCallsign
 import com.yahpz.domain.isEventEditAgeLocked
 import com.yahpz.domain.resolvePatrolCallsign
 import com.yahpz.domain.MY_ACTIVE_ADD
-import com.yahpz.domain.MY_ACTIVE_DRAG_TO_ACTIVE
 import com.yahpz.domain.MY_ACTIVE_DRAG_TO_ADD
 import com.yahpz.domain.MY_ACTIVE_DROP_TO_ADD
 import com.yahpz.domain.MY_ACTIVE_EVENTS_EMPTY
 import com.yahpz.domain.MY_ACTIVE_EVENTS_TITLE
-import com.yahpz.domain.MY_ACTIVE_REMOVE
 import com.yahpz.domain.MY_ACTIVE_REMOVE_LOCKED
 import com.yahpz.domain.ParticipationStatus
 import com.yahpz.domain.StampTone
@@ -101,7 +103,6 @@ import com.yahpz.domain.mineParticipationStamp
 import com.yahpz.domain.participationStamp
 import com.yahpz.domain.plateDigits
 import com.yahpz.domain.visibleMyActiveIds
-import com.yahpz.domain.INCOMPLETE_EVENTS_HEADING
 import com.yahpz.domain.INCOMPLETE_NOTICE_MARK
 import com.yahpz.domain.SHIFT_LEAD_EVENTS_RECENT_CAPTION
 import com.yahpz.domain.SHIFT_LEAD_EVENTS_RECENT_EMPTY
@@ -111,12 +112,12 @@ import com.yahpz.domain.SHOW_SHIFT_EVENTS_LABEL
 import com.yahpz.domain.keepShiftLeadRecentEvent
 import com.yahpz.domain.shouldApplyShiftLeadRecentWindow
 import java.time.Instant
-import com.yahpz.domain.EVENT_ATTACHMENT_LABEL
-import androidx.compose.material.icons.outlined.AttachFile
+import java.time.LocalDate
+import java.time.ZoneId
 import com.yahpz.domain.filterShiftEvents
 import com.yahpz.domain.IncompleteField
 import com.yahpz.domain.LEAD_KM_VIEW_LABEL
-import com.yahpz.domain.incompleteLeadNoticeLabels
+import com.yahpz.domain.leadCardGapLabels
 import com.yahpz.domain.managesUnit
 import com.yahpz.domain.missingEventFields
 import com.yahpz.domain.RESPONDERS_HELD_FOR_POLICE_ID_NOTE
@@ -125,19 +126,59 @@ import com.yahpz.domain.responderCardShowsLeadKm
 import com.yahpz.domain.shouldFilterUnitEventsToOwnCreated
 import kotlinx.coroutines.launch
 
-private const val SCOPE_CHIPS_PREFIX = "הצג גם"
-private const val SHIFT_EVENTS_CHIP = "ממשמרות"
-private const val OLDER_EVENTS_CHIP = "ישנים יותר"
-private const val OTHERS_EVENTS_CHIP = "של אחרים"
+private const val FILTER_TITLE = "סינון"
+private const val FILTER_RESET = "איפוס"
+private const val UNIT_EVENTS_SECTION_TITLE = "אירועי היחידה"
+private const val MY_ACTIVE_REMOVE_SPOKEN = "הסרה מהפעילים"
+private val ISRAEL_ZONE: ZoneId = ZoneId.of("Asia/Jerusalem")
 
 private const val UNIT_EVENTS_CAPTION =
     "מציג 80 אירועים אחרונים - ניתן לחפש גם אירועים ישנים יותר"
 
 private enum class ActiveDragSource { ACTIVE, CATALOG }
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** Everything the events tab does to the app, so the UI can run on plain state (and in tests). */
+class UnitEventsActions(
+    val reload: suspend () -> Unit,
+    val setShowShiftEvents: (Boolean) -> Unit,
+    val setShowOlderUnitEvents: (Boolean) -> Unit,
+    val setShowOthersCreatedEvents: (Boolean) -> Unit,
+    val addToMyActive: suspend (eventId: String) -> Unit,
+    val removeFromMyActive: suspend (eventId: String) -> Unit,
+    val openEditEvent: (eventId: String) -> Unit,
+    val openFill: (eventId: String) -> Unit,
+    val deleteEvent: suspend (eventId: String) -> String?,
+    val showToast: (text: String, tone: StampTone) -> Unit,
+    val loadDetailResponders: suspend (eventId: String) -> UnitEventDetailRespondersWrap,
+)
+
 @Composable
 fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
+    val actions = remember(app) {
+        UnitEventsActions(
+            reload = app::reloadUnitEvents,
+            setShowShiftEvents = app::setShowShiftEvents,
+            setShowOlderUnitEvents = app::setShowOlderUnitEvents,
+            setShowOthersCreatedEvents = app::setShowOthersCreatedEvents,
+            addToMyActive = app::addEventToMyActiveBoard,
+            removeFromMyActive = app::removeEventFromMyActiveBoard,
+            openEditEvent = app::openEditEvent,
+            openFill = app::openFill,
+            deleteEvent = app::deleteUnitEvent,
+            showToast = app::showToast,
+            loadDetailResponders = YahpazAPI::fetchUnitEventDetailResponders,
+        )
+    }
+    UnitEventsContent(ui = ui, actions = actions)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun UnitEventsContent(
+    ui: AppUiState,
+    actions: UnitEventsActions,
+    today: LocalDate = LocalDate.now(ISRAEL_ZONE),
+) {
     val scope = rememberCoroutineScope()
     var query by remember { mutableStateOf("") }
     var detail by remember { mutableStateOf<EventListItem?>(null) }
@@ -157,7 +198,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
         catalogDropZone.contains(fingerInRoot)
 
     LaunchedEffect(ui.userId) {
-        if (ui.userId != null && ui.unitEvents.isEmpty()) app.reloadUnitEvents()
+        if (ui.userId != null && ui.unitEvents.isEmpty()) actions.reload()
     }
 
     fun tryOpenEdit(event: EventListItem): Boolean {
@@ -166,14 +207,16 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
             return false
         }
         if (isEventEditAgeLocked(event.createdAt, ui.roles)) {
-            app.showToast(EVENT_EDIT_LOCKED_TOOLTIP, StampTone.PENDING)
+            actions.showToast(EVENT_EDIT_LOCKED_TOOLTIP, StampTone.PENDING)
             return false
         }
-        app.openEditEvent(event.id)
+        actions.openEditEvent(event.id)
         return true
     }
 
     var pendingBoardIds by remember { mutableStateOf(setOf<String>()) }
+    var filtersOpen by remember { mutableStateOf(false) }
+    val filters = scopeFilters(ui, actions)
     val trimmed = query.trim()
     val pinnedIds = ui.myActiveEventPrefs.filter { it.kind == "pin" }.map { it.eventId }.toSet()
     val hiddenIds = ui.myActiveEventPrefs.filter { it.kind == "hide" }.map { it.eventId }.toSet()
@@ -236,7 +279,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
         pendingBoardIds = pendingBoardIds + eventId
         scope.launch {
             try {
-                app.removeEventFromMyActiveBoard(eventId)
+                actions.removeFromMyActive(eventId)
             } finally {
                 pendingBoardIds = pendingBoardIds - eventId
             }
@@ -248,7 +291,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
         pendingBoardIds = pendingBoardIds + eventId
         scope.launch {
             try {
-                app.addEventToMyActiveBoard(eventId)
+                actions.addToMyActive(eventId)
             } finally {
                 pendingBoardIds = pendingBoardIds - eventId
             }
@@ -260,7 +303,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
         onRefresh = {
             scope.launch {
                 refreshing = true
-                app.reloadUnitEvents()
+                actions.reload()
                 refreshing = false
             }
         },
@@ -273,14 +316,19 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                 .fillMaxSize()
                 .padding(horizontal = 16.dp)
                 .padding(top = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            UnitEventsHeader(app = app, ui = ui, query = query, onQueryChange = { query = it })
+            UnitEventsHeader(
+                query = query,
+                onQueryChange = { query = it },
+                activeFilterCount = filters.count { it.selected },
+                onOpenFilters = { filtersOpen = true },
+            )
             when {
                 ui.unitEventsFailed -> EmptyState(
                     title = UNIT_EVENTS_LOAD_FAILED,
                     actionTitle = "רענון",
-                    onAction = { scope.launch { app.reloadUnitEvents() } },
+                    onAction = { scope.launch { actions.reload() } },
                 )
                 ui.unitEventsLoading && ui.unitEvents.isEmpty() && ui.myActiveUnitEvents.isEmpty() ->
                     LoadingBlock("טוען אירועים…")
@@ -289,41 +337,25 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                         rememberScrollState(),
                         enabled = draggingId == null,
                     ),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .onGloballyPositioned { activeDropZone = it.boundsInRoot() }
-                            .then(
-                                if (dragSource == ActiveDragSource.CATALOG) {
-                                    Modifier
-                                        .border(
-                                            width = 2.dp,
-                                            color = if (overActiveDrop) FieldTheme.accent else FieldTheme.hairline,
-                                            shape = RoundedCornerShape(8.dp),
-                                        )
-                                        .background(
-                                            if (overActiveDrop) FieldTheme.accentSubtle else FieldTheme.page,
-                                            RoundedCornerShape(8.dp),
-                                        )
-                                        .padding(8.dp)
-                                } else {
-                                    Modifier
-                                },
-                            ),
+                            .then(dropZoneModifier(armed = dragSource == ActiveDragSource.CATALOG, over = overActiveDrop)),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Text(MY_ACTIVE_EVENTS_TITLE, style = TypeScale.section, color = FieldTheme.textPrimary)
-                        Text(
-                            when {
+                        SectionHeading(
+                            title = MY_ACTIVE_EVENTS_TITLE,
+                            count = activeEvents.size,
+                            // Drag hints only while dragging; the buttons on each card do the same job.
+                            subtitle = when {
                                 dragSource == ActiveDragSource.CATALOG && overActiveDrop -> MY_ACTIVE_DROP_TO_ADD
                                 dragSource == ActiveDragSource.CATALOG -> MY_ACTIVE_DRAG_TO_ADD
                                 activeEvents.isEmpty() -> MY_ACTIVE_EVENTS_EMPTY
-                                else -> "הסרה מהפעילים, או לחיצה ארוכה וגרירה לרשימה"
+                                else -> null
                             },
-                            style = TypeScale.caption,
-                            color = if (overActiveDrop) FieldTheme.accent else FieldTheme.textMuted,
+                            subtitleAccent = overActiveDrop,
                         )
                         if (activeEvents.isEmpty() && dragSource == ActiveDragSource.CATALOG) {
                             Spacer(Modifier.height(48.dp))
@@ -339,12 +371,20 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                             DraggableActiveEventRow(
                                 event = event,
                                 viewerId = viewerId,
+                                today = today,
                                 dragging = draggingId == event.id,
                                 dragOffset = if (draggingId == event.id) dragOffset else Offset.Zero,
-                                boardActionTitle = MY_ACTIVE_REMOVE,
-                                boardActionEnabled = canRemove && event.id !in pendingBoardIds,
-                                boardActionHint = if (canRemove) null else MY_ACTIVE_REMOVE_LOCKED,
-                                onBoardAction = { dismissFromActive(event.id) },
+                                boardActionAdds = false,
+                                boardActionEnabled = event.id !in pendingBoardIds,
+                                // A locked row keeps its button and says why on tap, instead of a hint line.
+                                boardActionMuted = !canRemove,
+                                onBoardAction = {
+                                    if (canRemove) {
+                                        dismissFromActive(event.id)
+                                    } else {
+                                        actions.showToast(MY_ACTIVE_REMOVE_LOCKED, StampTone.PENDING)
+                                    }
+                                },
                                 onOpen = { tryOpenEdit(event) },
                                 onDragStart = { startInRoot ->
                                     draggingId = event.id
@@ -370,93 +410,32 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                             )
                         }
                     }
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(24.dp))
+                    // One list: the unit's recent events, with ones missing details pinned first.
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .onGloballyPositioned { catalogDropZone = it.boundsInRoot() }
-                            .then(
-                                if (dragSource == ActiveDragSource.ACTIVE) {
-                                    Modifier
-                                        .border(
-                                            width = 2.dp,
-                                            color = if (overCatalogDrop) FieldTheme.accent else FieldTheme.hairline,
-                                            shape = RoundedCornerShape(8.dp),
-                                        )
-                                        .background(
-                                            if (overCatalogDrop) FieldTheme.accentSubtle else FieldTheme.page,
-                                            RoundedCornerShape(8.dp),
-                                        )
-                                        .padding(8.dp)
-                                } else {
-                                    Modifier
-                                },
-                            ),
+                            .then(dropZoneModifier(armed = dragSource == ActiveDragSource.ACTIVE, over = overCatalogDrop)),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        if (dragSource == ActiveDragSource.ACTIVE) {
-                            Text(
-                                if (overCatalogDrop) "שחררו כאן להסרה מהפעילים" else "גררו לכאן להסרה מהפעילים",
-                                style = TypeScale.caption,
-                                color = if (overCatalogDrop) FieldTheme.accent else FieldTheme.textMuted,
-                            )
-                        }
+                        SectionHeading(
+                            title = UNIT_EVENTS_SECTION_TITLE,
+                            count = events.size,
+                            subtitle = when {
+                                dragSource == ActiveDragSource.ACTIVE && overCatalogDrop -> "שחררו כאן להסרה מהפעילים"
+                                dragSource == ActiveDragSource.ACTIVE -> "גררו לכאן להסרה מהפעילים"
+                                events.isNotEmpty() -> catalogCaption
+                                else -> null
+                            },
+                            subtitleAccent = overCatalogDrop,
+                        )
                         if (events.isNotEmpty()) {
-                            Text(
-                                catalogCaption,
-                                style = TypeScale.caption,
-                                color = FieldTheme.textMuted,
-                            )
-                            Text(
-                                MY_ACTIVE_DRAG_TO_ACTIVE,
-                                style = TypeScale.caption,
-                                color = FieldTheme.textMuted,
-                            )
-                            if (incompleteEvents.isNotEmpty()) {
-                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text(
-                                        INCOMPLETE_EVENTS_HEADING,
-                                        style = TypeScale.label,
-                                        color = FieldTheme.textSecondary,
-                                    )
-                                    incompleteEvents.forEach { event ->
-                                        CatalogEventRow(
-                                            event = event,
-                                            viewerId = viewerId,
-                                            draggingId = draggingId,
-                                            dragOffset = dragOffset,
-                                            pendingBoardIds = pendingBoardIds,
-                                            onAddToActive = { addToActive(event.id) },
-                                            onOpen = { detail = event },
-                                            onDragStart = { startInRoot ->
-                                                draggingId = event.id
-                                                dragSource = ActiveDragSource.CATALOG
-                                                dragOffset = Offset.Zero
-                                                fingerInRoot = startInRoot
-                                            },
-                                            onDrag = { amount ->
-                                                dragOffset += amount
-                                                fingerInRoot += amount
-                                            },
-                                            onDragEnd = {
-                                                if (overActiveDrop) addToActive(event.id)
-                                                draggingId = null
-                                                dragSource = null
-                                                dragOffset = Offset.Zero
-                                            },
-                                            onDragCancel = {
-                                                draggingId = null
-                                                dragSource = null
-                                                dragOffset = Offset.Zero
-                                            },
-                                        )
-                                    }
-                                }
-                            }
-                            restEvents.forEach { event ->
+                            (incompleteEvents + restEvents).forEach { event ->
                                 CatalogEventRow(
                                     event = event,
                                     viewerId = viewerId,
+                                    today = today,
                                     draggingId = draggingId,
                                     dragOffset = dragOffset,
                                     pendingBoardIds = pendingBoardIds,
@@ -486,11 +465,6 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                                 )
                             }
                         } else if (dragSource == ActiveDragSource.ACTIVE) {
-                            Text(
-                                catalogCaption,
-                                style = TypeScale.caption,
-                                color = FieldTheme.textMuted,
-                            )
                             Spacer(Modifier.height(48.dp))
                         } else {
                             val olderHidden = applyRecentWindow && catalog.isNotEmpty()
@@ -500,6 +474,8 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                                     olderHidden -> SHIFT_LEAD_EVENTS_RECENT_EMPTY
                                     else -> "אין אירועים להצגה"
                                 },
+                                // Says what this list covers, so an empty list does not read as broken.
+                                caption = if (trimmed.isEmpty()) catalogCaption else null,
                                 actionTitle = when {
                                     trimmed.isNotEmpty() -> "ניקוי חיפוש"
                                     olderHidden -> SHOW_OLDER_UNIT_EVENTS_LABEL
@@ -507,7 +483,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                                 },
                                 onAction = when {
                                     trimmed.isNotEmpty() -> ({ query = "" })
-                                    olderHidden -> ({ app.setShowOlderUnitEvents(true) })
+                                    olderHidden -> ({ actions.setShowOlderUnitEvents(true) })
                                     else -> null
                                 },
                             )
@@ -537,7 +513,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
         LaunchedEffect(current.id) {
             expandedResponderIds = emptySet()
             detailRows = runCatching {
-                YahpazAPI.fetchUnitEventDetailResponders(current.id)
+                actions.loadDetailResponders(current.id)
             }.getOrNull()
         }
 
@@ -658,7 +634,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                         PrimaryButton(title = label, onClick = {
                             val id = current.id
                             detail = null
-                            app.openFill(id)
+                            actions.openFill(id)
                         })
                     }
                 }
@@ -703,10 +679,10 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
                                 val id = current.id
                                 scope.launch {
                                     deleting = true
-                                    val error = app.deleteUnitEvent(id)
+                                    val error = actions.deleteEvent(id)
                                     deleting = false
                                     if (error != null) {
-                                        app.showToast(error, StampTone.PENDING)
+                                        actions.showToast(error, StampTone.PENDING)
                                         confirmDelete = false
                                     } else {
                                         detail = null
@@ -732,69 +708,116 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
     if (assignedEditBlocked) {
         AssignedVolunteerEditBlockedSheet(onDismiss = { assignedEditBlocked = false })
     }
+
+    if (filtersOpen) {
+        UnitEventsFilterSheet(filters = filters, onDismiss = { filtersOpen = false })
+    }
 }
 
-/** Pinned above the list, like the other tabs' title and search. */
+/** Outline that marks a board as a drop target while a card is dragged. */
+private fun dropZoneModifier(armed: Boolean, over: Boolean): Modifier {
+    if (!armed) return Modifier
+    val shape = RoundedCornerShape(8.dp)
+    return Modifier
+        .border(width = 2.dp, color = if (over) FieldTheme.accent else FieldTheme.hairline, shape = shape)
+        .background(if (over) FieldTheme.accentSubtle else FieldTheme.page, shape)
+        .padding(8.dp)
+}
+
+/** Section title with its count, and one optional line under it. */
+@Composable
+private fun SectionHeading(title: String, count: Int, subtitle: String?, subtitleAccent: Boolean = false) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+            if (count > 0) "$title · $count" else title,
+            style = TypeScale.section,
+            color = FieldTheme.textPrimary,
+        )
+        subtitle?.let {
+            Text(
+                it,
+                style = TypeScale.meta,
+                color = if (subtitleAccent) FieldTheme.accent else FieldTheme.textSecondary,
+            )
+        }
+    }
+}
+
+/** One scope toggle in the סינון sheet. Each one widens the list. */
+private class ScopeFilter(val label: String, val selected: Boolean, val onChange: (Boolean) -> Unit)
+
+/** The scope toggles this viewer's roles allow, in sheet order. */
+private fun scopeFilters(ui: AppUiState, actions: UnitEventsActions): List<ScopeFilter> = buildList {
+    add(ScopeFilter(SHOW_SHIFT_EVENTS_LABEL, ui.showShiftEvents, actions.setShowShiftEvents))
+    if (shouldApplyShiftLeadRecentWindow(ui.roles)) {
+        add(ScopeFilter(SHOW_OLDER_UNIT_EVENTS_LABEL, ui.showOlderUnitEvents, actions.setShowOlderUnitEvents))
+    }
+    if (shouldFilterUnitEventsToOwnCreated(ui.roles)) {
+        add(ScopeFilter(SHOW_OTHERS_CREATED_EVENTS_LABEL, ui.showOthersCreatedEvents, actions.setShowOthersCreatedEvents))
+    }
+}
+
+/** Pinned above the list: title, then search and סינון on one row. */
 @Composable
 private fun UnitEventsHeader(
-    app: AppModel,
-    ui: AppUiState,
     query: String,
     onQueryChange: (String) -> Unit,
+    activeFilterCount: Int,
+    onOpenFilters: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("אירועים", style = TypeScale.title, color = FieldTheme.textPrimary)
-        Column {
-            SearchField(
-                value = query,
-                onValueChange = onQueryChange,
-                placeholder = "אירוע, כביש, מיקום או אחמ״ש",
-            )
-            // Bleeds through the screen's 16dp gutter so chips scroll off the edge, not at the margin.
-            Row(
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Box(Modifier.weight(1f)) {
+                SearchField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    placeholder = "אירוע, כביש, מיקום או אחמ״ש",
+                )
+            }
+            FilterButton(activeCount = activeFilterCount, onClick = onOpenFilters)
+        }
+    }
+}
+
+@Composable
+private fun FilterButton(activeCount: Int, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(24.dp)
+    val active = activeCount > 0
+    Row(
+        modifier = Modifier
+            .heightIn(min = 48.dp)
+            .clip(shape)
+            // Active reads as a soft filled (tonal) button; idle as an outlined one.
+            .background(if (active) FieldTheme.accentSubtle else FieldTheme.raised)
+            .then(if (active) Modifier else Modifier.border(1.dp, FieldTheme.strong, shape))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp)
+            .clearAndSetSemantics {
+                contentDescription = if (active) "$FILTER_TITLE, $activeCount פעילים" else FILTER_TITLE
+                role = Role.Button
+            },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(
+            Icons.Outlined.FilterList,
+            contentDescription = null,
+            tint = if (active) FieldTheme.accent else FieldTheme.textSecondary,
+            modifier = Modifier.size(20.dp),
+        )
+        Text(FILTER_TITLE, style = TypeScale.label, color = if (active) FieldTheme.accent else FieldTheme.textPrimary)
+        if (active) {
+            Box(
                 modifier = Modifier
-                    .layout { measurable, constraints ->
-                        val gutter = 16.dp.roundToPx()
-                        val placeable = measurable.measure(
-                            constraints.copy(maxWidth = constraints.maxWidth + 2 * gutter),
-                        )
-                        layout(constraints.maxWidth, placeable.height) { placeable.place(-gutter, 0) }
-                    }
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    .size(20.dp)
+                    .background(FieldTheme.accent, CircleShape),
+                contentAlignment = Alignment.Center,
             ) {
-                // Every chip widens the list, while a filter chip usually narrows it. This says so.
-                // TalkBack gets the same meaning from each chip's full label.
-                Text(
-                    SCOPE_CHIPS_PREFIX,
-                    style = TypeScale.label,
-                    color = FieldTheme.textSecondary,
-                    modifier = Modifier.clearAndSetSemantics {},
-                )
-                ScopeChip(
-                    label = SHIFT_EVENTS_CHIP,
-                    spokenLabel = SHOW_SHIFT_EVENTS_LABEL,
-                    selected = ui.showShiftEvents,
-                    onSelectedChange = { app.setShowShiftEvents(it) },
-                )
-                if (shouldApplyShiftLeadRecentWindow(ui.roles)) {
-                    ScopeChip(
-                        label = OLDER_EVENTS_CHIP,
-                        spokenLabel = SHOW_OLDER_UNIT_EVENTS_LABEL,
-                        selected = ui.showOlderUnitEvents,
-                        onSelectedChange = { app.setShowOlderUnitEvents(it) },
-                    )
-                }
-                if (shouldFilterUnitEventsToOwnCreated(ui.roles)) {
-                    ScopeChip(
-                        label = OTHERS_EVENTS_CHIP,
-                        spokenLabel = SHOW_OTHERS_CREATED_EVENTS_LABEL,
-                        selected = ui.showOthersCreatedEvents,
-                        onSelectedChange = { app.setShowOthersCreatedEvents(it) },
-                    )
-                }
+                Text("$activeCount", style = TypeScale.label, color = FieldTheme.textOnAccent)
             }
         }
     }
@@ -802,55 +825,76 @@ private fun UnitEventsHeader(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ScopeChip(
-    label: String,
-    spokenLabel: String,
-    selected: Boolean,
-    onSelectedChange: (Boolean) -> Unit,
-) {
-    FilterChip(
-        selected = selected,
-        onClick = { onSelectedChange(!selected) },
-        label = {
-            Text(
-                label,
-                style = TypeScale.label,
-                maxLines = 1,
-                // On the label, not the chip: on the chip TalkBack would read both strings.
-                modifier = Modifier.semantics { contentDescription = spokenLabel },
-            )
-        },
-        leadingIcon = if (selected) {
-            {
-                Icon(
-                    Icons.Filled.Check,
-                    contentDescription = null,
-                    modifier = Modifier.size(FilterChipDefaults.IconSize),
+private fun UnitEventsFilterSheet(filters: List<ScopeFilter>, onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = FieldTheme.raised) {
+        Column(
+            modifier = Modifier
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    FILTER_TITLE,
+                    style = TypeScale.section,
+                    color = FieldTheme.textPrimary,
+                    modifier = Modifier.weight(1f),
                 )
+                if (filters.any { it.selected }) {
+                    TextButton(
+                        onClick = { filters.filter { it.selected }.forEach { it.onChange(false) } },
+                        modifier = Modifier.heightIn(min = 48.dp),
+                    ) {
+                        Text(FILTER_RESET, style = TypeScale.label, color = FieldTheme.accent)
+                    }
+                }
             }
-        } else {
-            null
-        },
-        colors = FilterChipDefaults.filterChipColors(
-            containerColor = FieldTheme.raised,
-            labelColor = FieldTheme.textPrimary,
-            selectedContainerColor = FieldTheme.accentSubtle,
-            selectedLabelColor = FieldTheme.accent,
-            selectedLeadingIconColor = FieldTheme.accent,
-        ),
-        border = FilterChipDefaults.filterChipBorder(
-            enabled = true,
-            selected = selected,
-            borderColor = FieldTheme.strong,
-            selectedBorderColor = FieldTheme.accent,
-        ),
-    )
+            filters.forEach { filter ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 56.dp)
+                        .toggleable(
+                            value = filter.selected,
+                            role = Role.Switch,
+                            onValueChange = filter.onChange,
+                        ),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        filter.label,
+                        style = TypeScale.body,
+                        color = FieldTheme.textPrimary,
+                        modifier = Modifier.weight(1f),
+                    )
+                    // The row owns the toggle, so the switch itself is not a second target.
+                    Switch(
+                        checked = filter.selected,
+                        onCheckedChange = null,
+                        colors = SwitchDefaults.colors(
+                            checkedTrackColor = FieldTheme.accent,
+                            checkedThumbColor = FieldTheme.textOnAccent,
+                            uncheckedTrackColor = FieldTheme.sunken,
+                            uncheckedThumbColor = FieldTheme.textMuted,
+                            uncheckedBorderColor = FieldTheme.strong,
+                        ),
+                    )
+                }
+            }
+            PrimaryButton(title = "סגירה", onClick = onDismiss)
+        }
+    }
 }
 
 @Composable
 private fun CatalogEventRow(
     event: EventListItem,
     viewerId: String?,
+    today: LocalDate,
     draggingId: String?,
     dragOffset: Offset,
     pendingBoardIds: Set<String>,
@@ -864,11 +908,12 @@ private fun CatalogEventRow(
     DraggableActiveEventRow(
         event = event,
         viewerId = viewerId,
+        today = today,
         dragging = draggingId == event.id,
         dragOffset = if (draggingId == event.id) dragOffset else Offset.Zero,
-        boardActionTitle = MY_ACTIVE_ADD,
+        boardActionAdds = true,
         boardActionEnabled = event.id !in pendingBoardIds,
-        boardActionHint = null,
+        boardActionMuted = false,
         onBoardAction = onAddToActive,
         onOpen = onOpen,
         onDragStart = onDragStart,
@@ -882,11 +927,12 @@ private fun CatalogEventRow(
 private fun DraggableActiveEventRow(
     event: EventListItem,
     viewerId: String?,
+    today: LocalDate,
     dragging: Boolean,
     dragOffset: Offset,
-    boardActionTitle: String,
+    boardActionAdds: Boolean,
     boardActionEnabled: Boolean,
-    boardActionHint: String?,
+    boardActionMuted: Boolean,
     onBoardAction: () -> Unit,
     onOpen: () -> Unit,
     onDragStart: (startInRoot: Offset) -> Unit,
@@ -929,16 +975,13 @@ private fun DraggableActiveEventRow(
         UnitEventRow(
             event = event,
             viewerId = viewerId,
+            today = today,
             enabled = !dragging,
-            boardActionTitle = boardActionTitle,
+            boardActionAdds = boardActionAdds,
             boardActionEnabled = boardActionEnabled && !dragging,
-            boardActionHint = boardActionHint,
+            boardActionMuted = boardActionMuted,
             onBoardAction = onBoardAction,
             onOpen = onOpen,
-            incompleteFields = incompleteLeadNoticeLabels(event.asIncompleteSnapshot()),
-            incompleteSpoken = incompleteLeadNoticeLabels(event.asIncompleteSnapshot()).let { labels ->
-                if (labels.isEmpty()) "" else "חסרים: ${labels.joinToString(" · ")}"
-            },
         )
     }
 }
@@ -1091,165 +1134,181 @@ private fun unitEventStamp(event: EventListItem, viewerId: String?): StampDescri
     }
 }
 
+/**
+ * Three short rows: title + status, when · where + one action, and a strip only
+ * when the lead must act. Police id, leads, responders and attachments live in
+ * the detail sheet / edit form.
+ */
 @Composable
 private fun UnitEventRow(
     event: EventListItem,
-    enabled: Boolean = true,
-    boardActionTitle: String? = null,
-    boardActionEnabled: Boolean = false,
-    boardActionHint: String? = null,
-    onBoardAction: (() -> Unit)? = null,
+    enabled: Boolean,
+    boardActionAdds: Boolean,
+    boardActionEnabled: Boolean,
+    boardActionMuted: Boolean,
+    onBoardAction: () -> Unit,
     onOpen: () -> Unit,
-    incompleteFields: List<String> = emptyList(),
-    incompleteSpoken: String = "",
-    viewerId: String? = null,
+    viewerId: String?,
+    today: LocalDate,
 ) {
     val stamp = unitEventStamp(event, viewerId)
-    val incomplete = incompleteFields.isNotEmpty()
-    val cardShape = RoundedCornerShape(8.dp)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 44.dp)
-            .height(IntrinsicSize.Min)
-            .clip(cardShape)
-            .background(FieldTheme.raised)
-            .border(1.dp, FieldTheme.hairline, cardShape)
-            .clickable(enabled = enabled, onClick = onOpen),
-    ) {
-        if (incomplete) {
-            Box(
-                Modifier
-                    .width(3.dp)
-                    .fillMaxHeight()
-                    .background(FieldTheme.alert),
-            )
-        }
-        Column(Modifier.weight(1f).padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        if (event.freeze.isFrozen) {
-                            FrozenEventMark(event.freeze)
-                        }
-                        Text(
-                            event.typeLabel.ifEmpty { "אירוע" },
-                            style = TypeScale.section,
-                            color = FieldTheme.textPrimary,
-                        )
-                    }
-                    Text(
-                        listOfNotNull(
-                            formatDate(event.eventDate),
-                            event.policeEventId?.takeIf { it.isNotEmpty() },
-                            event.road?.name?.takeIf { it.isNotEmpty() },
-                            event.location?.takeIf { it.isNotEmpty() },
-                        ).joinToString(" · "),
-                        style = TypeScale.caption,
-                        color = FieldTheme.textMuted,
-                    )
-                    event.leadsCaption().takeIf { it.isNotEmpty() }?.let { lead ->
-                        Text("אחמ״ש: $lead", style = TypeScale.caption, color = FieldTheme.textMuted)
-                    }
-                }
-                Column(horizontalAlignment = Alignment.End) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        if (event.hasImage) {
-                            Icon(
-                                Icons.Outlined.AttachFile,
-                                contentDescription = EVENT_ATTACHMENT_LABEL,
-                                tint = FieldTheme.textSecondary,
-                                modifier = Modifier.size(20.dp),
-                            )
-                        }
-                        StampChip(stamp)
-                    }
-                    if (boardActionTitle != null && onBoardAction != null) {
-                        TextButton(
-                            onClick = onBoardAction,
-                            enabled = boardActionEnabled,
-                            modifier = Modifier.heightIn(min = 44.dp),
-                        ) {
-                            Text(
-                                boardActionTitle,
-                                style = TypeScale.bodyStrong,
-                                color = if (boardActionEnabled) FieldTheme.accent else FieldTheme.textMuted,
-                            )
-                        }
-                        boardActionHint?.let { hint ->
-                            Text(hint, style = TypeScale.caption, color = FieldTheme.textMuted)
-                        }
-                    }
-                }
-            }
-            val pending = event.responders.count { it.status != ParticipationStatus.DONE }
-            if (event.responders.isNotEmpty()) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "${event.responders.size} מתנדבים · $pending ממתינים לתיעוד",
-                    style = TypeScale.caption,
-                    color = FieldTheme.textSecondary,
-                )
-            }
-            if (incomplete) {
-                IncompleteFieldsNotice(fields = incompleteFields, spoken = incompleteSpoken)
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun IncompleteFieldsNotice(fields: List<String>, spoken: String) {
-    if (fields.isEmpty()) return
+    val cancelled = event.isCancelled
+    val attention = if (cancelled) null else eventAttention(event)
+    val shape = RoundedCornerShape(8.dp)
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 8.dp)
-            .semantics { contentDescription = spoken },
+            .clip(shape)
+            .background(FieldTheme.raised)
+            .border(1.dp, FieldTheme.hairline, shape)
+            .clickable(enabled = enabled, onClick = onOpen)
+            // The action's 48dp target supplies the bottom inset when there is no strip.
+            .padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = if (attention != null) 12.dp else 0.dp),
     ) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(FieldTheme.hairline),
-        )
-        FlowRow(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.Top,
         ) {
             Text(
-                INCOMPLETE_NOTICE_MARK,
-                style = TypeScale.label,
-                color = FieldTheme.partialOnTint,
+                event.typeLabel.ifEmpty { "אירוע" },
+                style = TypeScale.section,
+                color = if (cancelled) FieldTheme.textSecondary else FieldTheme.textPrimary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
             )
-            fields.forEach { label ->
-                Text(
-                    label,
-                    style = TypeScale.caption,
-                    color = FieldTheme.textPrimary,
-                    modifier = Modifier.drawBehind {
-                        val stroke = 1.5.dp.toPx()
-                        drawLine(
-                            color = FieldTheme.partial,
-                            start = Offset(0f, size.height),
-                            end = Offset(size.width, size.height),
-                            strokeWidth = stroke,
-                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 3.dp.toPx())),
-                        )
+            // Nudged to sit on the title's first line.
+            StatusPill(stamp, modifier = Modifier.padding(top = 2.dp))
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                listOfNotNull(
+                    eventWhenLabel(event.eventDate, event.startedAt, today),
+                    event.road?.name?.takeIf { it.isNotBlank() },
+                    event.location?.takeIf { it.isNotBlank() },
+                ).joinToString(" · "),
+                style = TypeScale.meta,
+                color = if (cancelled) FieldTheme.textMuted else FieldTheme.textSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            val interaction = remember { MutableInteractionSource() }
+            val pressed by interaction.collectIsPressedAsState()
+            // Offset toward the end so the glyph lines up with the pill above, not the touch box.
+            IconButton(
+                onClick = onBoardAction,
+                enabled = boardActionEnabled,
+                interactionSource = interaction,
+                modifier = Modifier.offset(x = 12.dp),
+            ) {
+                Icon(
+                    if (boardActionAdds) Icons.Outlined.AddCircleOutline else Icons.Outlined.RemoveCircleOutline,
+                    contentDescription = if (boardActionAdds) MY_ACTIVE_ADD else MY_ACTIVE_REMOVE_SPOKEN,
+                    // Neutral at rest so the card's title leads; "+" takes the accent only while pressed.
+                    tint = when {
+                        !boardActionEnabled || boardActionMuted || cancelled -> FieldTheme.textSecondary.copy(alpha = 0.38f)
+                        boardActionAdds && pressed -> FieldTheme.accent
+                        else -> FieldTheme.textSecondary
                     },
                 )
             }
         }
+        attention?.let { EventAttentionStrip(it) }
+    }
+}
+
+/** Calm status: the stamp's label in the app's label style on a soft tint, no border. */
+@Composable
+private fun StatusPill(stamp: StampDescriptor, modifier: Modifier = Modifier) {
+    val (ink, tint) = when (stamp.tone) {
+        StampTone.DONE -> FieldTheme.done to FieldTheme.doneTint
+        StampTone.PARTIAL -> FieldTheme.partialOnTint to FieldTheme.partialTint
+        StampTone.PENDING -> FieldTheme.accent to FieldTheme.accentSubtle
+        StampTone.DRAFT -> FieldTheme.textSecondary to FieldTheme.sunken
+        StampTone.ALERT -> FieldTheme.alert to FieldTheme.alertTint
+    }
+    Text(
+        stamp.label,
+        style = TypeScale.label,
+        color = ink,
+        maxLines = 1,
+        modifier = modifier
+            .background(tint, RoundedCornerShape(12.dp))
+            .padding(horizontal = 8.dp, vertical = 2.dp),
+    )
+}
+
+/**
+ * Card date for this list only: "היום 07:40", "אתמול 22:30", "15.11 · 18:10",
+ * with the year only when it is not this year. The shared formatDate stays as is.
+ */
+internal fun eventWhenLabel(eventDate: String, startedAt: String?, today: LocalDate): String {
+    val day = runCatching { LocalDate.parse(eventDate.take(10)) }.getOrNull()
+    val time = formatTime(startedAt)
+    val dayLabel = when {
+        day == null -> eventDate
+        day == today -> "היום"
+        day == today.minusDays(1) -> "אתמול"
+        day.year == today.year -> "${twoDigits(day.dayOfMonth)}.${twoDigits(day.monthValue)}"
+        else -> formatDate(eventDate)
+    }
+    if (time == null) return dayLabel
+    return if (day == today || day == today.minusDays(1)) "$dayLabel $time" else "$dayLabel · $time"
+}
+
+private fun twoDigits(n: Int) = n.toString().padStart(2, '0')
+
+private const val FROZEN_SHORT_LABEL = "מוקפא, ממתין לאישור מנהל"
+
+private class EventAttention(val text: String, val spoken: String, val frozen: Boolean)
+
+/**
+ * The strip means "you need to act": frozen first, then gaps only the lead can
+ * close. Responder km and hours are left to the status pill.
+ */
+private fun eventAttention(event: EventListItem): EventAttention? {
+    val gaps = leadCardGapLabels(event.asIncompleteSnapshot())
+    val frozenTip = event.freeze.tooltipHe
+    if (gaps.isEmpty() && frozenTip == null) return null
+    val missing = gaps.takeIf { it.isNotEmpty() }?.joinToString(", ")
+    return EventAttention(
+        text = listOfNotNull(
+            frozenTip?.let { FROZEN_SHORT_LABEL },
+            missing?.let { "$INCOMPLETE_NOTICE_MARK $it" },
+        ).joinToString(" · "),
+        spoken = listOfNotNull(frozenTip, missing?.let { "חסרים: $it" }).joinToString(". "),
+        frozen = frozenTip != null,
+    )
+}
+
+@Composable
+private fun EventAttentionStrip(attention: EventAttention) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(FieldTheme.partialTint, RoundedCornerShape(8.dp))
+            .padding(horizontal = 8.dp, vertical = 6.dp)
+            .clearAndSetSemantics { contentDescription = attention.spoken },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(
+            if (attention.frozen) Icons.Outlined.AcUnit else Icons.Outlined.ErrorOutline,
+            contentDescription = null,
+            tint = FieldTheme.partialOnTint,
+            modifier = Modifier.size(18.dp),
+        )
+        Text(
+            attention.text,
+            style = TypeScale.meta,
+            color = FieldTheme.partialOnTint,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
