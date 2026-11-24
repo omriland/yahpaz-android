@@ -245,6 +245,9 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.Headers
 import com.yahpz.domain.PhotoCoveragePlate
+import com.yahpz.domain.PendingMediaLink
+import com.yahpz.domain.MediaPlateOwner
+import com.yahpz.domain.resolvePlateDigits
 import com.yahpz.domain.unlinkedOwnPhotoCount
 import com.yahpz.domain.coveredPlateDigits
 import kotlinx.coroutines.CancellationException
@@ -2833,7 +2836,7 @@ object YahpazAPI {
     }
 
     suspend fun listEventMediaPlates(eventId: String): List<EventMediaPlateOption> {
-        val plateSelect = "id, plate_number, model, color, logo_slug"
+        val plateSelect = "id, plate_number, model, color, logo_slug, event_responder_id, event_id"
         val eventKeyed = runCatching {
             client.from("event_treated_plates").select(Columns.raw(plateSelect)) {
                 filter { eq("event_id", eventId) }
@@ -2937,6 +2940,38 @@ object YahpazAPI {
             EventMediaWriteResult.Done
         } catch (error: Exception) {
             EventMediaWriteResult.Error(mapEventMediaError(error.message))
+        }
+    }
+
+    /**
+     * Links photos to vehicles the form has now saved. Returns the links still
+     * waiting (no saved row yet, or the write failed). Mirrors web linkPendingMedia.
+     */
+    suspend fun linkPendingMedia(
+        eventId: String,
+        links: List<PendingMediaLink>,
+        owner: MediaPlateOwner?,
+    ): List<PendingMediaLink> {
+        if (links.isEmpty()) return emptyList()
+        val plates = listEventMediaPlates(eventId)
+        val waiting = mutableListOf<PendingMediaLink>()
+        val rows = mutableListOf<EventMediaPlateWrite>()
+        for (link in links) {
+            val resolved = resolvePlateDigits(plates, link.digits, owner)
+            resolved.ids.forEach { rows += EventMediaPlateWrite(mediaId = link.mediaId, treatedPlateId = it) }
+            if (resolved.missing.isNotEmpty()) waiting += PendingMediaLink(link.mediaId, resolved.missing)
+        }
+        if (rows.isEmpty()) return waiting
+        return try {
+            client.from("event_media_plates").upsert(rows) {
+                onConflict = "media_id,treated_plate_id"
+                ignoreDuplicates = true
+            }
+            waiting
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            links
         }
     }
 
@@ -3163,6 +3198,8 @@ private fun EventMediaPlateOptionRow.toOption(): EventMediaPlateOption? {
         model = model,
         color = color,
         logoSlug = logoSlug,
+        eventResponderId = eventResponderId,
+        eventId = eventId,
     )
 }
 
