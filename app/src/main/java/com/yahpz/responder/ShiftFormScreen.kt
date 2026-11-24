@@ -1,9 +1,27 @@
 package com.yahpz.responder
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.rememberTimePickerState
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
@@ -27,6 +45,13 @@ import com.yahpz.domain.SHIFT_ASSIGN_EMPTY
 import com.yahpz.domain.SHIFT_ASSIGN_OPEN
 import com.yahpz.domain.SHIFT_EDIT_LOAD_FAILED
 import com.yahpz.domain.SHIFT_EDIT_TITLE
+import com.yahpz.domain.SHIFT_END_TIME_LABEL
+import com.yahpz.domain.SHIFT_START_TIME_LABEL
+import com.yahpz.domain.SHIFT_TIME_PICKER_CANCEL
+import com.yahpz.domain.SHIFT_TIME_PICKER_CONFIRM
+import com.yahpz.domain.SHIFT_TIME_PLACEHOLDER
+import com.yahpz.domain.ShiftHours
+import com.yahpz.domain.fillDefaultShiftHours
 import com.yahpz.domain.SHIFT_KIND_ORDER
 import com.yahpz.domain.SHIFT_NEW_TITLE
 import com.yahpz.domain.SHIFT_SAVE_TITLE
@@ -61,6 +86,9 @@ fun ShiftFormScreen(
     var shiftKind by remember { mutableStateOf("") }
     var vehicleType by remember { mutableStateOf("") }
     var personalVehicleId by remember { mutableStateOf<String?>(null) }
+    var startTime by remember { mutableStateOf("") }
+    var endTime by remember { mutableStateOf("") }
+    var isLegacy by remember { mutableStateOf(false) }
     var notes by remember { mutableStateOf("") }
     var responderIds by remember { mutableStateOf(emptyList<String>()) }
     var crewVehicles by remember { mutableStateOf(emptyList<CrewVehicleRow>()) }
@@ -84,6 +112,9 @@ fun ShiftFormScreen(
         notes = notes,
         responderIds = responderIds,
         personalVehicleId = personalVehicleId,
+        startTime = startTime,
+        endTime = endTime,
+        isLegacy = isLegacy,
     )
 
     LaunchedEffect(ui.userId) {
@@ -98,6 +129,8 @@ fun ShiftFormScreen(
                 shiftKind = stashed.draft.shiftKind
                 vehicleType = stashed.draft.vehicleType
                 personalVehicleId = stashed.draft.personalVehicleId
+                startTime = stashed.draft.startTime
+                endTime = stashed.draft.endTime
                 notes = stashed.draft.notes
                 responderIds = stashed.draft.responderIds
             }
@@ -115,6 +148,9 @@ fun ShiftFormScreen(
             shiftKind = draft.shiftKind
             vehicleType = draft.vehicleType
             personalVehicleId = draft.personalVehicleId
+            startTime = draft.startTime
+            endTime = draft.endTime
+            isLegacy = draft.isLegacy
             notes = draft.notes
             responderIds = draft.responderIds
             persistedDraft = draft
@@ -243,9 +279,27 @@ fun ShiftFormScreen(
                     label = "שם משמרת",
                     options = SHIFT_KIND_ORDER.map { it to shiftKindLabel(it) },
                     selected = shiftKind,
-                    onSelect = { shiftKind = it },
+                    onSelect = {
+                        shiftKind = it
+                        if (!isLegacy) {
+                            val hours = fillDefaultShiftHours(ShiftHours(startTime, endTime), it)
+                            startTime = hours.start
+                            endTime = hours.end
+                        }
+                    },
                     error = shownErrors.shiftKind,
                 )
+                if (!isLegacy) {
+                    ShiftHoursRow(
+                        startTime = startTime,
+                        endTime = endTime,
+                        canEdit = ui.canManageUnit,
+                        onStartChange = { startTime = it },
+                        onEndChange = { endTime = it },
+                        startError = shownErrors.startTime,
+                        endError = shownErrors.endTime,
+                    )
+                }
                 OptionRowSelector(
                     label = "סוג רכב",
                     options = vehicleOptions,
@@ -324,14 +378,7 @@ fun ShiftFormScreen(
                     title = SHIFT_SAVE_TITLE,
                     busy = saving,
                     onClick = {
-                        val draft = ShiftDraft(
-                            shiftDate = shiftDate,
-                            shiftKind = shiftKind,
-                            vehicleType = vehicleType,
-                            notes = notes,
-                            responderIds = responderIds,
-                            personalVehicleId = personalVehicleId,
-                        )
+                        val draft = currentDraft()
                         val next = validateShiftDraft(draft)
                         errors = next
                         errorsFor = draft
@@ -358,4 +405,105 @@ fun ShiftFormScreen(
         }
         Spacer(Modifier.height(24.dp))
     }
+}
+
+private val timeFieldShape = RoundedCornerShape(4.dp)
+
+@Composable
+private fun ShiftHoursRow(
+    startTime: String,
+    endTime: String,
+    canEdit: Boolean,
+    onStartChange: (String) -> Unit,
+    onEndChange: (String) -> Unit,
+    startError: String?,
+    endError: String?,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            ShiftTimeField(SHIFT_START_TIME_LABEL, startTime, canEdit, onStartChange, Modifier.weight(1f))
+            ShiftTimeField(SHIFT_END_TIME_LABEL, endTime, canEdit, onEndChange, Modifier.weight(1f))
+        }
+        listOfNotNull(startError, endError).distinct().forEach { message ->
+            Text(message, style = TypeScale.caption, color = FieldTheme.alert)
+        }
+    }
+}
+
+@Composable
+private fun ShiftTimeField(
+    label: String,
+    value: String,
+    canEdit: Boolean,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var showPicker by remember { mutableStateOf(false) }
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(label, style = TypeScale.label, color = FieldTheme.textSecondary)
+        Box(
+            contentAlignment = Alignment.CenterStart,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(FormControlHeight)
+                .background(FieldTheme.raised, timeFieldShape)
+                .border(1.dp, FieldTheme.strong, timeFieldShape)
+                .then(
+                    if (canEdit) {
+                        Modifier.clickable(role = Role.Button, onClickLabel = label) { showPicker = true }
+                    } else {
+                        Modifier
+                    },
+                )
+                .padding(horizontal = 16.dp),
+        ) {
+            Text(
+                text = value.ifEmpty { SHIFT_TIME_PLACEHOLDER },
+                style = TypeScale.numeric.copy(textDirection = TextDirection.Ltr, textAlign = TextAlign.Left),
+                color = if (value.isEmpty()) FieldTheme.textMuted else FieldTheme.textPrimary,
+            )
+        }
+    }
+    if (showPicker) {
+        ShiftTimePickerDialog(
+            initial = value,
+            onConfirm = {
+                onValueChange(it)
+                showPicker = false
+            },
+            onDismiss = { showPicker = false },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ShiftTimePickerDialog(
+    initial: String,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val state = rememberTimePickerState(
+        initialHour = initial.substringBefore(":").toIntOrNull() ?: 0,
+        initialMinute = initial.substringAfter(":", "").toIntOrNull() ?: 0,
+        is24Hour = true,
+    )
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = { onConfirm("%02d:%02d".format(state.hour, state.minute)) }) {
+                Text(SHIFT_TIME_PICKER_CONFIRM, color = FieldTheme.accent)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(SHIFT_TIME_PICKER_CANCEL, color = FieldTheme.accent)
+            }
+        },
+        text = {
+            CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                TimePicker(state = state)
+            }
+        },
+    )
 }

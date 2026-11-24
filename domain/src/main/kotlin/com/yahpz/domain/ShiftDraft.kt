@@ -1,5 +1,7 @@
 package com.yahpz.domain
 
+import java.time.Instant
+
 const val SHIFT_DRAFT_DATE_ERROR = "יש לבחור תאריך"
 const val SHIFT_DRAFT_KIND_ERROR = "יש לבחור שם משמרת"
 const val SHIFT_DRAFT_VEHICLE_ERROR = "יש לבחור סוג רכב"
@@ -7,6 +9,13 @@ const val SHIFT_DRAFT_CREW_ERROR = "יש לשבץ בין מתנדב אחד לש�
 const val SHIFT_DRAFT_PLATE_ERROR = "יש לבחור לוחית לרכב פרטי"
 const val SHIFT_DRAFT_FORM_ERROR = "יש למלא תאריך, שם משמרת וסוג רכב לפני השמירה."
 const val SHIFT_DRAFT_SAVE_FAILED = "שמירת המשמרת נכשלה. בדקו את החיבור ונסו שוב."
+const val SHIFT_HOURS_REQUIRED_ERROR = "יש למלא שעת התחלה ושעת סיום"
+const val SHIFT_HOURS_EQUAL_ERROR = "שעת הסיום חייבת להיות שונה משעת ההתחלה"
+const val SHIFT_START_TIME_LABEL = "שעת התחלה"
+const val SHIFT_END_TIME_LABEL = "שעת סיום"
+const val SHIFT_TIME_PICKER_CONFIRM = "אישור"
+const val SHIFT_TIME_PICKER_CANCEL = "ביטול"
+const val SHIFT_TIME_PLACEHOLDER = "--:--"
 const val SHIFT_DRAFT_SAVED = "המשמרת נשמרה."
 const val SHIFT_NEW_TITLE = "משמרת חדשה"
 const val SHIFT_EDIT_TITLE = "עריכת משמרת"
@@ -53,6 +62,11 @@ data class ShiftDraft(
     val notes: String = "",
     val responderIds: List<String> = emptyList(),
     val personalVehicleId: String? = null,
+    /** HH:MM Asia/Jerusalem; empty until chosen, and on a legacy shift. */
+    val startTime: String = "",
+    val endTime: String = "",
+    /** Opened without hours: it keeps working without them. */
+    val isLegacy: Boolean = false,
 )
 
 data class ShiftDraftErrors(
@@ -61,15 +75,28 @@ data class ShiftDraftErrors(
     val vehicleType: String? = null,
     val crew: String? = null,
     val plate: String? = null,
+    val startTime: String? = null,
+    val endTime: String? = null,
 ) {
+    private val hasHoursError: Boolean get() = startTime != null || endTime != null
+
+    private val hasOnlyCrewError: Boolean
+        get() = crew != null && shiftDate == null && shiftKind == null && vehicleType == null &&
+            plate == null && !hasHoursError
+
+    private val hasOnlyHoursError: Boolean
+        get() = hasHoursError && shiftDate == null && shiftKind == null && vehicleType == null &&
+            plate == null && crew == null
+
     val isEmpty: Boolean
-        get() = shiftDate == null && shiftKind == null && vehicleType == null && crew == null && plate == null
+        get() = shiftDate == null && shiftKind == null && vehicleType == null && crew == null &&
+            plate == null && !hasHoursError
 
     val formMessage: String?
         get() = when {
             isEmpty -> null
-            crew != null && shiftDate == null && shiftKind == null && vehicleType == null && plate == null ->
-                SHIFT_DRAFT_CREW_ERROR
+            hasOnlyCrewError -> SHIFT_DRAFT_CREW_ERROR
+            hasOnlyHoursError -> startTime ?: endTime
             else -> SHIFT_DRAFT_FORM_ERROR
         }
 }
@@ -89,7 +116,15 @@ fun ShiftDraftErrors.clearedFor(validated: ShiftDraft, current: ShiftDraft): Shi
     plate = plate.takeIf {
         validated.personalVehicleId == current.personalVehicleId && validated.vehicleType == current.vehicleType
     },
+    startTime = startTime.takeIf { validated.startTime == current.startTime },
+    endTime = endTime.takeIf { endTimeErrorStands(validated, current) },
 )
+
+/** The equal-hours refusal depends on both fields; the required refusal only on the end. */
+private fun ShiftDraftErrors.endTimeErrorStands(validated: ShiftDraft, current: ShiftDraft): Boolean {
+    if (validated.endTime != current.endTime) return false
+    return endTime != SHIFT_HOURS_EQUAL_ERROR || validated.startTime == current.startTime
+}
 
 /** Server messages the user can act on pass through; anything else is the generic failure. Web `mapShiftUpdateError`. */
 fun mapShiftSaveError(message: String?): String {
@@ -116,7 +151,58 @@ fun validateShiftDraft(draft: ShiftDraft): ShiftDraftErrors = ShiftDraftErrors(
         null
     },
     crew = if (draft.responderIds.size !in SHIFT_CREW_MIN..SHIFT_CREW_MAX) SHIFT_DRAFT_CREW_ERROR else null,
+    startTime = startTimeError(draft),
+    endTime = endTimeError(draft),
 )
+
+private fun startTimeError(draft: ShiftDraft): String? =
+    if (!draft.isLegacy && draft.startTime.isEmpty()) SHIFT_HOURS_REQUIRED_ERROR else null
+
+private fun endTimeError(draft: ShiftDraft): String? = when {
+    draft.isLegacy -> null
+    draft.endTime.isEmpty() -> SHIFT_HOURS_REQUIRED_ERROR
+    draft.endTime == draft.startTime -> SHIFT_HOURS_EQUAL_ERROR
+    else -> null
+}
+
+/** Fills only the empty fields; a time the lead typed is never replaced. */
+fun fillDefaultShiftHours(hours: ShiftHours, kind: String): ShiftHours {
+    val defaults = defaultShiftHours(kind) ?: return hours
+    return ShiftHours(
+        start = hours.start.ifEmpty { defaults.start },
+        end = hours.end.ifEmpty { defaults.end },
+    )
+}
+
+data class CrewMember(val id: String, val name: String)
+
+data class CrewLiveShift(
+    val id: String,
+    val shiftKind: String,
+    val startsAt: Instant,
+    val endsAt: Instant,
+    val responderIds: List<String>,
+)
+
+/** The refusal for the first crew member already on another live shift in these hours, else null. */
+fun findCrewOverlapMessage(
+    window: ShiftWindow,
+    crew: List<CrewMember>,
+    others: List<CrewLiveShift>,
+    ignoreShiftId: String?,
+): String? {
+    val ownRange = TimeRange(window.startsAt, window.endsAt)
+    val candidates = others.filter { it.id != ignoreShiftId }
+    for (member in crew) {
+        val clash = candidates.firstOrNull { other ->
+            member.id in other.responderIds && rangesOverlap(ownRange, TimeRange(other.startsAt, other.endsAt))
+        }
+        if (clash != null) {
+            return crewOverlapMessage(member.name, OverlapKnownShift(clash.id, clash.shiftKind, clash.startsAt, clash.endsAt))
+        }
+    }
+    return null
+}
 
 fun shiftCrewSummary(count: Int): String = when (count) {
     0 -> "טרם שובצו מתנדבים"

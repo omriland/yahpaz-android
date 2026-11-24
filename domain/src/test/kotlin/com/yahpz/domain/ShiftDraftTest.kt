@@ -12,12 +12,16 @@ class ShiftDraftTest {
         vehicleType: String = "patrol_north",
         crew: List<String> = listOf("r1"),
         personalVehicleId: String? = null,
+        startTime: String = "07:00",
+        endTime: String = "15:00",
     ) = ShiftDraft(
         shiftDate = date,
         shiftKind = kind,
         vehicleType = vehicleType,
         responderIds = crew,
         personalVehicleId = personalVehicleId,
+        startTime = startTime,
+        endTime = endTime,
     )
 
     @Test
