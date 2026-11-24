@@ -1,6 +1,5 @@
 package com.yahpz.domain
 
-import java.time.Instant
 
 const val SHIFT_DRAFT_DATE_ERROR = "יש לבחור תאריך"
 const val SHIFT_DRAFT_KIND_ERROR = "יש לבחור שם משמרת"
@@ -174,36 +173,6 @@ fun fillDefaultShiftHours(hours: ShiftHours, kind: String): ShiftHours {
     )
 }
 
-data class CrewMember(val id: String, val name: String)
-
-data class CrewLiveShift(
-    val id: String,
-    val shiftKind: String,
-    val startsAt: Instant,
-    val endsAt: Instant,
-    val responderIds: List<String>,
-)
-
-/** The refusal for the first crew member already on another live shift in these hours, else null. */
-fun findCrewOverlapMessage(
-    window: ShiftWindow,
-    crew: List<CrewMember>,
-    others: List<CrewLiveShift>,
-    ignoreShiftId: String?,
-): String? {
-    val ownRange = TimeRange(window.startsAt, window.endsAt)
-    val candidates = others.filter { it.id != ignoreShiftId }
-    for (member in crew) {
-        val clash = candidates.firstOrNull { other ->
-            member.id in other.responderIds && rangesOverlap(ownRange, TimeRange(other.startsAt, other.endsAt))
-        }
-        if (clash != null) {
-            return crewOverlapMessage(member.name, OverlapKnownShift(clash.id, clash.shiftKind, clash.startsAt, clash.endsAt))
-        }
-    }
-    return null
-}
-
 fun shiftCrewSummary(count: Int): String = when (count) {
     0 -> "טרם שובצו מתנדבים"
     1 -> "מתנדב אחד משובץ"
@@ -216,3 +185,14 @@ fun toggleCrewSelection(selected: List<String>, responderId: String): List<Strin
     if (selected.size >= SHIFT_CREW_MAX) return selected
     return selected + responderId
 }
+
+/** Hours still equal to the old kind's defaults were never typed by the lead, so the new kind's defaults replace them. */
+fun hoursAfterKindChange(hours: ShiftHours, previousKind: String, newKind: String): ShiftHours {
+    val untouched = if (hours == defaultShiftHours(previousKind)) ShiftHours("", "") else hours
+    return fillDefaultShiftHours(untouched, newKind)
+}
+
+/** Whether a new shift's draft holds anything worth keeping when the lead leaves the form. */
+fun ShiftDraft.hasStashableInput(): Boolean =
+    shiftKind.isNotBlank() || vehicleType.isNotBlank() || notes.isNotBlank() ||
+        responderIds.isNotEmpty() || startTime.isNotBlank() || endTime.isNotBlank()

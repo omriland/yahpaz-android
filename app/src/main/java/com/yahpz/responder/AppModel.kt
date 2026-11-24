@@ -40,7 +40,10 @@ import com.yahpz.domain.REPORT_FAILED_TITLE
 import com.yahpz.domain.ReportKindId
 import com.yahpz.domain.ReportRow
 import com.yahpz.domain.SHIFT_DRAFT_SAVED
+import com.yahpz.domain.CrewMember
 import com.yahpz.domain.ShiftDraft
+import com.yahpz.domain.buildShiftWindow
+import com.yahpz.domain.findCrewOverlapMessage
 import com.yahpz.domain.broadcastResultCopy
 import com.yahpz.domain.canToggleEventCancelled
 import com.yahpz.domain.defaultMobileView
@@ -1027,7 +1030,28 @@ class AppModel : ViewModel() {
         showToast(MY_ACTIVE_EVENT_DISMISSED, StampTone.DONE)
     }
 
+    /**
+     * The refusal when a chosen crew member is already on another live shift in these hours.
+     * A failed lookup lets the save go on: the database refuses an overlap too.
+     */
+    private suspend fun crewOverlapRefusal(shiftId: String?, draft: ShiftDraft): String? {
+        if (draft.isLegacy || !com.yahpz.domain.validateShiftDraft(draft).isEmpty) return null
+        val shiftDate = normalizeReturnDate(draft.shiftDate) ?: return null
+        val window = buildShiftWindow(shiftDate, draft.startTime, draft.endTime)
+        val others = try {
+            YahpazAPI.fetchCrewLiveShifts(draft.responderIds, shiftDate)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            return null
+        }
+        val namesById = _state.value.assignableProfiles.associate { it.id to it.fullName }
+        val crew = draft.responderIds.map { CrewMember(it, namesById[it] ?: it) }
+        return findCrewOverlapMessage(window, crew, others, shiftId)
+    }
+
     suspend fun createUnitShift(draft: ShiftDraft): String? {
+        crewOverlapRefusal(null, draft)?.let { return it }
         YahpazAPI.createUnitShift(draft)?.let { return it }
         reloadUnitShifts()
         viewModelScope.launch { reloadShifts() }
@@ -1037,6 +1061,7 @@ class AppModel : ViewModel() {
     }
 
     suspend fun updateUnitShift(shiftId: String, draft: ShiftDraft): String? {
+        crewOverlapRefusal(shiftId, draft)?.let { return it }
         YahpazAPI.updateUnitShift(shiftId, draft)?.let { return it }
         reloadUnitShifts()
         viewModelScope.launch { reloadShifts() }
@@ -1061,6 +1086,7 @@ class AppModel : ViewModel() {
     }
 
     suspend fun autoSaveUnitShift(shiftId: String, draft: ShiftDraft): String? {
+        crewOverlapRefusal(shiftId, draft)?.let { return it }
         val error = YahpazAPI.updateUnitShift(shiftId, draft)
         if (error == null) {
             reloadUnitShifts()
@@ -1071,7 +1097,7 @@ class AppModel : ViewModel() {
 
     fun flushShiftForm(shiftId: String, draft: ShiftDraft) {
         viewModelScope.launch {
-            if (com.yahpz.domain.validateShiftDraft(draft).isEmpty) {
+            if (com.yahpz.domain.validateShiftDraft(draft).isEmpty && crewOverlapRefusal(shiftId, draft) == null) {
                 val error = YahpazAPI.updateUnitShift(shiftId, draft)
                 if (error == null) {
                     reloadUnitShifts()

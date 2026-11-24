@@ -51,7 +51,8 @@ import com.yahpz.domain.SHIFT_TIME_PICKER_CANCEL
 import com.yahpz.domain.SHIFT_TIME_PICKER_CONFIRM
 import com.yahpz.domain.SHIFT_TIME_PLACEHOLDER
 import com.yahpz.domain.ShiftHours
-import com.yahpz.domain.fillDefaultShiftHours
+import com.yahpz.domain.hasStashableInput
+import com.yahpz.domain.hoursAfterKindChange
 import com.yahpz.domain.SHIFT_KIND_ORDER
 import com.yahpz.domain.SHIFT_NEW_TITLE
 import com.yahpz.domain.SHIFT_SAVE_TITLE
@@ -70,6 +71,7 @@ import com.yahpz.domain.validateShiftDraft
 import com.yahpz.domain.SHIFT_DRAFT_WAITING_FOR_REQUIRED
 import com.yahpz.domain.clearedFor
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 const val NEW_SHIFT_TITLE = SHIFT_NEW_TITLE
 
@@ -166,7 +168,7 @@ fun ShiftFormScreen(
     // For new shifts: auto-stash locally on change
     LaunchedEffect(current) {
         if (!editing) {
-            if (shiftKind.isNotBlank() || vehicleType.isNotBlank() || notes.isNotBlank() || responderIds.isNotEmpty()) {
+            if (current.hasStashableInput()) {
                 kotlinx.coroutines.delay(600)
                 ShiftDraftStore.stash(current)
             }
@@ -197,7 +199,7 @@ fun ShiftFormScreen(
         onDispose {
             if (!editing) {
                 val draft = currentDraft()
-                if (draft.shiftKind.isNotBlank() || draft.vehicleType.isNotBlank() || draft.notes.isNotBlank() || draft.responderIds.isNotEmpty()) {
+                if (draft.hasStashableInput()) {
                     ShiftDraftStore.stash(draft)
                 }
             } else if (loaded) {
@@ -280,9 +282,10 @@ fun ShiftFormScreen(
                     options = SHIFT_KIND_ORDER.map { it to shiftKindLabel(it) },
                     selected = shiftKind,
                     onSelect = {
+                        val previousKind = shiftKind
                         shiftKind = it
                         if (!isLegacy) {
-                            val hours = fillDefaultShiftHours(ShiftHours(startTime, endTime), it)
+                            val hours = hoursAfterKindChange(ShiftHours(startTime, endTime), previousKind, it)
                             startTime = hours.start
                             endTime = hours.end
                         }
@@ -491,7 +494,7 @@ private fun ShiftTimePickerDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
-            TextButton(onClick = { onConfirm("%02d:%02d".format(state.hour, state.minute)) }) {
+            TextButton(onClick = { onConfirm(String.format(Locale.ROOT, "%02d:%02d", state.hour, state.minute)) }) {
                 Text(SHIFT_TIME_PICKER_CONFIRM, color = FieldTheme.accent)
             }
         },
