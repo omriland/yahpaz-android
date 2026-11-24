@@ -73,6 +73,9 @@ import com.yahpz.domain.shiftBornReadOnlyNotice
 import com.yahpz.domain.skippedPhotoDigits
 import com.yahpz.domain.treatmentDetailCounter
 import com.yahpz.domain.vehiclePhotosPrompt
+import com.yahpz.domain.MediaPlateOwner
+import com.yahpz.domain.PendingMediaLink
+import com.yahpz.domain.withPendingPhotoLinks
 import com.yahpz.domain.unlinkedPhotosNote
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -117,6 +120,9 @@ fun ShiftBornFillScreen(eventId: String, app: AppModel) {
     var pane by remember(eventId) { mutableStateOf(ShiftBornPane.DOCS) }
     var unfinishedMediaDrafts by remember(eventId) { mutableIntStateOf(0) }
     var dropUnfinishedTick by remember(eventId) { mutableIntStateOf(0) }
+    // Photos linked to form vehicles with no saved row yet; linked once the report saves them.
+    var pendingMediaLinks by remember(eventId) { mutableStateOf<List<PendingMediaLink>>(emptyList()) }
+    var vehiclesSavedTick by remember(eventId) { mutableIntStateOf(0) }
     var mediaError by remember(eventId) { mutableStateOf<String?>(null) }
     var missingPhotoPlates by remember(eventId) { mutableStateOf<List<TreatedPlate>>(emptyList()) }
     var unlinkedPhotoNote by remember(eventId) { mutableStateOf<String?>(null) }
@@ -213,6 +219,12 @@ fun ShiftBornFillScreen(eventId: String, app: AppModel) {
                 conflict = false
                 reopened = false
                 unsavedShiftBornDrafts.remove(eventId)
+                if (pendingMediaLinks.isNotEmpty()) {
+                    withContext(Dispatchers.IO) {
+                        YahpazAPI.linkPendingMedia(eventId, pendingMediaLinks, MediaPlateOwner.Event(eventId))
+                    }
+                }
+                vehiclesSavedTick += 1
                 app.refreshAfterShiftBornSave()
                 return true
             }
@@ -235,7 +247,10 @@ fun ShiftBornFillScreen(eventId: String, app: AppModel) {
 
     /** Opens the "no photo for these vehicles" prompt when one is due. */
     suspend fun photoPromptOpened(complete: Boolean): Boolean {
-        val covered = withContext(Dispatchers.IO) { YahpazAPI.fetchEventPhotoCoverage(eventId) }
+        val covered = withPendingPhotoLinks(
+            withContext(Dispatchers.IO) { YahpazAPI.fetchEventPhotoCoverage(eventId) },
+            pendingMediaLinks,
+        )
         val missing = vehiclePhotosPrompt(draft.treatedPlates, covered, photoSkippedDigits)
         if (missing.isEmpty()) return false
         unlinkedPhotoNote = unlinkedPhotosNote(
@@ -494,6 +509,10 @@ fun ShiftBornFillScreen(eventId: String, app: AppModel) {
                         leftoverError = mediaError,
                         modifier = if (pane == ShiftBornPane.MEDIA) Modifier.fillMaxSize() else Modifier.size(0.dp),
                         dropUnfinishedTick = dropUnfinishedTick,
+                        formVehicles = draft.treatedPlates,
+                        plateOwner = MediaPlateOwner.Event(loaded.eventId),
+                        vehiclesSavedTick = vehiclesSavedTick,
+                        onPendingLinksChange = { pendingMediaLinks = it },
                         onUnfinishedChange = {
                             unfinishedMediaDrafts = it
                             if (it == 0) mediaError = null

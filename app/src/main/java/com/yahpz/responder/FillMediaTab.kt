@@ -104,6 +104,17 @@ import com.yahpz.domain.EVENT_MEDIA_TITLE
 import com.yahpz.domain.EVENT_MEDIA_UPDATED
 import com.yahpz.domain.EventMedia
 import com.yahpz.domain.EventMediaPlateOption
+import com.yahpz.domain.EVENT_MEDIA_PENDING_VEHICLE
+import com.yahpz.domain.MediaPlateOwner
+import com.yahpz.domain.PendingMediaLink
+import com.yahpz.domain.TreatedPlate
+import com.yahpz.domain.keepOfferedChoices
+import com.yahpz.domain.mediaChoiceKeys
+import com.yahpz.domain.mediaVehicleOptions
+import com.yahpz.domain.pendingLinksInForm
+import com.yahpz.domain.prunePendingLinks
+import com.yahpz.domain.resolveMediaPlateChoice
+import com.yahpz.domain.formVehicleKey
 import com.yahpz.domain.EventMediaTakenWhen
 import com.yahpz.domain.StampTone
 import com.yahpz.domain.EVENT_MEDIA_UNASSIGNED_LABEL
@@ -132,7 +143,7 @@ import java.util.UUID
 private val fieldShape = RoundedCornerShape(4.dp)
 private val cardShape = RoundedCornerShape(8.dp)
 
-private data class MediaDraft(
+internal data class MediaDraft(
     val key: String,
     val uri: Uri,
     val kind: EventMediaKind = EventMediaKind.IMAGE,
@@ -154,6 +165,14 @@ fun FillMediaTab(
     leftoverError: String?,
     modifier: Modifier = Modifier,
     dropUnfinishedTick: Int = 0,
+    /** Vehicles in the form being filled, saved or not. Null: the event's saved vehicles. */
+    formVehicles: List<TreatedPlate>? = null,
+    /** Whose report the form's vehicles are saved under. */
+    plateOwner: MediaPlateOwner? = null,
+    /** Increment after the form saved its vehicles, to re-read the photos' links. */
+    vehiclesSavedTick: Int = 0,
+    /** Photos linked to a form vehicle that has no saved row yet. */
+    onPendingLinksChange: (List<PendingMediaLink>) -> Unit = {},
     onUnfinishedChange: (Int) -> Unit,
     onToast: (String, StampTone) -> Unit,
 ) {
@@ -180,6 +199,12 @@ fun FillMediaTab(
     var assignError by remember { mutableStateOf<String?>(null) }
     var assigning by remember { mutableStateOf(false) }
 
+    // Per photo, the plate digits of form vehicles it waits on until the form saves them.
+    var pending by remember(eventId) { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
+    val formMode = formVehicles != null
+    val options = mediaVehicleOptions(formVehicles, plates)
+    val optionKey = options.joinToString(",") { it.id }
+
     val inFlight = drafts.count { it.uploading }
     val addEnabled = canWrite && canAddMoreMedia(items.size, inFlight)
     val remaining = slotsRemaining(items.size, inFlight)
@@ -193,13 +218,30 @@ fun FillMediaTab(
     LaunchedEffect(drafts) {
         onUnfinishedChange(drafts.count { it.takenWhen == null })
     }
-    LaunchedEffect(plates) {
-        // Keeps the person's choice while its vehicle is still on the event; never picks one for them.
-        val ids = plates.map { it.id }.toSet()
+    LaunchedEffect(optionKey, loading) {
+        // Keeps the person's choice while its vehicle is still offered; never picks one for them.
+        if (loading) return@LaunchedEffect
         drafts = drafts.map { draft ->
-            if (draft.uploading || draft.treatedPlateIds.all { it in ids }) draft
-            else draft.copy(treatedPlateIds = draft.treatedPlateIds.filter { it in ids })
+            val kept = keepOfferedChoices(draft.treatedPlateIds, options)
+            if (draft.uploading || kept.size == draft.treatedPlateIds.size) draft
+            else draft.copy(treatedPlateIds = kept)
         }
+    }
+    LaunchedEffect(pending, optionKey) {
+        if (formMode) onPendingLinksChange(pendingLinksInForm(pending, options))
+    }
+    // The form saved: plate rows were replaced, so re-read them and the photos' links.
+    LaunchedEffect(vehiclesSavedTick) {
+        if (vehiclesSavedTick <= 0) return@LaunchedEffect
+        val freshItems = withContext(Dispatchers.IO) { YahpazAPI.listEventMedia(eventId) }
+        val freshPlates = withContext(Dispatchers.IO) { YahpazAPI.listEventMediaPlates(eventId) }
+        items = freshItems
+        plates = freshPlates
+        pending = prunePendingLinks(pending, freshItems, freshPlates)
+    }
+
+    fun setPendingFor(mediaId: String, digits: List<String>) {
+        pending = if (digits.isEmpty()) pending - mediaId else pending + (mediaId to digits)
     }
     LaunchedEffect(dropUnfinishedTick) {
         if (dropUnfinishedTick <= 0) return@LaunchedEffect
@@ -303,6 +345,10 @@ fun FillMediaTab(
                 return@launch
             }
             val ready = payload as UploadPayload.Ready
+            // Saved rows read fresh, so a vehicle the form saved meanwhile links now and stale ids never land.
+            val freshPlates = withContext(Dispatchers.IO) { YahpazAPI.listEventMediaPlates(eventId) }
+            plates = freshPlates
+            val resolved = resolveMediaPlateChoice(write.vehicleIds, freshPlates, plateOwner)
             val result = withContext(Dispatchers.IO) {
                 YahpazAPI.uploadEventMedia(
                     eventId = eventId,
@@ -311,7 +357,7 @@ fun FillMediaTab(
                     width = ready.width,
                     height = ready.height,
                     takenWhen = takenWhen,
-                    treatedPlateIds = write.vehicleIds,
+                    treatedPlateIds = resolved.ids,
                     caption = write.caption,
                 )
             }
@@ -319,6 +365,7 @@ fun FillMediaTab(
                 is EventMediaWriteResult.Uploaded -> {
                     drafts = drafts.filterNot { it.key == key }
                     items = items + result.media
+                    setPendingFor(result.media.id, resolved.missing)
                     val added = if (draft.kind == EventMediaKind.VIDEO) EVENT_MEDIA_VIDEO_ADDED else EVENT_MEDIA_ADDED
                     onToast(added, StampTone.DONE)
                 }
@@ -338,14 +385,14 @@ fun FillMediaTab(
         confirmDelete = false
         deleteFromTile = false
         editTakenWhen = item.takenWhen
-        editPlateIds = item.treatedPlateIds
+        editPlateIds = mediaChoiceKeys(item.treatedPlateIds, plates, pending[item.id].orEmpty(), formMode)
         editCaption = item.caption.orEmpty()
         editError = null
     }
 
     fun openAssign(item: EventMedia) {
         assignTarget = item
-        assignPlateIds = item.treatedPlateIds
+        assignPlateIds = mediaChoiceKeys(item.treatedPlateIds, plates, pending[item.id].orEmpty(), formMode)
         assignError = null
     }
 
@@ -396,7 +443,7 @@ fun FillMediaTab(
                 heading = eventMediaTakenWhenLabel(EventMediaTakenWhen.BEFORE_TREATMENT),
                 items = grouped.before,
                 hasMenu = { canDeleteEventMedia(it, viewerId, canWrite) },
-                canAssign = plates.isNotEmpty(),
+                canAssign = options.isNotEmpty(),
                 onOpen = ::openViewer,
                 onAssign = ::openAssign,
                 onRemove = ::removeFromTile,
@@ -405,7 +452,7 @@ fun FillMediaTab(
                 heading = eventMediaTakenWhenLabel(EventMediaTakenWhen.DURING_AFTER_TREATMENT),
                 items = grouped.during,
                 hasMenu = { canDeleteEventMedia(it, viewerId, canWrite) },
-                canAssign = plates.isNotEmpty(),
+                canAssign = options.isNotEmpty(),
                 onOpen = ::openViewer,
                 onAssign = ::openAssign,
                 onRemove = ::removeFromTile,
@@ -437,8 +484,10 @@ fun FillMediaTab(
                         Text(EVENT_MEDIA_STEP_TITLE, style = TypeScale.section, color = FieldTheme.textPrimary)
                         MediaDraftCard(
                             draft = draft,
-                            plates = plates,
+                            plates = options,
                             platesLoaded = !loading,
+                            pendingVehicle = formMode && !loading &&
+                                resolveMediaPlateChoice(draft.treatedPlateIds, plates, plateOwner).missing.isNotEmpty(),
                             canSave = canSave,
                             onCaption = { patchDraft(draft.key) { copy(caption = it) } },
                             onPlates = { patchDraft(draft.key) { copy(treatedPlateIds = it) } },
@@ -516,7 +565,7 @@ fun FillMediaTab(
                 Text(EVENT_MEDIA_ASSIGN, style = TypeScale.section, color = FieldTheme.textPrimary)
                 Text(EVENT_MEDIA_ASSIGN_HINT, style = TypeScale.body, color = FieldTheme.textSecondary)
                 MediaPlateChips(
-                    plates = plates,
+                    plates = options,
                     selected = assignPlateIds,
                     enabled = !assigning,
                     onChange = { assignPlateIds = it },
@@ -525,14 +574,18 @@ fun FillMediaTab(
                 PrimaryButton(title = "שמירה", busy = assigning, onClick = {
                     scope.launch {
                         assigning = true
+                        val freshPlates = withContext(Dispatchers.IO) { YahpazAPI.listEventMediaPlates(eventId) }
+                        plates = freshPlates
+                        val resolved = resolveMediaPlateChoice(assignPlateIds, freshPlates, plateOwner)
                         val result = withContext(Dispatchers.IO) {
-                            YahpazAPI.replaceMediaPlates(target.id, assignPlateIds)
+                            YahpazAPI.replaceMediaPlates(target.id, resolved.ids)
                         }
                         assigning = false
                         when (result) {
                             EventMediaWriteResult.Done -> {
-                                val linkedIds = uniquePlateIds(assignPlateIds)
+                                val linkedIds = uniquePlateIds(resolved.ids)
                                 items = items.map { if (it.id == target.id) it.copy(treatedPlateIds = linkedIds) else it }
+                                setPendingFor(target.id, resolved.missing)
                                 assignTarget = null
                                 onToast(EVENT_MEDIA_ASSIGN_SAVED, StampTone.DONE)
                             }
@@ -549,7 +602,8 @@ fun FillMediaTab(
     viewer?.let { current ->
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         val own = canDeleteEventMedia(current, viewerId, canWrite)
-        val linked = plates.filter { it.id in current.treatedPlateIds }
+        val linked = plates.filter { it.id in current.treatedPlateIds } +
+            options.filter { option -> option.id in pending[current.id].orEmpty().map(::formVehicleKey) }
         val currentIsVideo = isVideoMedia(current.mimeType)
         AdaptiveBottomSheet(
             onDismissRequest = {
@@ -630,7 +684,7 @@ fun FillMediaTab(
                     if (editing) {
                         TakenWhenPicker(value = editTakenWhen, enabled = !savingEdit, onChange = { editTakenWhen = it })
                         MediaPlateChips(
-                            plates = plates,
+                            plates = options,
                             selected = editPlateIds,
                             enabled = !savingEdit,
                             onChange = { editPlateIds = it },
@@ -654,20 +708,24 @@ fun FillMediaTab(
                             }
                             scope.launch {
                                 savingEdit = true
+                                val freshPlates = withContext(Dispatchers.IO) { YahpazAPI.listEventMediaPlates(eventId) }
+                                plates = freshPlates
+                                val resolved = resolveMediaPlateChoice(editPlateIds, freshPlates, plateOwner)
                                 val result = withContext(Dispatchers.IO) {
                                     YahpazAPI.updateEventMedia(
                                         id = current.id,
                                         takenWhen = editTakenWhen,
-                                        treatedPlateIds = editPlateIds,
+                                        treatedPlateIds = resolved.ids,
                                         caption = editCaption.trim().ifEmpty { null },
                                     )
                                 }
                                 savingEdit = false
                                 when (result) {
                                     EventMediaWriteResult.Done -> {
+                                        setPendingFor(current.id, resolved.missing)
                                         val next = current.copy(
                                             takenWhen = editTakenWhen,
-                                            treatedPlateIds = editPlateIds,
+                                            treatedPlateIds = uniquePlateIds(resolved.ids),
                                             caption = editCaption.trim().ifEmpty { null },
                                         )
                                         items = items.map { if (it.id == next.id) next else it }
@@ -803,11 +861,13 @@ private fun MediaBand(
 }
 
 @Composable
-private fun MediaDraftCard(
+internal fun MediaDraftCard(
     draft: MediaDraft,
     plates: List<EventMediaPlateOption>,
     platesLoaded: Boolean,
     canSave: Boolean,
+    /** The chosen vehicle is in the form but not saved yet. */
+    pendingVehicle: Boolean = false,
     onCaption: (String) -> Unit,
     onPlates: (List<String>) -> Unit,
     onTakenWhen: (EventMediaTakenWhen) -> Unit,
@@ -867,7 +927,9 @@ private fun MediaDraftCard(
                 single = true,
                 onChange = onPlates,
             )
-            photoStepVehicleNote(plates.size)?.let {
+            val vehicleNote = photoStepVehicleNote(plates.size)
+                ?: EVENT_MEDIA_PENDING_VEHICLE.takeIf { pendingVehicle }
+            vehicleNote?.let {
                 Text(it, style = TypeScale.caption, color = FieldTheme.textSecondary)
             }
         }

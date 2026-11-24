@@ -62,6 +62,9 @@ data class EventMediaPlateOption(
     val model: String?,
     val color: String?,
     val logoSlug: String?,
+    /** Set on saved rows: whose report the row belongs to (personal fill) or the event (shift-born). */
+    val eventResponderId: String? = null,
+    val eventId: String? = null,
 )
 
 data class EventMediaBands(

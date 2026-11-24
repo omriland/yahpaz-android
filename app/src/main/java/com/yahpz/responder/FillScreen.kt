@@ -99,6 +99,9 @@ import com.yahpz.domain.treatedPlateCaption
 import com.yahpz.domain.validateResponderFillDraft
 import com.yahpz.domain.skippedPhotoDigits
 import com.yahpz.domain.vehiclePhotosPrompt
+import com.yahpz.domain.MediaPlateOwner
+import com.yahpz.domain.PendingMediaLink
+import com.yahpz.domain.withPendingPhotoLinks
 import com.yahpz.domain.VEHICLE_PHOTOS_BACK
 import com.yahpz.domain.VEHICLE_PHOTOS_PROCEED
 import com.yahpz.domain.VEHICLE_PHOTOS_TITLE
@@ -139,6 +142,19 @@ fun FillScreen(eventId: String, app: AppModel) {
     var pane by remember { mutableStateOf(FillPane.DOCS) }
     var unfinishedMediaDrafts by remember { mutableIntStateOf(0) }
     var dropUnfinishedTick by remember { mutableIntStateOf(0) }
+    // Photos linked to form vehicles with no saved row yet; linked once the report saves them.
+    var pendingMediaLinks by remember { mutableStateOf<List<PendingMediaLink>>(emptyList()) }
+    var vehiclesSavedTick by remember { mutableIntStateOf(0) }
+
+    /** After a save wrote the vehicles: links the photos waiting on them, then lets the media tab re-read. */
+    suspend fun linkPendingPhotos(fill: FillContext) {
+        if (pendingMediaLinks.isNotEmpty()) {
+            withContext(Dispatchers.IO) {
+                YahpazAPI.linkPendingMedia(fill.eventId, pendingMediaLinks, MediaPlateOwner.Responder(fill.assignmentId))
+            }
+        }
+        vehiclesSavedTick += 1
+    }
     var plateScanOpen by remember { mutableStateOf(false) }
     var localSavedAt by remember { mutableLongStateOf(0L) }
     var restoredFromDevice by remember { mutableStateOf(false) }
@@ -208,7 +224,10 @@ fun FillScreen(eventId: String, app: AppModel) {
             if (errors.eventMedia != null) pane = FillPane.MEDIA
             return
         }
-        val covered = withContext(Dispatchers.IO) { YahpazAPI.fetchEventPhotoCoverage(fill.eventId) }
+        val covered = withPendingPhotoLinks(
+            withContext(Dispatchers.IO) { YahpazAPI.fetchEventPhotoCoverage(fill.eventId) },
+            pendingMediaLinks,
+        )
         val missing = vehiclePhotosPrompt(draft.treatedPlates, covered, photoSkippedDigits)
         if (missing.isNotEmpty()) {
             unlinkedPhotoNote = unlinkedPhotosNote(
@@ -226,6 +245,7 @@ fun FillScreen(eventId: String, app: AppModel) {
                 app.showToast(error, com.yahpz.domain.StampTone.PENDING)
             }
         } else {
+            linkPendingPhotos(fill)
             if (complete) FillDraftStore.clear(fill.assignmentId)
             app.showToast(if (complete) "הדיווח הושלם" else "הטיוטה נשמרה")
             app.reloadEvents()
@@ -350,7 +370,10 @@ fun FillScreen(eventId: String, app: AppModel) {
                     val saved = runCatching {
                         YahpazAPI.saveFill(fill, draft, complete = false, unfinishedMediaDrafts)
                     }
-                    if (saved.isSuccess && saved.getOrNull() == null) lastSavedOrLoadedDraft = draft
+                    if (saved.isSuccess && saved.getOrNull() == null) {
+                        lastSavedOrLoadedDraft = draft
+                        linkPendingPhotos(fill)
+                    }
                 } finally {
                     saveGate.finish()
                 }
@@ -582,6 +605,10 @@ fun FillScreen(eventId: String, app: AppModel) {
                             leftoverError = errors.eventMedia,
                             modifier = if (pane == FillPane.MEDIA) Modifier.fillMaxSize() else Modifier.size(0.dp),
                             dropUnfinishedTick = dropUnfinishedTick,
+                            formVehicles = draft.treatedPlates,
+                            plateOwner = MediaPlateOwner.Responder(fill.assignmentId),
+                            vehiclesSavedTick = vehiclesSavedTick,
+                            onPendingLinksChange = { pendingMediaLinks = it },
                             onUnfinishedChange = { unfinishedMediaDrafts = it },
                             onToast = { text, tone -> app.showToast(text, tone) },
                         )

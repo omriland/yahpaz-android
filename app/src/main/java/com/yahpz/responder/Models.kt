@@ -612,6 +612,8 @@ data class EventMediaPlateOptionRow(
     val model: String? = null,
     val color: String? = null,
     @SerialName("logo_slug") val logoSlug: String? = null,
+    @SerialName("event_responder_id") val eventResponderId: String? = null,
+    @SerialName("event_id") val eventId: String? = null,
 )
 
 @Serializable
