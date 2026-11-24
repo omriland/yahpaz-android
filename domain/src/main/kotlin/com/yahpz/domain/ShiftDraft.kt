@@ -1,6 +1,5 @@
 package com.yahpz.domain
 
-
 const val SHIFT_DRAFT_DATE_ERROR = "יש לבחור תאריך"
 const val SHIFT_DRAFT_KIND_ERROR = "יש לבחור שם משמרת"
 const val SHIFT_DRAFT_VEHICLE_ERROR = "יש לבחור סוג רכב"
