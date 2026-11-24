@@ -766,6 +766,7 @@ data class ShiftBornFillCall(
     @SerialName("p_treated") val treated: List<ShiftBornTreatedCall>,
     @SerialName("p_complete") val complete: Boolean,
     @SerialName("p_plates") val plates: List<ShiftBornPlateCall>,
+    @SerialName("p_reopen") val reopen: Boolean = false,
 )
 
 /** Crew may change only non-identity shift columns; this write carries nothing else. */
@@ -1776,6 +1777,8 @@ data class ShiftFormDetail(
     @SerialName("vehicle_type") val vehicleType: String,
     val notes: String? = null,
     @SerialName("personal_vehicle_id") val personalVehicleId: String? = null,
+    @SerialName("starts_at") val startsAt: String? = null,
+    @SerialName("ends_at") val endsAt: String? = null,
     val responders: List<ShiftCrewRow> = emptyList(),
 ) {
     fun toDraft(): ShiftDraft = ShiftDraft(
@@ -1795,6 +1798,8 @@ data class ShiftUpdateWrite(
     @SerialName("vehicle_type") val vehicleType: String,
     @SerialName("personal_vehicle_id") val personalVehicleId: String? = null,
     val notes: String? = null,
+    @SerialName("starts_at") val startsAt: String? = null,
+    @SerialName("ends_at") val endsAt: String? = null,
     @SerialName("last_saved_by") val lastSavedBy: String,
     @SerialName("updated_at") val updatedAt: String,
 )
@@ -1873,6 +1878,8 @@ data class ShiftInsert(
     @SerialName("odometer_end") val odometerEnd: Double? = null,
     @SerialName("total_km") val totalKm: Double? = null,
     val notes: String? = null,
+    @SerialName("starts_at") val startsAt: String? = null,
+    @SerialName("ends_at") val endsAt: String? = null,
     val status: String = ShiftStatus.DRAFT.raw,
     @SerialName("shift_lead_id") val shiftLeadId: String,
     @SerialName("last_saved_by") val lastSavedBy: String,
@@ -1950,6 +1957,8 @@ data class ShiftListItem(
     @SerialName("shift_lead")
     @Serializable(with = OptionalPersonNameSerializer::class)
     val shiftLead: PersonName? = null,
+    @SerialName("starts_at") val startsAt: String? = null,
+    @SerialName("ends_at") val endsAt: String? = null,
     val responders: List<ShiftCrewRow> = emptyList(),
     @SerialName("born_events") val bornEvents: List<ShiftBornEvent> = emptyList(),
 ) {
@@ -1977,6 +1986,17 @@ data class ShiftListItem(
             personalVehicle?.plateNumber,
         )
 }
+
+/** One row of `my_current_shift()`: the caller's live shift inside its window. */
+@Serializable
+data class CurrentShiftRow(
+    val id: String,
+    @SerialName("shift_kind") val shiftKind: String,
+    @SerialName("shift_date") val shiftDate: String,
+    @SerialName("starts_at") val startsAt: String,
+    @SerialName("ends_at") val endsAt: String,
+    @SerialName("vehicle_type") val vehicleType: String,
+)
 
 @Serializable
 data class IdRow(val id: String)

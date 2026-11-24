@@ -202,4 +202,41 @@ class ShiftBornTest {
         // Done without פירוט הטיפול is still open, so the way in stays.
         assertEquals("השלמת התיעוד שלי", shiftBornFillCtaLabel(snapshot(status = EventStatus.DONE)))
     }
+
+    @Test
+    fun liveShiftCrewIsEditableOnlyWhileTheWindowIsOpen() {
+        fun readOnly(phase: ShiftPhase) =
+            shiftBornFillReadOnly(eventDone = false, canManage = false, shiftDate = "2026-11-01", today = "2026-11-03", phase = phase)
+        assertFalse(readOnly(ShiftPhase.ACTIVE))
+        assertFalse(readOnly(ShiftPhase.FINISHING))
+        assertTrue(readOnly(ShiftPhase.PLANNED))
+        assertTrue(readOnly(ShiftPhase.CLOSED))
+    }
+
+    @Test
+    fun liveShiftIgnoresTheShiftDateRuleInsideTheWindow() {
+        assertFalse(
+            shiftBornFillReadOnly(eventDone = false, canManage = false, shiftDate = "2026-11-04", today = "2026-11-03", phase = ShiftPhase.ACTIVE),
+        )
+    }
+
+    @Test
+    fun liveShiftLeadsEditInEveryPhaseButDoneStaysLockedForCrew() {
+        for (phase in ShiftPhase.values()) {
+            assertFalse(shiftBornFillReadOnly(eventDone = true, canManage = true, shiftDate = "2026-11-01", today = "2026-11-03", phase = phase))
+        }
+        assertTrue(
+            shiftBornFillReadOnly(eventDone = true, canManage = false, shiftDate = "2026-11-03", today = "2026-11-03", phase = ShiftPhase.ACTIVE),
+        )
+    }
+
+    @Test
+    fun legacyPhaseKeepsTheDateRule() {
+        assertTrue(
+            shiftBornFillReadOnly(eventDone = false, canManage = false, shiftDate = "2026-11-04", today = "2026-11-03", phase = ShiftPhase.LEGACY),
+        )
+        assertFalse(
+            shiftBornFillReadOnly(eventDone = false, canManage = false, shiftDate = "2026-11-03", today = "2026-11-03", phase = ShiftPhase.LEGACY),
+        )
+    }
 }

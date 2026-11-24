@@ -12,6 +12,14 @@ import com.yahpz.domain.policeEventIdForInput
 import com.yahpz.domain.policeEventIdKey
 import com.yahpz.domain.odometerDelta
 import com.yahpz.domain.mapShiftSaveError
+import com.yahpz.domain.SHIFT_EVENT_CREATE_FAILED
+import com.yahpz.domain.SHIFT_EVENT_DELETE_FAILED
+import com.yahpz.domain.SHIFT_OVERLAP_GENERAL_MESSAGE
+import com.yahpz.domain.EditedShift
+import com.yahpz.domain.ShiftWindow
+import com.yahpz.domain.isShiftOverlapRefusal
+import com.yahpz.domain.windowAfterShiftEdit
+import com.yahpz.domain.knownLiveShiftMessage
 import com.yahpz.domain.AssignableProfile
 import com.yahpz.domain.HighwayJunctionCatalogRow
 import com.yahpz.domain.buildLocationPayload
@@ -228,6 +236,7 @@ import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.postgrest.query.Order
+import io.github.jan.supabase.postgrest.query.filter.PostgrestFilterBuilder
 import io.github.jan.supabase.postgrest.rpc
 import io.github.jan.supabase.storage.Storage
 import io.github.jan.supabase.storage.storage
@@ -244,6 +253,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import java.time.Instant
 import java.time.LocalDate
+import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.util.UUID
 import kotlin.time.Duration.Companion.seconds
@@ -328,8 +338,12 @@ object YahpazAPI {
         )
     """.trimIndent()
 
+    /** PostgREST filter on the `born_events` embed of [shiftListSelect]; it trims the embed, not the shifts. */
+    private const val BORN_EVENTS_ORIGIN_COLUMN = "born_events.origin"
+
     private val shiftListSelect = """
         id, shift_date, shift_kind, vehicle_type, status, odometer_start, odometer_end,
+        starts_at, ends_at,
         personal_vehicle:vehicles!shifts_personal_vehicle_id_fkey(plate_number),
         shift_lead:profiles!shifts_shift_lead_id_fkey(full_name, callsign),
         responders:shift_responders(id, responder_id),
@@ -581,7 +595,9 @@ object YahpazAPI {
             filter { eq("responder_id", userId) }
         }.decodeList<ShiftAssignmentIdRow>().map { it.shiftId }
         if (ids.isEmpty()) return emptyList()
-        return fetchByIds(ids, "shifts", shiftListSelect)
+        return fetchByIds(ids, "shifts", shiftListSelect) {
+            eq(BORN_EVENTS_ORIGIN_COLUMN, SHIFT_ORIGIN)
+        }
     }
 
     /** Event ids that have at least one photo or video, in chunks of 100. */
@@ -800,6 +816,7 @@ object YahpazAPI {
 
     suspend fun fetchUnitShifts(limit: Int = 80): List<ShiftListItem> =
         client.from("shifts").select(Columns.raw(shiftListSelect)) {
+            filter { eq(BORN_EVENTS_ORIGIN_COLUMN, SHIFT_ORIGIN) }
             order("shift_date", Order.DESCENDING)
             limit(limit.toLong())
         }.decodeList<ShiftListItem>()
@@ -1709,8 +1726,10 @@ object YahpazAPI {
                 client.postgrest.rpc("sync_shift_born_events", mapOf("p_shift_id" to inserted.id))
             }
             null
-        } catch (_: Exception) {
-            SHIFT_DRAFT_SAVE_FAILED
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            shiftWriteErrorMessage(error)
         }
     }
 
@@ -2106,6 +2125,7 @@ object YahpazAPI {
             Columns.raw(
                 """
                 id, shift_date, shift_kind, vehicle_type, notes, personal_vehicle_id,
+                starts_at, ends_at,
                 responders:shift_responders(id, responder_id)
                 """.trimIndent(),
             ),
@@ -2125,6 +2145,7 @@ object YahpazAPI {
             } else {
                 null
             }
+            val window = shiftWindowAfterEdit(detail, shiftDate, draft.shiftKind)
             val existing = detail.responders
             val keepIds = draft.responderIds.distinct().toSet()
             val toRemove = existing.filter { it.responderId !in keepIds }
@@ -2149,6 +2170,8 @@ object YahpazAPI {
                     vehicleType = draft.vehicleType,
                     personalVehicleId = personalVehicleId,
                     notes = draft.notes.nilIfEmpty(),
+                    startsAt = window?.startsAt?.toString(),
+                    endsAt = window?.endsAt?.toString(),
                     lastSavedBy = userId,
                     updatedAt = Instant.now().toString(),
                 ),
@@ -2168,10 +2191,52 @@ object YahpazAPI {
             null
         } catch (error: CancellationException) {
             throw error
-        } catch (_: Exception) {
-            SHIFT_DRAFT_SAVE_FAILED
+        } catch (error: Exception) {
+            shiftWriteErrorMessage(error)
         }
     }
+
+    private fun shiftWindowAfterEdit(detail: ShiftFormDetail, newDate: String, newKind: String): ShiftWindow? {
+        val startsAt = detail.startsAt ?: return null
+        val endsAt = detail.endsAt ?: return null
+        val oldWindow = ShiftWindow(
+            startsAt = OffsetDateTime.parse(startsAt).toInstant(),
+            endsAt = OffsetDateTime.parse(endsAt).toInstant(),
+        )
+        return windowAfterShiftEdit(EditedShift(detail.shiftDate, detail.shiftKind), newDate, newKind, oldWindow)
+    }
+
+    private fun shiftWriteErrorMessage(error: Exception): String {
+        if (isShiftOverlapRefusal(error.message)) return SHIFT_OVERLAP_GENERAL_MESSAGE
+        return knownLiveShiftMessage(error.message) ?: SHIFT_DRAFT_SAVE_FAILED
+    }
+
+    /** Opens an empty event on a live shift; the id of the new event comes back. */
+    suspend fun createShiftEvent(shiftId: String, eventTypeId: String): Result<String> = try {
+        val eventId = client.postgrest.rpc(
+            "create_shift_event",
+            mapOf("p_shift_id" to shiftId, "p_event_type_id" to eventTypeId),
+        ).decodeAs<String>()
+        Result.success(eventId)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        Result.failure(Exception(knownLiveShiftMessage(error.message) ?: SHIFT_EVENT_CREATE_FAILED))
+    }
+
+    /** Removes an event nobody has filled in yet. The failure message is the server's Hebrew refusal. */
+    suspend fun deleteEmptyShiftEvent(eventId: String): Result<Unit> = try {
+        client.postgrest.rpc("delete_empty_shift_event", mapOf("p_event_id" to eventId))
+        Result.success(Unit)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        Result.failure(Exception(knownLiveShiftMessage(error.message) ?: SHIFT_EVENT_DELETE_FAILED))
+    }
+
+    /** The caller's live shift inside its window (a running one first), or null when there is none. */
+    suspend fun fetchMyCurrentShift(): CurrentShiftRow? =
+        client.postgrest.rpc("my_current_shift").decodeList<CurrentShiftRow>().firstOrNull()
 
     suspend fun loadFuelQuarterWorkbook(year: Int, quarter: Int): FuelQuarterWorkbook {
         require(quarter in 1..4)
@@ -2361,10 +2426,14 @@ object YahpazAPI {
         ids: List<String>,
         table: String,
         columns: String,
+        extraFilter: PostgrestFilterBuilder.() -> Unit = {},
     ): List<T> {
         return ids.chunked(100).flatMap { chunk ->
             client.from(table).select(Columns.raw(columns)) {
-                filter { isIn("id", chunk) }
+                filter {
+                    isIn("id", chunk)
+                    extraFilter()
+                }
             }.decodeList<T>()
         }
     }
@@ -2477,6 +2546,7 @@ object YahpazAPI {
         expectedUpdatedAt: String,
         draft: ShiftBornFillDraft,
         complete: Boolean,
+        reopen: Boolean = false,
     ): ShiftBornSave = try {
         val updatedAt = client.postgrest.rpc(
             "save_shift_born_event_fill",
@@ -2491,6 +2561,7 @@ object YahpazAPI {
                 treatmentNotes = draft.treatmentNotes,
                 treated = draft.treated.map { ShiftBornTreatedCall(it.vehicleKindId, it.quantity) },
                 complete = complete,
+                reopen = reopen,
                 plates = draft.treatedPlates.map {
                     ShiftBornPlateCall(
                         plateNumber = it.plateNumber,
