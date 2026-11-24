@@ -14,11 +14,12 @@ import com.yahpz.domain.odometerDelta
 import com.yahpz.domain.mapShiftSaveError
 import com.yahpz.domain.SHIFT_EVENT_CREATE_FAILED
 import com.yahpz.domain.SHIFT_EVENT_DELETE_FAILED
-import com.yahpz.domain.SHIFT_OVERLAP_GENERAL_MESSAGE
-import com.yahpz.domain.EditedShift
-import com.yahpz.domain.ShiftWindow
+import com.yahpz.domain.CrewLiveShift
+import com.yahpz.domain.OverlapKnownShift
+import com.yahpz.domain.buildShiftWindow
 import com.yahpz.domain.isShiftOverlapRefusal
-import com.yahpz.domain.windowAfterShiftEdit
+import com.yahpz.domain.mapShiftOverlapError
+import io.github.jan.supabase.postgrest.exception.PostgrestRestException
 import com.yahpz.domain.knownLiveShiftMessage
 import com.yahpz.domain.AssignableProfile
 import com.yahpz.domain.HighwayJunctionCatalogRow
@@ -1701,6 +1702,7 @@ object YahpazAPI {
         if (!errors.isEmpty) return errors.formMessage ?: SHIFT_DRAFT_FORM_ERROR
         val userId = sessionUserId() ?: return "יש להתחבר מחדש."
         val shiftDate = normalizeReturnDate(draft.shiftDate) ?: return SHIFT_DRAFT_DATE_ERROR
+        val window = buildShiftWindow(shiftDate, draft.startTime, draft.endTime)
         return try {
             val inserted = client.from("shifts").insert(
                 ShiftInsert(
@@ -1709,6 +1711,8 @@ object YahpazAPI {
                     vehicleType = draft.vehicleType,
                     personalVehicleId = if (draft.vehicleType == "personal") draft.personalVehicleId else null,
                     notes = draft.notes.nilIfEmpty(),
+                    startsAt = window.startsAt.toString(),
+                    endsAt = window.endsAt.toString(),
                     shiftLeadId = userId,
                     lastSavedBy = userId,
                     updatedAt = Instant.now().toString(),
@@ -1729,7 +1733,7 @@ object YahpazAPI {
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            shiftWriteErrorMessage(error)
+            shiftWriteErrorMessage(error, draft.responderIds, shiftDate)
         }
     }
 
@@ -2145,7 +2149,7 @@ object YahpazAPI {
             } else {
                 null
             }
-            val window = shiftWindowAfterEdit(detail, shiftDate, draft.shiftKind)
+            val window = if (draft.isLegacy) null else buildShiftWindow(shiftDate, draft.startTime, draft.endTime)
             val existing = detail.responders
             val keepIds = draft.responderIds.distinct().toSet()
             val toRemove = existing.filter { it.responderId !in keepIds }
@@ -2192,23 +2196,52 @@ object YahpazAPI {
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            shiftWriteErrorMessage(error)
+            shiftWriteErrorMessage(error, draft.responderIds, shiftDate)
         }
     }
 
-    private fun shiftWindowAfterEdit(detail: ShiftFormDetail, newDate: String, newKind: String): ShiftWindow? {
-        val startsAt = detail.startsAt ?: return null
-        val endsAt = detail.endsAt ?: return null
-        val oldWindow = ShiftWindow(
-            startsAt = OffsetDateTime.parse(startsAt).toInstant(),
-            endsAt = OffsetDateTime.parse(endsAt).toInstant(),
-        )
-        return windowAfterShiftEdit(EditedShift(detail.shiftDate, detail.shiftKind), newDate, newKind, oldWindow)
+    private suspend fun shiftWriteErrorMessage(
+        error: Exception,
+        responderIds: List<String>,
+        shiftDate: String,
+    ): String {
+        if (isShiftOverlapRefusal(error.message)) return overlapRefusalMessage(error, responderIds, shiftDate)
+        return knownLiveShiftMessage(error.message) ?: SHIFT_DRAFT_SAVE_FAILED
     }
 
-    private fun shiftWriteErrorMessage(error: Exception): String {
-        if (isShiftOverlapRefusal(error.message)) return SHIFT_OVERLAP_GENERAL_MESSAGE
-        return knownLiveShiftMessage(error.message) ?: SHIFT_DRAFT_SAVE_FAILED
+    /** The database names the other shift only by id, so its type and hours are looked up. */
+    private suspend fun overlapRefusalMessage(
+        error: Exception,
+        responderIds: List<String>,
+        shiftDate: String,
+    ): String {
+        val otherShiftId = (error as? PostgrestRestException)?.details
+        val knownShifts = try {
+            fetchCrewLiveShifts(responderIds, shiftDate)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            emptyList()
+        }
+        return mapShiftOverlapError(
+            otherShiftId,
+            knownShifts.map { OverlapKnownShift(it.id, it.shiftKind, it.startsAt, it.endsAt) },
+        )
+    }
+
+    /** Live shifts of these people the day before, on and the day after the date. */
+    suspend fun fetchCrewLiveShifts(responderIds: List<String>, shiftDate: String): List<CrewLiveShift> {
+        val date = LocalDate.parse(shiftDate)
+        val rows = client.from("shift_responders").select(
+            Columns.raw("responder_id, shift:shifts!inner(id, shift_kind, starts_at, ends_at)"),
+        ) {
+            filter {
+                isIn("responder_id", responderIds)
+                gte("shift.shift_date", date.minusDays(1).toString())
+                lte("shift.shift_date", date.plusDays(1).toString())
+            }
+        }.decodeList<CrewShiftRow>()
+        return rows.toCrewLiveShifts()
     }
 
     /** Opens an empty event on a live shift; the id of the new event comes back. */

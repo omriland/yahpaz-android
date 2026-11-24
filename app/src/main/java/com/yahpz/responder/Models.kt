@@ -17,6 +17,9 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import com.yahpz.domain.UserListDataGap
+import com.yahpz.domain.CrewLiveShift
+import com.yahpz.domain.formatJerusalemTimeOfDay
+import java.time.OffsetDateTime
 import com.yahpz.domain.userListDataGap
 import com.yahpz.domain.AdminUserSearchInput
 import com.yahpz.domain.AdminUserSortKey
@@ -1788,7 +1791,13 @@ data class ShiftFormDetail(
         notes = notes.orEmpty(),
         responderIds = responders.map { it.responderId },
         personalVehicleId = personalVehicleId,
+        startTime = startsAt?.let(::jerusalemTimeOfDay).orEmpty(),
+        endTime = endsAt?.let(::jerusalemTimeOfDay).orEmpty(),
+        isLegacy = startsAt == null || endsAt == null,
     )
+
+    private fun jerusalemTimeOfDay(timestamp: String): String =
+        formatJerusalemTimeOfDay(OffsetDateTime.parse(timestamp).toInstant())
 }
 
 @Serializable
@@ -1900,6 +1909,35 @@ data class AssignmentIdRow(@SerialName("event_id") val eventId: String)
 
 @Serializable
 data class ShiftAssignmentIdRow(@SerialName("shift_id") val shiftId: String)
+
+@Serializable
+data class CrewShiftRow(
+    @SerialName("responder_id") val responderId: String,
+    val shift: CrewShiftRef,
+)
+
+@Serializable
+data class CrewShiftRef(
+    val id: String,
+    @SerialName("shift_kind") val shiftKind: String,
+    @SerialName("starts_at") val startsAt: String? = null,
+    @SerialName("ends_at") val endsAt: String? = null,
+)
+
+/** One entry per live shift with everyone of the queried crew on it; legacy shifts have no hours and are left out. */
+fun List<CrewShiftRow>.toCrewLiveShifts(): List<CrewLiveShift> =
+    filter { it.shift.startsAt != null && it.shift.endsAt != null }
+        .groupBy { it.shift.id }
+        .map { (shiftId, rows) ->
+            val shift = rows.first().shift
+            CrewLiveShift(
+                id = shiftId,
+                shiftKind = shift.shiftKind,
+                startsAt = OffsetDateTime.parse(shift.startsAt).toInstant(),
+                endsAt = OffsetDateTime.parse(shift.endsAt).toInstant(),
+                responderIds = rows.map { it.responderId },
+            )
+        }
 
 @Serializable
 data class ShiftCrewRow(

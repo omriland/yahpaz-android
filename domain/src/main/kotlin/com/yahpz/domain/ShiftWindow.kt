@@ -111,3 +111,33 @@ fun mapShiftOverlapError(otherShiftId: String?, knownShifts: List<OverlapKnownSh
 
 fun crewOverlapMessage(memberName: String, clash: OverlapKnownShift): String =
     "לא ניתן לשבץ את $memberName: כבר משובץ במשמרת ${overlapShiftLabel(clash)}."
+
+data class CrewMember(val id: String, val name: String)
+
+data class CrewLiveShift(
+    val id: String,
+    val shiftKind: String,
+    val startsAt: Instant,
+    val endsAt: Instant,
+    val responderIds: List<String>,
+)
+
+/** The refusal for the first crew member already on another live shift in these hours, else null. */
+fun findCrewOverlapMessage(
+    window: ShiftWindow,
+    crew: List<CrewMember>,
+    others: List<CrewLiveShift>,
+    ignoreShiftId: String?,
+): String? {
+    val ownRange = TimeRange(window.startsAt, window.endsAt)
+    val candidates = others.filter { it.id != ignoreShiftId }
+    for (member in crew) {
+        val clash = candidates.firstOrNull { other ->
+            member.id in other.responderIds && rangesOverlap(ownRange, TimeRange(other.startsAt, other.endsAt))
+        }
+        if (clash != null) {
+            return crewOverlapMessage(member.name, OverlapKnownShift(clash.id, clash.shiftKind, clash.startsAt, clash.endsAt))
+        }
+    }
+    return null
+}

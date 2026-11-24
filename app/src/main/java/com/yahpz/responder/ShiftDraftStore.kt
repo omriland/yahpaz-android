@@ -99,6 +99,8 @@ private data class StashedShiftDraftPayload(
     val notes: String = "",
     val responderIds: List<String> = emptyList(),
     val personalVehicleId: String? = null,
+    val startTime: String = "",
+    val endTime: String = "",
 )
 
 private fun ShiftDraft.toPayload() = StashedShiftDraftPayload(
@@ -108,6 +110,8 @@ private fun ShiftDraft.toPayload() = StashedShiftDraftPayload(
     notes = notes,
     responderIds = responderIds,
     personalVehicleId = personalVehicleId,
+    startTime = startTime,
+    endTime = endTime,
 )
 
 private fun StashedShiftDraftPayload.toDomain() = ShiftDraft(
@@ -117,4 +121,6 @@ private fun StashedShiftDraftPayload.toDomain() = ShiftDraft(
     notes = notes,
     responderIds = responderIds,
     personalVehicleId = personalVehicleId,
+    startTime = startTime,
+    endTime = endTime,
 )

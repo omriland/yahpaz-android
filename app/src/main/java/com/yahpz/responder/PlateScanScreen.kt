@@ -6,7 +6,9 @@ import android.util.Size
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.OptIn
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.core.resolutionselector.ResolutionSelector
@@ -76,6 +78,7 @@ fun ExperimentalPlateScanDialog(
     }
 }
 
+@OptIn(ExperimentalGetImage::class)
 @Composable
 fun ExperimentalPlateScanScreen(
     onClose: () -> Unit,

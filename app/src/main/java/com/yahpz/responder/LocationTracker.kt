@@ -1,6 +1,7 @@
 package com.yahpz.responder
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
@@ -86,6 +87,7 @@ class LocationTracker(private val context: Context) {
         _state.value = _state.value.copy(sharing = false)
     }
 
+    @SuppressLint("MissingPermission")
     private fun startUpdates() {
         val provider = when {
             manager.isProviderEnabled(LocationManager.GPS_PROVIDER) -> LocationManager.GPS_PROVIDER
