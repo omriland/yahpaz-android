@@ -45,7 +45,7 @@ const val DEFAULT_OPTIONAL_UPDATE_MESSAGE =
 
 /** Test seam: while set, the update check answers with it and never reaches the network. */
 @Volatile
-var fakeSideloadUpdateCheck: SideloadUpdateCheck? = null
+internal var fakeSideloadUpdateCheck: SideloadUpdateCheck? = null
 
 suspend fun checkSideloadUpdates(currentVersionCode: Int): SideloadUpdateCheck =
     withContext(Dispatchers.IO) {

@@ -294,7 +294,7 @@ data class FakeSignedInSession(
 object YahpazAPI {
     /** Test seam: while set, the session calls answer from it and the list fetches return nothing, offline. */
     @Volatile
-    var fakeSignedInSession: FakeSignedInSession? = null
+    internal var fakeSignedInSession: FakeSignedInSession? = null
 
     private const val EVENT_SECONDARY_LEADS_EMBED =
         "secondary_leads:event_secondary_leads(user_id, locked, added_at, profile:profiles!event_secondary_leads_user_id_fkey(full_name, callsign))"

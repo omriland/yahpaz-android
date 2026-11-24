@@ -32,6 +32,7 @@ import com.yahpz.domain.hasDetailBeyondOpen
 import com.yahpz.domain.validateEventDraftPartial
 import com.yahpz.domain.EventWriteOutcome
 import com.yahpz.domain.InviteDraft
+import com.yahpz.domain.mobileNavEntries
 import com.yahpz.domain.USER_DELETED
 import com.yahpz.domain.USER_SAVED
 import com.yahpz.domain.otpFlagToast
@@ -210,9 +211,12 @@ class AppModel : ViewModel() {
     private var liveShiftScreenOpenedThisStart = false
     private var bootstrapJob: Job? = null
 
+    /** False only for a model the process has just built, which is what a link from an earlier process needs. */
+    val hasBootstrapped: Boolean get() = bootstrapJob != null
+
     /**
-     * Runs once per process. A recreated activity finds the model signed in or still booting:
-     * it keeps what it has and only refreshes the lists in the background.
+     * Runs once per process. A recreated activity finds the model booted, signed in or not,
+     * or still booting: it keeps exactly what the model has.
      * [savedNavigation] is the map [navigationMap] gave before the process died.
      */
     fun bootstrap(
@@ -220,20 +224,8 @@ class AppModel : ViewModel() {
         skippedOptionalVersionCode: Int = 0,
         savedNavigation: Map<String, String>? = null,
     ) {
-        if (_state.value.isSignedIn) {
-            refreshListsInBackground()
-            return
-        }
-        if (bootstrapJob?.isActive == true) return
+        if (hasBootstrapped) return
         bootstrapJob = launchBootstrap(installedFromPlay, skippedOptionalVersionCode, savedNavigation)
-    }
-
-    private fun refreshListsInBackground() {
-        viewModelScope.launch {
-            reloadEvents()
-            reloadShifts()
-            reloadVehicles()
-        }
     }
 
     private fun launchBootstrap(
@@ -290,8 +282,8 @@ class AppModel : ViewModel() {
         reloadCurrentShift()
         val snapshot = restoreNavSnapshot(
             map = saved,
-            validTabs = AppTab.entries.map { it.name }.toSet(),
-            validToolsDestinations = RESTORABLE_TOOLS_DESTINATIONS.map { it.name }.toSet(),
+            validTabs = mobileNavEntries(_state.value.roles).map { appTabForMobileView(it.view).name }.toSet(),
+            validToolsDestinations = restorableToolsDestinationNames(),
             currentShiftId = _state.value.currentShift?.id,
         ) ?: return
         _state.update {
@@ -304,6 +296,16 @@ class AppModel : ViewModel() {
                 unitEventsQuery = snapshot.unitEventsQuery,
             )
         }
+    }
+
+    private fun restorableToolsDestinationNames(): Set<String> {
+        val adminOnly = setOf(ToolsDestination.ADMIN_USERS, ToolsDestination.COCKPIT)
+        val allowed = if (_state.value.canAdmin) {
+            RESTORABLE_TOOLS_DESTINATIONS
+        } else {
+            RESTORABLE_TOOLS_DESTINATIONS.filterNot { it in adminOnly }
+        }
+        return allowed.map { it.name }.toSet()
     }
 
     fun setUnitEventsQuery(query: String) {

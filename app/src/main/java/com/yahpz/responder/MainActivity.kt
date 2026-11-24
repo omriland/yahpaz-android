@@ -21,12 +21,13 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        val modelIsFresh = !app.hasBootstrapped
         app.bootstrap(
             installedFromPlay = PlayInstallSource.installedFromPlay(this),
             skippedOptionalVersionCode = OptionalUpdatePrefs.skippedLatestVersionCode(this),
             savedNavigation = savedInstanceState?.getBundle(NAVIGATION_STATE_KEY)?.toStringMap(),
         )
-        if (savedInstanceState == null) intent?.dataString?.let(app::applyIncomingUrl)
+        if (savedInstanceState == null || modelIsFresh) intent?.dataString?.let(app::applyIncomingUrl)
         setContent {
             val ui by app.state.collectAsState()
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
