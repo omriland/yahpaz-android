@@ -13,7 +13,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -87,7 +86,7 @@ private fun ViewAsBannerCard(text: String, action: String, onAction: () -> Unit)
 @Composable
 fun RolePreviewSheet(onClose: () -> Unit, onPick: (AppRole) -> Unit) {
     var selected by remember { mutableStateOf(AppRole.RESPONDER) }
-    ModalBottomSheet(onDismissRequest = onClose) {
+    AdaptiveBottomSheet(onDismissRequest = onClose) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -144,7 +143,7 @@ fun ImpersonationSheet(
     }
     val selected = filtered.firstOrNull { it.id == selectedId }
 
-    ModalBottomSheet(onDismissRequest = { if (!busy) onClose() }) {
+    AdaptiveBottomSheet(onDismissRequest = { if (!busy) onClose() }) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()

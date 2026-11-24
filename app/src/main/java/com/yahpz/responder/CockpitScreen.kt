@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -201,7 +200,7 @@ fun CockpitScreen(app: AppModel, ui: AppUiState, onBack: () -> Unit) {
         var confirmDelete by remember(current.id) { mutableStateOf(false) }
         var deleting by remember(current.id) { mutableStateOf(false) }
         var deleteHint by remember(current.id) { mutableStateOf<String?>(null) }
-        ModalBottomSheet(onDismissRequest = {
+        AdaptiveBottomSheet(onDismissRequest = {
             detail = null
             mapsError = null
         }) {

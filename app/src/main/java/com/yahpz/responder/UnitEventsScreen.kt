@@ -39,7 +39,6 @@ import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -53,6 +52,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import com.yahpz.domain.AdaptiveLayout
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
@@ -128,6 +129,8 @@ import kotlinx.coroutines.launch
 
 private const val FILTER_TITLE = "סינון"
 private const val FILTER_RESET = "איפוס"
+internal const val UNIT_EVENT_DETAIL_SHEET_TAG = "unit-event-detail-sheet"
+
 private const val UNIT_EVENTS_SECTION_TITLE = "אירועי היחידה"
 private const val MY_ACTIVE_REMOVE_SPOKEN = "הסרה מהפעילים"
 private val ISRAEL_ZONE: ZoneId = ZoneId.of("Asia/Jerusalem")
@@ -180,6 +183,7 @@ internal fun UnitEventsContent(
     ui: AppUiState,
     actions: UnitEventsActions,
     today: LocalDate = LocalDate.now(ISRAEL_ZONE),
+    layout: AdaptiveLayout = currentAdaptiveLayout(),
 ) {
     val scope = rememberCoroutineScope()
     val query = ui.unitEventsQuery
@@ -300,152 +304,109 @@ internal fun UnitEventsContent(
         }
     }
 
-    PullToRefreshBox(
-        isRefreshing = refreshing,
-        onRefresh = {
-            scope.launch {
-                refreshing = true
-                actions.reload()
-                refreshing = false
-            }
-        },
-        modifier = Modifier
-            .fillMaxSize()
-            .background(FieldTheme.page),
-    ) {
-        Column(
+    val detailPane: (@Composable () -> Unit)? = detail?.let { event ->
+        {
+            UnitEventDetailBody(
+                event = event,
+                ui = ui,
+                actions = actions,
+                tryOpenEdit = ::tryOpenEdit,
+                onClose = { detail = null },
+            )
+        }
+    }
+    ListDetailLayout(layout = layout, detailPane = detailPane, onCloseDetail = { detail = null }) {
+        PullToRefreshBox(
+            isRefreshing = refreshing,
+            onRefresh = {
+                scope.launch {
+                    refreshing = true
+                    actions.reload()
+                    refreshing = false
+                }
+            },
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 16.dp)
-                .padding(top = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+                .background(FieldTheme.page),
         ) {
-            UnitEventsHeader(
-                query = query,
-                onQueryChange = actions.setQuery,
-                activeFilterCount = filters.count { it.selected },
-                onOpenFilters = { filtersOpen = true },
-            )
-            when {
-                ui.unitEventsFailed -> EmptyState(
-                    title = UNIT_EVENTS_LOAD_FAILED,
-                    actionTitle = "רענון",
-                    onAction = { scope.launch { actions.reload() } },
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp)
+                    .padding(top = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                UnitEventsHeader(
+                    query = query,
+                    onQueryChange = actions.setQuery,
+                    activeFilterCount = filters.count { it.selected },
+                    onOpenFilters = { filtersOpen = true },
                 )
-                ui.unitEventsLoading && ui.unitEvents.isEmpty() && ui.myActiveUnitEvents.isEmpty() ->
-                    LoadingBlock("טוען אירועים…")
-                else -> Column(
-                    modifier = Modifier.verticalScroll(
-                        rememberScrollState(),
-                        enabled = draggingId == null,
-                    ),
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .onGloballyPositioned { activeDropZone = it.boundsInRoot() }
-                            .then(dropZoneModifier(armed = dragSource == ActiveDragSource.CATALOG, over = overActiveDrop)),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                when {
+                    ui.unitEventsFailed -> EmptyState(
+                        title = UNIT_EVENTS_LOAD_FAILED,
+                        actionTitle = "רענון",
+                        onAction = { scope.launch { actions.reload() } },
+                    )
+                    ui.unitEventsLoading && ui.unitEvents.isEmpty() && ui.myActiveUnitEvents.isEmpty() ->
+                        LoadingBlock("טוען אירועים…")
+                    else -> Column(
+                        modifier = Modifier.verticalScroll(
+                            rememberScrollState(),
+                            enabled = draggingId == null,
+                        ),
                     ) {
-                        SectionHeading(
-                            title = MY_ACTIVE_EVENTS_TITLE,
-                            count = activeEvents.size,
-                            // Drag hints only while dragging; the buttons on each card do the same job.
-                            subtitle = when {
-                                dragSource == ActiveDragSource.CATALOG && overActiveDrop -> MY_ACTIVE_DROP_TO_ADD
-                                dragSource == ActiveDragSource.CATALOG -> MY_ACTIVE_DRAG_TO_ADD
-                                activeEvents.isEmpty() -> MY_ACTIVE_EVENTS_EMPTY
-                                else -> null
-                            },
-                            subtitleAccent = overActiveDrop,
-                        )
-                        if (activeEvents.isEmpty() && dragSource == ActiveDragSource.CATALOG) {
-                            Spacer(Modifier.height(48.dp))
-                        }
-                        activeEvents.forEach { event ->
-                            val canRemove = viewerId != null &&
-                                canRemoveFromMyActive(
-                                    viewerId,
-                                    event.shiftLeadId,
-                                    event.status,
-                                    event.isCancelled,
-                                )
-                            DraggableActiveEventRow(
-                                event = event,
-                                viewerId = viewerId,
-                                today = today,
-                                dragging = draggingId == event.id,
-                                dragOffset = if (draggingId == event.id) dragOffset else Offset.Zero,
-                                boardActionAdds = false,
-                                boardActionEnabled = event.id !in pendingBoardIds,
-                                // A locked row keeps its button and says why on tap, instead of a hint line.
-                                boardActionMuted = !canRemove,
-                                onBoardAction = {
-                                    if (canRemove) {
-                                        dismissFromActive(event.id)
-                                    } else {
-                                        actions.showToast(MY_ACTIVE_REMOVE_LOCKED, StampTone.PENDING)
-                                    }
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .onGloballyPositioned { activeDropZone = it.boundsInRoot() }
+                                .then(dropZoneModifier(armed = dragSource == ActiveDragSource.CATALOG, over = overActiveDrop)),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            SectionHeading(
+                                title = MY_ACTIVE_EVENTS_TITLE,
+                                count = activeEvents.size,
+                                // Drag hints only while dragging; the buttons on each card do the same job.
+                                subtitle = when {
+                                    dragSource == ActiveDragSource.CATALOG && overActiveDrop -> MY_ACTIVE_DROP_TO_ADD
+                                    dragSource == ActiveDragSource.CATALOG -> MY_ACTIVE_DRAG_TO_ADD
+                                    activeEvents.isEmpty() -> MY_ACTIVE_EVENTS_EMPTY
+                                    else -> null
                                 },
-                                onOpen = { tryOpenEdit(event) },
-                                onDragStart = { startInRoot ->
-                                    draggingId = event.id
-                                    dragSource = ActiveDragSource.ACTIVE
-                                    dragOffset = Offset.Zero
-                                    fingerInRoot = startInRoot
-                                },
-                                onDrag = { amount ->
-                                    dragOffset += amount
-                                    fingerInRoot += amount
-                                },
-                                onDragEnd = {
-                                    if (overCatalogDrop) dismissFromActive(event.id)
-                                    draggingId = null
-                                    dragSource = null
-                                    dragOffset = Offset.Zero
-                                },
-                                onDragCancel = {
-                                    draggingId = null
-                                    dragSource = null
-                                    dragOffset = Offset.Zero
-                                },
+                                subtitleAccent = overActiveDrop,
                             )
-                        }
-                    }
-                    Spacer(Modifier.height(24.dp))
-                    // One list: the unit's recent events, with ones missing details pinned first.
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .onGloballyPositioned { catalogDropZone = it.boundsInRoot() }
-                            .then(dropZoneModifier(armed = dragSource == ActiveDragSource.ACTIVE, over = overCatalogDrop)),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        SectionHeading(
-                            title = UNIT_EVENTS_SECTION_TITLE,
-                            count = events.size,
-                            subtitle = when {
-                                dragSource == ActiveDragSource.ACTIVE && overCatalogDrop -> "שחררו כאן להסרה מהפעילים"
-                                dragSource == ActiveDragSource.ACTIVE -> "גררו לכאן להסרה מהפעילים"
-                                events.isNotEmpty() -> catalogCaption
-                                else -> null
-                            },
-                            subtitleAccent = overCatalogDrop,
-                        )
-                        if (events.isNotEmpty()) {
-                            (incompleteEvents + restEvents).forEach { event ->
-                                CatalogEventRow(
+                            if (activeEvents.isEmpty() && dragSource == ActiveDragSource.CATALOG) {
+                                Spacer(Modifier.height(48.dp))
+                            }
+                            activeEvents.forEach { event ->
+                                val canRemove = viewerId != null &&
+                                    canRemoveFromMyActive(
+                                        viewerId,
+                                        event.shiftLeadId,
+                                        event.status,
+                                        event.isCancelled,
+                                    )
+                                DraggableActiveEventRow(
                                     event = event,
                                     viewerId = viewerId,
                                     today = today,
-                                    draggingId = draggingId,
-                                    dragOffset = dragOffset,
-                                    pendingBoardIds = pendingBoardIds,
-                                    onAddToActive = { addToActive(event.id) },
-                                    onOpen = { detail = event },
+                                    dragging = draggingId == event.id,
+                                    dragOffset = if (draggingId == event.id) dragOffset else Offset.Zero,
+                                    boardActionAdds = false,
+                                    boardActionEnabled = event.id !in pendingBoardIds,
+                                    // A locked row keeps its button and says why on tap, instead of a hint line.
+                                    boardActionMuted = !canRemove,
+                                    onBoardAction = {
+                                        if (canRemove) {
+                                            dismissFromActive(event.id)
+                                        } else {
+                                            actions.showToast(MY_ACTIVE_REMOVE_LOCKED, StampTone.PENDING)
+                                        }
+                                    },
+                                    onOpen = { tryOpenEdit(event) },
                                     onDragStart = { startInRoot ->
                                         draggingId = event.id
-                                        dragSource = ActiveDragSource.CATALOG
+                                        dragSource = ActiveDragSource.ACTIVE
                                         dragOffset = Offset.Zero
                                         fingerInRoot = startInRoot
                                     },
@@ -454,7 +415,7 @@ internal fun UnitEventsContent(
                                         fingerInRoot += amount
                                     },
                                     onDragEnd = {
-                                        if (overActiveDrop) addToActive(event.id)
+                                        if (overCatalogDrop) dismissFromActive(event.id)
                                         draggingId = null
                                         dragSource = null
                                         dragOffset = Offset.Zero
@@ -466,243 +427,106 @@ internal fun UnitEventsContent(
                                     },
                                 )
                             }
-                        } else if (dragSource == ActiveDragSource.ACTIVE) {
-                            Spacer(Modifier.height(48.dp))
-                        } else {
-                            val olderHidden = applyRecentWindow && catalog.isNotEmpty()
-                            EmptyState(
-                                title = when {
-                                    trimmed.isNotEmpty() -> "לא נמצאו אירועים תואמים"
-                                    olderHidden -> SHIFT_LEAD_EVENTS_RECENT_EMPTY
-                                    else -> "אין אירועים להצגה"
-                                },
-                                // Says what this list covers, so an empty list does not read as broken.
-                                caption = if (trimmed.isEmpty()) catalogCaption else null,
-                                actionTitle = when {
-                                    trimmed.isNotEmpty() -> "ניקוי חיפוש"
-                                    olderHidden -> SHOW_OLDER_UNIT_EVENTS_LABEL
-                                    else -> null
-                                },
-                                onAction = when {
-                                    trimmed.isNotEmpty() -> ({ actions.setQuery("") })
-                                    olderHidden -> ({ actions.setShowOlderUnitEvents(true) })
-                                    else -> null
-                                },
-                            )
                         }
+                        Spacer(Modifier.height(24.dp))
+                        // One list: the unit's recent events, with ones missing details pinned first.
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .onGloballyPositioned { catalogDropZone = it.boundsInRoot() }
+                                .then(dropZoneModifier(armed = dragSource == ActiveDragSource.ACTIVE, over = overCatalogDrop)),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            SectionHeading(
+                                title = UNIT_EVENTS_SECTION_TITLE,
+                                count = events.size,
+                                subtitle = when {
+                                    dragSource == ActiveDragSource.ACTIVE && overCatalogDrop -> "שחררו כאן להסרה מהפעילים"
+                                    dragSource == ActiveDragSource.ACTIVE -> "גררו לכאן להסרה מהפעילים"
+                                    events.isNotEmpty() -> catalogCaption
+                                    else -> null
+                                },
+                                subtitleAccent = overCatalogDrop,
+                            )
+                            if (events.isNotEmpty()) {
+                                (incompleteEvents + restEvents).forEach { event ->
+                                    CatalogEventRow(
+                                        event = event,
+                                        viewerId = viewerId,
+                                        today = today,
+                                        draggingId = draggingId,
+                                        dragOffset = dragOffset,
+                                        pendingBoardIds = pendingBoardIds,
+                                        onAddToActive = { addToActive(event.id) },
+                                        onOpen = { detail = event },
+                                        onDragStart = { startInRoot ->
+                                            draggingId = event.id
+                                            dragSource = ActiveDragSource.CATALOG
+                                            dragOffset = Offset.Zero
+                                            fingerInRoot = startInRoot
+                                        },
+                                        onDrag = { amount ->
+                                            dragOffset += amount
+                                            fingerInRoot += amount
+                                        },
+                                        onDragEnd = {
+                                            if (overActiveDrop) addToActive(event.id)
+                                            draggingId = null
+                                            dragSource = null
+                                            dragOffset = Offset.Zero
+                                        },
+                                        onDragCancel = {
+                                            draggingId = null
+                                            dragSource = null
+                                            dragOffset = Offset.Zero
+                                        },
+                                    )
+                                }
+                            } else if (dragSource == ActiveDragSource.ACTIVE) {
+                                Spacer(Modifier.height(48.dp))
+                            } else {
+                                val olderHidden = applyRecentWindow && catalog.isNotEmpty()
+                                EmptyState(
+                                    title = when {
+                                        trimmed.isNotEmpty() -> "לא נמצאו אירועים תואמים"
+                                        olderHidden -> SHIFT_LEAD_EVENTS_RECENT_EMPTY
+                                        else -> "אין אירועים להצגה"
+                                    },
+                                    // Says what this list covers, so an empty list does not read as broken.
+                                    caption = if (trimmed.isEmpty()) catalogCaption else null,
+                                    actionTitle = when {
+                                        trimmed.isNotEmpty() -> "ניקוי חיפוש"
+                                        olderHidden -> SHOW_OLDER_UNIT_EVENTS_LABEL
+                                        else -> null
+                                    },
+                                    onAction = when {
+                                        trimmed.isNotEmpty() -> ({ actions.setQuery("") })
+                                        olderHidden -> ({ actions.setShowOlderUnitEvents(true) })
+                                        else -> null
+                                    },
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(88.dp))
                     }
-                    Spacer(Modifier.height(88.dp))
                 }
             }
         }
     }
 
-    detail?.let { event ->
-        val current = ui.unitEvents.firstOrNull { it.id == event.id }
-            ?: ui.myActiveUnitEvents.firstOrNull { it.id == event.id }
-            ?: ui.myActivePinnedEvents.firstOrNull { it.id == event.id }
-            ?: event
-        val mine = ui.userId?.let { current.ownParticipation(it) }
-        val stamp = unitEventStamp(current, ui.userId)
-        val leadEntered = stamp.label == LEAD_ENTERED_LABEL
-        var expandedResponderIds by remember(current.id) { mutableStateOf(setOf<String>()) }
-        var detailRows by remember(current.id) { mutableStateOf<UnitEventDetailRespondersWrap?>(null) }
-        var confirmDelete by remember(current.id) { mutableStateOf(false) }
-        var deleting by remember(current.id) { mutableStateOf(false) }
-        val loadedDetail = detailRows
-        val detailResponders = loadedDetail?.responders
-
-        LaunchedEffect(current.id) {
-            expandedResponderIds = emptySet()
-            detailRows = runCatching {
-                actions.loadDetailResponders(current.id)
-            }.getOrNull()
-        }
-
-        ModalBottomSheet(onDismissRequest = { detail = null }) {
-            Column(
-                Modifier
-                    .padding(16.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+    if (!layout.listDetail) {
+        detail?.let { event ->
+            AdaptiveBottomSheet(
+                onDismissRequest = { detail = null },
+                modifier = Modifier.testTag(UNIT_EVENT_DETAIL_SHEET_TAG),
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        if (current.freeze.isFrozen) {
-                            FrozenEventMark(current.freeze)
-                        }
-                        Text("פרטי האירוע", style = TypeScale.section, color = FieldTheme.textPrimary)
-                    }
-                    StampChip(stamp)
-                }
-                val missingLead = missingEventFields(current.asIncompleteSnapshot())
-                LedgerRow("תאריך", formatDate(current.eventDate))
-                LedgerRow(
-                    "מספר אירוע",
-                    current.policeEventId.orEmpty(),
-                    missing = IncompleteField.POLICE_EVENT_ID in missingLead,
+                UnitEventDetailBody(
+                    event = event,
+                    ui = ui,
+                    actions = actions,
+                    tryOpenEdit = ::tryOpenEdit,
+                    onClose = { detail = null },
                 )
-                run {
-                    val callsign = resolvePatrolCallsign(
-                        current.patrolCallsignPrefix,
-                        current.patrolCallsignNumber,
-                        current.patrolCallsign,
-                    )
-                    LedgerRow(
-                        "אוק",
-                        formatPatrolCallsign(callsign.prefix, callsign.number),
-                        missing = IncompleteField.PATROL_CALLSIGN in missingLead,
-                    )
-                }
-                LedgerRow(
-                    "שעת התחלה",
-                    formatTime(current.startedAt).orEmpty(),
-                    missing = current.startedAt.isNullOrBlank(),
-                )
-                LedgerRow(
-                    "שעת סיום",
-                    formatTime(current.endedAt).orEmpty(),
-                    missing = current.endedAt.isNullOrBlank(),
-                )
-                LedgerRow(
-                    "סוג אירוע",
-                    current.typeLabel,
-                    missing = IncompleteField.EVENT_TYPE in missingLead,
-                )
-                LedgerRow(
-                    "כביש",
-                    current.road?.name.orEmpty(),
-                    missing = IncompleteField.ROAD in missingLead,
-                )
-                LedgerRow(
-                    "מיקום",
-                    current.location.orEmpty(),
-                    missing = IncompleteField.LOCATION in missingLead,
-                )
-                LedgerRow("נת״צ", if (current.busLane) "כן" else "לא")
-                if (current.origin == "shift" && loadedDetail != null) {
-                    LedgerRow("מספרי כלי רכב", treatedPlatesLabel(shiftEventPlates(loadedDetail)))
-                }
-                LedgerRow("סטטוס", stamp.label)
-                EventLeadLedgerRows(current.shiftLead, current.secondaryLeads)
-                Text("מתנדבים (${current.responders.size})", style = TypeScale.section, color = FieldTheme.textPrimary)
-                if (!current.releasedToResponders()) {
-                    Text(
-                        RESPONDERS_HELD_FOR_POLICE_ID_NOTE,
-                        style = TypeScale.caption,
-                        color = FieldTheme.textMuted,
-                    )
-                }
-                if (current.responders.isEmpty()) {
-                    Text(
-                        "טרם שובצו מתנדבים לאירוע",
-                        style = TypeScale.caption,
-                        color = FieldTheme.textMuted,
-                    )
-                } else if (detailResponders == null) {
-                    LoadingBlock("טוען מתנדבים…")
-                } else {
-                    val loadedResponders = detailResponders.orEmpty()
-                    loadedResponders.forEach { row ->
-                        UnitEventResponderRow(
-                            row = row,
-                            eventDate = current.eventDate,
-                            shiftBorn = current.isShiftBorn,
-                            showLeadKm = responderCardShowsLeadKm(managesUnit(ui.roles)),
-                            missingLeadDetails = current.origin != "shift" &&
-                                eventMissingLeadDoneDetails(current.endedAt),
-                            isViewer = row.responderId == ui.userId,
-                            leadEntered = leadEntered,
-                            expanded = row.id in expandedResponderIds,
-                            onToggle = {
-                                expandedResponderIds = if (row.id in expandedResponderIds) {
-                                    expandedResponderIds - row.id
-                                } else {
-                                    expandedResponderIds + row.id
-                                }
-                            },
-                        )
-                    }
-                }
-                if (mine != null && current.releasedToResponders()) {
-                    current.fillCtaLabel(ui.userId)?.let { label ->
-                        PrimaryButton(title = label, onClick = {
-                            val id = current.id
-                            detail = null
-                            actions.openFill(id)
-                        })
-                    }
-                }
-                if (ui.canManageUnit) {
-                    val ageLocked = isEventEditAgeLocked(current.createdAt, ui.roles)
-                    PrimaryButton(
-                        title = EVENT_EDIT_TITLE,
-                        enabled = !ageLocked,
-                        onClick = {
-                            if (tryOpenEdit(current)) detail = null
-                        },
-                    )
-                    if (ageLocked) {
-                        Text(
-                            EVENT_EDIT_LOCKED_TOOLTIP,
-                            style = TypeScale.caption,
-                            color = FieldTheme.textMuted,
-                        )
-                    }
-                }
-                if (canDeleteUnassignedEvent(
-                        ui.canManageUnit,
-                        ui.canAdmin,
-                        ui.userId,
-                        current.shiftLeadId,
-                    )) {
-                    if (confirmDelete) {
-                        Text(
-                            if (current.responders.isNotEmpty()) {
-                                EVENT_DELETE_CONFIRM_WITH_RESPONDERS
-                            } else {
-                                EVENT_DELETE_CONFIRM
-                            },
-                            style = TypeScale.body,
-                            color = FieldTheme.textSecondary,
-                        )
-                        GhostButton(
-                            title = EVENT_DELETE_ACTION,
-                            danger = true,
-                            enabled = !deleting,
-                            onClick = {
-                                val id = current.id
-                                scope.launch {
-                                    deleting = true
-                                    val error = actions.deleteEvent(id)
-                                    deleting = false
-                                    if (error != null) {
-                                        actions.showToast(error, StampTone.PENDING)
-                                        confirmDelete = false
-                                    } else {
-                                        detail = null
-                                    }
-                                }
-                            },
-                        )
-                    } else {
-                        GhostButton(
-                            title = EVENT_DELETE_TITLE,
-                            danger = true,
-                            onClick = { confirmDelete = true },
-                        )
-                    }
-                }
-                TextButton(onClick = { detail = null }, modifier = Modifier.align(Alignment.End)) {
-                    Text("סגירה", color = FieldTheme.accent)
-                }
             }
         }
     }
@@ -713,6 +537,224 @@ internal fun UnitEventsContent(
 
     if (filtersOpen) {
         UnitEventsFilterSheet(filters = filters, onDismiss = { filtersOpen = false })
+    }
+}
+
+/** The opened event's ledger, responders and actions. Shown in a sheet on phones and in the detail pane on wide screens. */
+@Composable
+private fun UnitEventDetailBody(
+    event: EventListItem,
+    ui: AppUiState,
+    actions: UnitEventsActions,
+    tryOpenEdit: (EventListItem) -> Boolean,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val scope = rememberCoroutineScope()
+    val current = ui.unitEvents.firstOrNull { it.id == event.id }
+        ?: ui.myActiveUnitEvents.firstOrNull { it.id == event.id }
+        ?: ui.myActivePinnedEvents.firstOrNull { it.id == event.id }
+        ?: event
+    val mine = ui.userId?.let { current.ownParticipation(it) }
+    val stamp = unitEventStamp(current, ui.userId)
+    val leadEntered = stamp.label == LEAD_ENTERED_LABEL
+    var expandedResponderIds by remember(current.id) { mutableStateOf(setOf<String>()) }
+    var detailRows by remember(current.id) { mutableStateOf<UnitEventDetailRespondersWrap?>(null) }
+    var confirmDelete by remember(current.id) { mutableStateOf(false) }
+    var deleting by remember(current.id) { mutableStateOf(false) }
+    val loadedDetail = detailRows
+    val detailResponders = loadedDetail?.responders
+
+    LaunchedEffect(current.id) {
+        expandedResponderIds = emptySet()
+        detailRows = runCatching {
+            actions.loadDetailResponders(current.id)
+        }.getOrNull()
+    }
+
+    Column(
+        Modifier
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (current.freeze.isFrozen) {
+                    FrozenEventMark(current.freeze)
+                }
+                Text("פרטי האירוע", style = TypeScale.section, color = FieldTheme.textPrimary)
+            }
+            StampChip(stamp)
+        }
+        val missingLead = missingEventFields(current.asIncompleteSnapshot())
+        LedgerRow("תאריך", formatDate(current.eventDate))
+        LedgerRow(
+            "מספר אירוע",
+            current.policeEventId.orEmpty(),
+            missing = IncompleteField.POLICE_EVENT_ID in missingLead,
+        )
+        run {
+            val callsign = resolvePatrolCallsign(
+                current.patrolCallsignPrefix,
+                current.patrolCallsignNumber,
+                current.patrolCallsign,
+            )
+            LedgerRow(
+                "אוק",
+                formatPatrolCallsign(callsign.prefix, callsign.number),
+                missing = IncompleteField.PATROL_CALLSIGN in missingLead,
+            )
+        }
+        LedgerRow(
+            "שעת התחלה",
+            formatTime(current.startedAt).orEmpty(),
+            missing = current.startedAt.isNullOrBlank(),
+        )
+        LedgerRow(
+            "שעת סיום",
+            formatTime(current.endedAt).orEmpty(),
+            missing = current.endedAt.isNullOrBlank(),
+        )
+        LedgerRow(
+            "סוג אירוע",
+            current.typeLabel,
+            missing = IncompleteField.EVENT_TYPE in missingLead,
+        )
+        LedgerRow(
+            "כביש",
+            current.road?.name.orEmpty(),
+            missing = IncompleteField.ROAD in missingLead,
+        )
+        LedgerRow(
+            "מיקום",
+            current.location.orEmpty(),
+            missing = IncompleteField.LOCATION in missingLead,
+        )
+        LedgerRow("נת״צ", if (current.busLane) "כן" else "לא")
+        if (current.origin == "shift" && loadedDetail != null) {
+            LedgerRow("מספרי כלי רכב", treatedPlatesLabel(shiftEventPlates(loadedDetail)))
+        }
+        LedgerRow("סטטוס", stamp.label)
+        EventLeadLedgerRows(current.shiftLead, current.secondaryLeads)
+        Text("מתנדבים (${current.responders.size})", style = TypeScale.section, color = FieldTheme.textPrimary)
+        if (!current.releasedToResponders()) {
+            Text(
+                RESPONDERS_HELD_FOR_POLICE_ID_NOTE,
+                style = TypeScale.caption,
+                color = FieldTheme.textMuted,
+            )
+        }
+        if (current.responders.isEmpty()) {
+            Text(
+                "טרם שובצו מתנדבים לאירוע",
+                style = TypeScale.caption,
+                color = FieldTheme.textMuted,
+            )
+        } else if (detailResponders == null) {
+            LoadingBlock("טוען מתנדבים…")
+        } else {
+            val loadedResponders = detailResponders.orEmpty()
+            loadedResponders.forEach { row ->
+                UnitEventResponderRow(
+                    row = row,
+                    eventDate = current.eventDate,
+                    shiftBorn = current.isShiftBorn,
+                    showLeadKm = responderCardShowsLeadKm(managesUnit(ui.roles)),
+                    missingLeadDetails = current.origin != "shift" &&
+                        eventMissingLeadDoneDetails(current.endedAt),
+                    isViewer = row.responderId == ui.userId,
+                    leadEntered = leadEntered,
+                    expanded = row.id in expandedResponderIds,
+                    onToggle = {
+                        expandedResponderIds = if (row.id in expandedResponderIds) {
+                            expandedResponderIds - row.id
+                        } else {
+                            expandedResponderIds + row.id
+                        }
+                    },
+                )
+            }
+        }
+        if (mine != null && current.releasedToResponders()) {
+            current.fillCtaLabel(ui.userId)?.let { label ->
+                PrimaryButton(title = label, onClick = {
+                    val id = current.id
+                    onClose()
+                    actions.openFill(id)
+                })
+            }
+        }
+        if (ui.canManageUnit) {
+            val ageLocked = isEventEditAgeLocked(current.createdAt, ui.roles)
+            PrimaryButton(
+                title = EVENT_EDIT_TITLE,
+                enabled = !ageLocked,
+                onClick = {
+                    if (tryOpenEdit(current)) onClose()
+                },
+            )
+            if (ageLocked) {
+                Text(
+                    EVENT_EDIT_LOCKED_TOOLTIP,
+                    style = TypeScale.caption,
+                    color = FieldTheme.textMuted,
+                )
+            }
+        }
+        if (canDeleteUnassignedEvent(
+                ui.canManageUnit,
+                ui.canAdmin,
+                ui.userId,
+                current.shiftLeadId,
+            )) {
+            if (confirmDelete) {
+                Text(
+                    if (current.responders.isNotEmpty()) {
+                        EVENT_DELETE_CONFIRM_WITH_RESPONDERS
+                    } else {
+                        EVENT_DELETE_CONFIRM
+                    },
+                    style = TypeScale.body,
+                    color = FieldTheme.textSecondary,
+                )
+                GhostButton(
+                    title = EVENT_DELETE_ACTION,
+                    danger = true,
+                    enabled = !deleting,
+                    onClick = {
+                        val id = current.id
+                        scope.launch {
+                            deleting = true
+                            val error = actions.deleteEvent(id)
+                            deleting = false
+                            if (error != null) {
+                                actions.showToast(error, StampTone.PENDING)
+                                confirmDelete = false
+                            } else {
+                                onClose()
+                            }
+                        }
+                    },
+                )
+            } else {
+                GhostButton(
+                    title = EVENT_DELETE_TITLE,
+                    danger = true,
+                    onClick = { confirmDelete = true },
+                )
+            }
+        }
+        TextButton(onClick = { onClose() }, modifier = Modifier.align(Alignment.End)) {
+            Text("סגירה", color = FieldTheme.accent)
+        }
     }
 }
 
@@ -828,7 +870,7 @@ private fun FilterButton(activeCount: Int, onClick: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun UnitEventsFilterSheet(filters: List<ScopeFilter>, onDismiss: () -> Unit) {
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = FieldTheme.raised) {
+    AdaptiveBottomSheet(onDismissRequest = onDismiss, containerColor = FieldTheme.raised) {
         Column(
             modifier = Modifier
                 .padding(horizontal = 16.dp)

@@ -25,7 +25,6 @@ import androidx.compose.material.icons.outlined.HourglassEmpty
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -202,7 +201,7 @@ fun InboxScreen(app: AppModel, ui: AppUiState) {
     }
 
     detail?.let { event ->
-        ModalBottomSheet(onDismissRequest = { detail = null }) {
+        AdaptiveBottomSheet(onDismissRequest = { detail = null }) {
             Column(
                 Modifier
                     .padding(16.dp)

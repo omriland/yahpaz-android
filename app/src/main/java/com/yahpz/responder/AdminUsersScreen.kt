@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -305,7 +304,7 @@ fun AdminUsersScreen(app: AppModel, ui: AppUiState, onBack: (() -> Unit)? = null
     detail?.let { opened ->
         val user = ui.adminUsers.firstOrNull { it.id == opened.id } ?: opened
         val canMutate = canMutateAdminUser(actorIsSuperAdmin, user.roles)
-        ModalBottomSheet(onDismissRequest = { detail = null }) {
+        AdaptiveBottomSheet(onDismissRequest = { detail = null }) {
             Column(
                 Modifier
                     .padding(16.dp)
@@ -437,7 +436,7 @@ fun AdminUsersScreen(app: AppModel, ui: AppUiState, onBack: (() -> Unit)? = null
     }
 
     confirm?.let { opened ->
-        ModalBottomSheet(onDismissRequest = { if (!saving) confirm = null }) {
+        AdaptiveBottomSheet(onDismissRequest = { if (!saving) confirm = null }) {
             when (opened) {
                 is AdminConfirm.Deactivate -> ConfirmSheet(
                     title = deactivateConfirmTitle(opened.user.fullName),

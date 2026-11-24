@@ -39,7 +39,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -751,7 +750,7 @@ fun EmptyState(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AssignedVolunteerEditBlockedSheet(onDismiss: () -> Unit) {
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    AdaptiveBottomSheet(onDismissRequest = onDismiss) {
         Column(
             Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),

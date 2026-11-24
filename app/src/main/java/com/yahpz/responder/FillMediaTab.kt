@@ -49,7 +49,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -421,7 +420,7 @@ fun FillMediaTab(
                     platesLoaded = !loading,
                 )
                 val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-                ModalBottomSheet(
+                AdaptiveBottomSheet(
                     onDismissRequest = {
                         if (!draft.uploading) drafts = drafts.filterNot { it.key == draft.key }
                     },
@@ -502,7 +501,7 @@ fun FillMediaTab(
 
     assignTarget?.let { target ->
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-        ModalBottomSheet(
+        AdaptiveBottomSheet(
             onDismissRequest = { if (!assigning) assignTarget = null },
             sheetState = sheetState,
         ) {
@@ -552,7 +551,7 @@ fun FillMediaTab(
         val own = canDeleteEventMedia(current, viewerId, canWrite)
         val linked = plates.filter { it.id in current.treatedPlateIds }
         val currentIsVideo = isVideoMedia(current.mimeType)
-        ModalBottomSheet(
+        AdaptiveBottomSheet(
             onDismissRequest = {
                 if (!deleting && !savingEdit && !immersive) {
                     viewer = null
