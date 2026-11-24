@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.yahpz.domain.LIVE_SHARING_STOPS_ON_LOCK_NOTE
 import com.yahpz.domain.StampDescriptor
 import com.yahpz.domain.StampTone
 
@@ -64,6 +65,7 @@ fun LiveTrackScreen(token: String, onClose: () -> Unit) {
         if (state.sharing) {
             StampChip(StampDescriptor("בדרך", StampTone.PENDING))
         }
+        Text(LIVE_SHARING_STOPS_ON_LOCK_NOTE, style = TypeScale.caption, color = FieldTheme.textMuted, textAlign = TextAlign.Center)
         if (state.ended) {
             Text("אפשר לסגור את המסך.", style = TypeScale.caption, color = FieldTheme.textMuted)
         }

@@ -196,6 +196,8 @@ data class AppUiState(
     /** The shift whose live screen is on show: the current shift, or one opened from a shift list. */
     val liveShiftScreenId: String? = null,
     val unitEventsQuery: String = "",
+    /** The profile could not load for lack of a connection: the user stays signed in and can retry. */
+    val sessionOffline: Boolean = false,
 ) {
     val isSignedIn: Boolean get() = userId != null && profile != null
     val canManageUnit: Boolean get() = managesUnit(roles)
@@ -760,7 +762,9 @@ class AppModel : ViewModel() {
         } catch (error: CancellationException) {
             throw error
         } catch (_: Exception) {
-            _state.update { it.copy(unitEventsFailed = true) }
+            val outcome = com.yahpz.domain.listRefreshFailure(hadEvents, com.yahpz.domain.UNIT_EVENTS_REFRESH_FAILED_TOAST)
+            _state.update { it.copy(unitEventsFailed = outcome.showEmptyFailure) }
+            outcome.toast?.let { showToast(it, StampTone.PENDING) }
         } finally {
             _state.update { it.copy(unitEventsLoading = false) }
         }
@@ -1344,6 +1348,7 @@ class AppModel : ViewModel() {
             _state.update {
                 it.copy(
                     userId = userId,
+                    sessionOffline = false,
                     profile = profile,
                     actualRoles = roles,
                     roles = visible,
@@ -1383,17 +1388,39 @@ class AppModel : ViewModel() {
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            _state.update {
-                it.copy(
-                    userId = null,
-                    profile = null,
-                    vehicles = emptyList(),
-                    vehiclesFailed = false,
-                    vehiclesLoading = false,
-                )
+            val failure = if (error.isNetworkFailure()) {
+                com.yahpz.domain.SessionLoadFailure.NETWORK
+            } else {
+                com.yahpz.domain.SessionLoadFailure.AUTH
+            }
+            when (com.yahpz.domain.sessionRestoreOutcome(hasSession = true, failure = failure)) {
+                com.yahpz.domain.SessionRestoreOutcome.KEEP_SIGNED_IN_OFFLINE -> keepSignedInOffline(userId)
+                else -> signOutLocally()
             }
             throw error
         }
+    }
+
+    private fun keepSignedInOffline(userId: String) {
+        _state.update { it.copy(userId = userId, sessionOffline = true) }
+    }
+
+    private fun signOutLocally() {
+        _state.update {
+            it.copy(
+                userId = null,
+                profile = null,
+                sessionOffline = false,
+                vehicles = emptyList(),
+                vehiclesFailed = false,
+                vehiclesLoading = false,
+            )
+        }
+    }
+
+    fun retrySession() {
+        val id = _state.value.userId ?: return
+        viewModelScope.launch { runCatching { applySession(id) } }
     }
 
     private suspend fun reportAndroidSessionIfDue() {

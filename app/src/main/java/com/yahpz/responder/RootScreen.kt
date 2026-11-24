@@ -57,6 +57,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.yahpz.domain.MOBILE_MORE_LABEL
 import com.yahpz.domain.MobileNavEntry
+import com.yahpz.domain.OFFLINE_RETRY_ACTION
+import com.yahpz.domain.OFFLINE_RETRY_BANNER
 import com.yahpz.domain.canStartImpersonation
 import com.yahpz.domain.normalizeLoginEmail
 import com.yahpz.domain.normalizeLoginSecret
@@ -91,6 +93,9 @@ fun RootScreen(
                 ViewAsBanner(app, ui)
             }
         }
+        if (ui.sessionOffline && ui.isSignedIn) {
+            OfflineRetryBanner(onRetry = app::retrySession)
+        }
         // The bar is for screens the live screen outranks; update and password gates, and the live screen itself, hide it.
         val barAllowed = ui.forceUpdate == null && !ui.mustChangePassword
         val onShiftBarShown = ui.currentShift?.takeIf { ui.isSignedIn && barAllowed }?.let { shift ->
@@ -121,6 +126,13 @@ fun RootScreen(
             }
             ui.trackToken != null && !ui.isSignedIn -> SafeEdgeScreen {
                 LiveTrackScreen(ui.trackToken, app::closeTrack)
+            }
+            ui.sessionOffline && !ui.isSignedIn -> SafeEdgeScreen {
+                EmptyState(
+                    title = OFFLINE_RETRY_BANNER,
+                    actionTitle = OFFLINE_RETRY_ACTION,
+                    onAction = app::retrySession,
+                )
             }
             !ui.isSignedIn -> SafeEdgeScreen { LoginGate(app, ui) }
             ui.mustChangePassword -> Box(Modifier.fillMaxSize()) {
@@ -216,6 +228,22 @@ private fun SafeEdgeScreen(content: @Composable () -> Unit) {
             .safeDrawingPadding(),
     ) {
         content()
+    }
+}
+
+@Composable
+private fun OfflineRetryBanner(onRetry: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(FieldTheme.partialTint)
+            .statusBarsPadding()
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(OFFLINE_RETRY_BANNER, color = FieldTheme.partialOnTint)
+        GhostButton(title = OFFLINE_RETRY_ACTION, onClick = onRetry, modifier = Modifier.heightIn(min = 48.dp))
     }
 }
 

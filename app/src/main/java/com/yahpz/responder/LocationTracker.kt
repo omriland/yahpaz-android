@@ -10,11 +10,16 @@ import android.location.LocationManager
 import android.os.Bundle
 import android.os.Looper
 import androidx.core.content.ContextCompat
+import com.yahpz.domain.LOCATION_PERMISSION_REQUIRED_TEXT
 import com.yahpz.domain.LatLngAt
+import com.yahpz.domain.errorAfterPermissionResult
+import com.yahpz.domain.pingBaselineAfterAttempt
+import com.yahpz.domain.sharingStatusAfterPing
 import com.yahpz.domain.shouldEmitPing
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -29,7 +34,7 @@ data class TrackUiState(
 class LocationTracker(private val context: Context) {
     private val _state = MutableStateFlow(TrackUiState())
     val state: StateFlow<TrackUiState> = _state
-    private val scope = CoroutineScope(Dispatchers.Main.immediate + Job())
+    private var scope = newScope()
     private val manager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
     private var token: String? = null
     private var last: LatLngAt? = null
@@ -46,6 +51,8 @@ class LocationTracker(private val context: Context) {
         override fun onProviderDisabled(provider: String) = Unit
     }
 
+    private fun newScope() = CoroutineScope(Dispatchers.Main.immediate + Job())
+
     fun hasLocationPermission(): Boolean {
         val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
         val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION)
@@ -55,12 +62,13 @@ class LocationTracker(private val context: Context) {
     fun start(token: String) {
         this.token = token
         started = true
+        scope = newScope()
         last = null
         _state.value = TrackUiState()
         if (!hasLocationPermission()) {
             _state.value = TrackUiState(
-                statusText = "יש לאשר מיקום בהגדרות כדי לשתף מיקום בזמן אירוע.",
-                failed = "יש לאשר מיקום בהגדרות כדי לשתף מיקום בזמן אירוע.",
+                statusText = LOCATION_PERMISSION_REQUIRED_TEXT,
+                failed = LOCATION_PERMISSION_REQUIRED_TEXT,
             )
             return
         }
@@ -72,19 +80,28 @@ class LocationTracker(private val context: Context) {
         if (!started) return
         if (!granted) {
             _state.value = TrackUiState(
-                statusText = "יש לאשר מיקום בהגדרות כדי לשתף מיקום בזמן אירוע.",
-                failed = "יש לאשר מיקום בהגדרות כדי לשתף מיקום בזמן אירוע.",
+                statusText = LOCATION_PERMISSION_REQUIRED_TEXT,
+                failed = LOCATION_PERMISSION_REQUIRED_TEXT,
             )
             return
         }
+        clearStalePermissionError()
         startUpdates()
         scope.launch { load() }
+    }
+
+    private fun clearStalePermissionError() {
+        val current = _state.value
+        val error = errorAfterPermissionResult(current.failed, granted = true)
+        if (error == current.failed) return
+        _state.value = current.copy(failed = null, statusText = TrackUiState().statusText)
     }
 
     fun stop() {
         started = false
         runCatching { manager.removeUpdates(listener) }
         _state.value = _state.value.copy(sharing = false)
+        scope.cancel()
     }
 
     @SuppressLint("MissingPermission")
@@ -128,7 +145,6 @@ class LocationTracker(private val context: Context) {
         if (!started || token == null || _state.value.ended) return
         val next = LatLngAt(location.latitude, location.longitude, location.time)
         if (!shouldEmitPing(last, next)) return
-        last = next
         val token = token ?: return
         scope.launch {
             val result = YahpazAPI.pingTrack(token, next.lat, next.lng, location.accuracy.toDouble())
@@ -137,18 +153,22 @@ class LocationTracker(private val context: Context) {
                 stop()
                 return@launch
             }
-            if (result.ok == false) {
-                val error = result.error
-                if (error == "invalid" || error == "expired") {
-                    _state.value = _state.value.copy(
-                        failed = "קישור המעקב אינו תקף.",
-                        statusText = "קישור המעקב אינו תקף.",
-                    )
-                    stop()
-                    return@launch
-                }
+            if (result.error == "invalid" || result.error == "expired") {
+                _state.value = _state.value.copy(
+                    failed = "קישור המעקב אינו תקף.",
+                    statusText = "קישור המעקב אינו תקף.",
+                )
+                stop()
+                return@launch
             }
-            _state.value = _state.value.copy(sharing = true, statusText = "המיקום משותף עם האחמ״ש.")
+            val delivered = result.ok != false
+            last = pingBaselineAfterAttempt(last, next, delivered)
+            val status = sharingStatusAfterPing(delivered)
+            _state.value = _state.value.copy(
+                sharing = status.sharing,
+                failed = status.failed,
+                statusText = status.statusText,
+            )
         }
     }
 }

@@ -62,6 +62,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.yahpz.domain.NO_LINKED_VEHICLE_FILL_HINT
+import com.yahpz.domain.FillSaveGate
+import com.yahpz.domain.FillSaveKind
+import com.yahpz.domain.shouldAutosaveFill
 import com.yahpz.domain.odometerDelta
 import com.yahpz.domain.odometerRangeError
 import com.yahpz.domain.formatNumber
@@ -130,6 +133,8 @@ fun FillScreen(eventId: String, app: AppModel) {
     var loadError by remember { mutableStateOf("") }
     var savingDraft by remember { mutableStateOf(false) }
     var completing by remember { mutableStateOf(false) }
+    val saveGate = remember { FillSaveGate() }
+    var lastSavedOrLoadedDraft by remember { mutableStateOf<ResponderFillDraft?>(null) }
     var plateLookupGeneration by remember { mutableIntStateOf(0) }
     var pane by remember { mutableStateOf(FillPane.DOCS) }
     var unfinishedMediaDrafts by remember { mutableIntStateOf(0) }
@@ -189,7 +194,7 @@ fun FillScreen(eventId: String, app: AppModel) {
         localSavedAt = now
     }
 
-    suspend fun persistFill(fill: FillContext, complete: Boolean) {
+    suspend fun persistFillBody(fill: FillContext, complete: Boolean) {
         formError = null
         errors = validateResponderFillDraft(
             draft,
@@ -213,9 +218,7 @@ fun FillScreen(eventId: String, app: AppModel) {
             pendingPhotoSaveComplete = complete
             return
         }
-        if (complete) completing = true else savingDraft = true
         val error = YahpazAPI.saveFill(fill, draft, complete, unfinishedMediaDrafts)
-        if (complete) completing = false else savingDraft = false
         if (error != null) {
             if (error == errors.eventMedia) pane = FillPane.MEDIA
             if (error != errors.treatedPlates) {
@@ -227,6 +230,17 @@ fun FillScreen(eventId: String, app: AppModel) {
             app.showToast(if (complete) "הדיווח הושלם" else "הטיוטה נשמרה")
             app.reloadEvents()
             app.closeFill()
+        }
+    }
+
+    suspend fun persistFill(fill: FillContext, complete: Boolean) {
+        if (!saveGate.tryBegin(FillSaveKind.EXPLICIT)) return
+        if (complete) completing = true else savingDraft = true
+        try {
+            persistFillBody(fill, complete)
+        } finally {
+            if (complete) completing = false else savingDraft = false
+            saveGate.finish()
         }
     }
 
@@ -264,6 +278,7 @@ fun FillScreen(eventId: String, app: AppModel) {
             if (next == null) {
                 notAssigned = true
             } else {
+                lastSavedOrLoadedDraft = next.draft
                 val now = System.currentTimeMillis()
                 val live = FillDraftStore.live(next.assignmentId)
                 val stashed = FillDraftStore.read(next.assignmentId, now)
@@ -317,9 +332,17 @@ fun FillScreen(eventId: String, app: AppModel) {
         delay(FILL_STASH_DEBOUNCE_MS)
         persistLocalDraft()
         val errors = validateResponderFillDraft(draft, FillMode.DRAFT)
-        if (errors.isEmpty) {
-            runCatching {
-                YahpazAPI.saveFill(fill, draft, complete = false, unfinishedMediaDrafts)
+        val baseline = lastSavedOrLoadedDraft ?: return@LaunchedEffect
+        if (errors.isEmpty && shouldAutosaveFill(draft, baseline)) {
+            if (saveGate.tryBegin(FillSaveKind.AUTOSAVE)) {
+                try {
+                    val saved = runCatching {
+                        YahpazAPI.saveFill(fill, draft, complete = false, unfinishedMediaDrafts)
+                    }
+                    if (saved.isSuccess && saved.getOrNull() == null) lastSavedOrLoadedDraft = draft
+                } finally {
+                    saveGate.finish()
+                }
             }
         }
     }
