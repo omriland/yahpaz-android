@@ -15,7 +15,10 @@ import com.yahpz.domain.mapShiftSaveError
 import com.yahpz.domain.SHIFT_EVENT_CREATE_FAILED
 import com.yahpz.domain.SHIFT_EVENT_DELETE_FAILED
 import com.yahpz.domain.SHIFT_OVERLAP_GENERAL_MESSAGE
+import com.yahpz.domain.EditedShift
+import com.yahpz.domain.ShiftWindow
 import com.yahpz.domain.isShiftOverlapRefusal
+import com.yahpz.domain.windowAfterShiftEdit
 import com.yahpz.domain.knownLiveShiftMessage
 import com.yahpz.domain.AssignableProfile
 import com.yahpz.domain.HighwayJunctionCatalogRow
@@ -233,6 +236,7 @@ import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.postgrest.query.Order
+import io.github.jan.supabase.postgrest.query.filter.PostgrestFilterBuilder
 import io.github.jan.supabase.postgrest.rpc
 import io.github.jan.supabase.storage.Storage
 import io.github.jan.supabase.storage.storage
@@ -249,6 +253,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import java.time.Instant
 import java.time.LocalDate
+import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.util.UUID
 import kotlin.time.Duration.Companion.seconds
@@ -590,13 +595,8 @@ object YahpazAPI {
             filter { eq("responder_id", userId) }
         }.decodeList<ShiftAssignmentIdRow>().map { it.shiftId }
         if (ids.isEmpty()) return emptyList()
-        return ids.chunked(100).flatMap { chunk ->
-            client.from("shifts").select(Columns.raw(shiftListSelect)) {
-                filter {
-                    isIn("id", chunk)
-                    eq(BORN_EVENTS_ORIGIN_COLUMN, SHIFT_ORIGIN)
-                }
-            }.decodeList<ShiftListItem>()
+        return fetchByIds(ids, "shifts", shiftListSelect) {
+            eq(BORN_EVENTS_ORIGIN_COLUMN, SHIFT_ORIGIN)
         }
     }
 
@@ -2145,6 +2145,7 @@ object YahpazAPI {
             } else {
                 null
             }
+            val window = shiftWindowAfterEdit(detail, shiftDate, draft.shiftKind)
             val existing = detail.responders
             val keepIds = draft.responderIds.distinct().toSet()
             val toRemove = existing.filter { it.responderId !in keepIds }
@@ -2169,8 +2170,8 @@ object YahpazAPI {
                     vehicleType = draft.vehicleType,
                     personalVehicleId = personalVehicleId,
                     notes = draft.notes.nilIfEmpty(),
-                    startsAt = detail.startsAt,
-                    endsAt = detail.endsAt,
+                    startsAt = window?.startsAt?.toString(),
+                    endsAt = window?.endsAt?.toString(),
                     lastSavedBy = userId,
                     updatedAt = Instant.now().toString(),
                 ),
@@ -2193,6 +2194,16 @@ object YahpazAPI {
         } catch (error: Exception) {
             shiftWriteErrorMessage(error)
         }
+    }
+
+    private fun shiftWindowAfterEdit(detail: ShiftFormDetail, newDate: String, newKind: String): ShiftWindow? {
+        val startsAt = detail.startsAt ?: return null
+        val endsAt = detail.endsAt ?: return null
+        val oldWindow = ShiftWindow(
+            startsAt = OffsetDateTime.parse(startsAt).toInstant(),
+            endsAt = OffsetDateTime.parse(endsAt).toInstant(),
+        )
+        return windowAfterShiftEdit(EditedShift(detail.shiftDate, detail.shiftKind), newDate, newKind, oldWindow)
     }
 
     private fun shiftWriteErrorMessage(error: Exception): String {
@@ -2415,10 +2426,14 @@ object YahpazAPI {
         ids: List<String>,
         table: String,
         columns: String,
+        extraFilter: PostgrestFilterBuilder.() -> Unit = {},
     ): List<T> {
         return ids.chunked(100).flatMap { chunk ->
             client.from(table).select(Columns.raw(columns)) {
-                filter { isIn("id", chunk) }
+                filter {
+                    isIn("id", chunk)
+                    extraFilter()
+                }
             }.decodeList<T>()
         }
     }

@@ -29,11 +29,14 @@ private fun hoursLeftToDocument(endsAt: Instant, now: Instant): Long {
     return Math.floorDiv(millisLeft + MILLIS_PER_HOUR - 1, MILLIS_PER_HOUR)
 }
 
+private fun hoursLeftLabel(hours: Long): String =
+    if (hours == 1L) "עוד שעה" else "עוד $hours שעות"
+
 private const val MILLIS_PER_HOUR = 3_600_000L
 
 fun barText(shift: CurrentShift, phase: ShiftPhase, now: Instant): String {
     if (phase == ShiftPhase.FINISHING) {
-        return "המשמרת הסתיימה, אפשר להשלים תיעוד · עוד ${hoursLeftToDocument(shift.endsAt, now)} שעות"
+        return "המשמרת הסתיימה, אפשר להשלים תיעוד · ${hoursLeftLabel(hoursLeftToDocument(shift.endsAt, now))}"
     }
     return "במשמרת ${shiftKindLabel(shift.shiftKind)} עכשיו · עד ${formatJerusalemTimeOfDay(shift.endsAt)}"
 }

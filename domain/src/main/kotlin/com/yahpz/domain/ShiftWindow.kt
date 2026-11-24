@@ -28,6 +28,8 @@ data class ShiftHours(val start: String, val end: String)
 
 data class ShiftWindow(val startsAt: Instant, val endsAt: Instant)
 
+data class EditedShift(val shiftDate: String, val shiftKind: String)
+
 data class OverlapKnownShift(
     val id: String,
     val shiftKind: String,
@@ -68,6 +70,25 @@ fun buildShiftWindow(shiftDate: String, startTime: String, endTime: String): Shi
         startsAt = toJerusalemInstant(date, start),
         endsAt = toJerusalemInstant(endDate, end),
     )
+}
+
+/**
+ * The window to save after an edit. Unchanged date and kind keep it; a change rebuilds it from the
+ * kind's default hours, or from the old time of day when the kind has none. A legacy shift stays legacy.
+ */
+fun windowAfterShiftEdit(
+    old: EditedShift,
+    newDate: String,
+    newKind: String,
+    oldWindow: ShiftWindow?,
+): ShiftWindow? {
+    if (oldWindow == null) return null
+    if (old.shiftDate == newDate && old.shiftKind == newKind) return oldWindow
+    val hours = defaultShiftHours(newKind) ?: ShiftHours(
+        start = formatJerusalemTimeOfDay(oldWindow.startsAt),
+        end = formatJerusalemTimeOfDay(oldWindow.endsAt),
+    )
+    return buildShiftWindow(newDate, hours.start, hours.end)
 }
 
 private fun toJerusalemInstant(date: LocalDate, time: LocalTime): Instant =
