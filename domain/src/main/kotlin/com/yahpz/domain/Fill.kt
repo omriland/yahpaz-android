@@ -177,3 +177,7 @@ fun gateResponderFillWrite(
     if (eventStatus == EventStatus.DONE) return FillWriteGate.LOCKED
     return FillWriteGate.PROCEED
 }
+
+/** Autosave only when the draft differs from what was last loaded from or saved to the server. */
+fun shouldAutosaveFill(draft: ResponderFillDraft, lastSavedOrLoaded: ResponderFillDraft): Boolean =
+    draft != lastSavedOrLoaded

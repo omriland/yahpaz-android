@@ -2,6 +2,7 @@ package com.yahpz.responder
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.yahpz.domain.SIGN_IN_FAILED_TEXT
 import com.yahpz.domain.needsPersonalVehiclePrompt
 import com.yahpz.domain.IMPERSONATION_STARTED
 import com.yahpz.domain.IMPERSONATION_STOPPED
@@ -196,6 +197,8 @@ data class AppUiState(
     /** The shift whose live screen is on show: the current shift, or one opened from a shift list. */
     val liveShiftScreenId: String? = null,
     val unitEventsQuery: String = "",
+    /** The profile could not load for lack of a connection: the user stays signed in and can retry. */
+    val sessionOffline: Boolean = false,
 ) {
     val isSignedIn: Boolean get() = userId != null && profile != null
     val canManageUnit: Boolean get() = managesUnit(roles)
@@ -250,7 +253,11 @@ class AppModel : ViewModel() {
             val id = YahpazAPI.sessionUserId()
             if (id != null) {
                 val applied = runCatching { applySession(id) }.isSuccess
-                if (applied && savedNavigation != null) restoreNavigation(savedNavigation)
+                if (applied && savedNavigation != null) {
+                    restoreNavigation(savedNavigation)
+                } else {
+                    navigationToRestoreOnRetry = savedNavigation
+                }
             } else {
                 _state.update { it.copy(userId = null, profile = null) }
             }
@@ -504,7 +511,7 @@ class AppModel : ViewModel() {
 
     private suspend fun signIn(email: String, password: String): String? {
         YahpazAPI.signIn(email, password)?.let { return it }
-        val id = YahpazAPI.sessionUserId() ?: return "הכניסה נכשלה. בדקו את החיבור ונסו שוב."
+        val id = YahpazAPI.sessionUserId() ?: return SIGN_IN_FAILED_TEXT
         return try {
             applySession(id)
             // A forced password change clears the invite when the new password is saved.
@@ -515,7 +522,13 @@ class AppModel : ViewModel() {
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            error.message ?: "הכניסה נכשלה. בדקו את החיבור ונסו שוב."
+            if (error.isNetworkFailure()) {
+                // Back to the login screen with the reason, not the offline screen that has no way out.
+                signOutLocally()
+                SIGN_IN_FAILED_TEXT
+            } else {
+                error.message ?: SIGN_IN_FAILED_TEXT
+            }
         }
     }
 
@@ -760,7 +773,9 @@ class AppModel : ViewModel() {
         } catch (error: CancellationException) {
             throw error
         } catch (_: Exception) {
-            _state.update { it.copy(unitEventsFailed = true) }
+            val outcome = com.yahpz.domain.listRefreshFailure(hadEvents, com.yahpz.domain.UNIT_EVENTS_REFRESH_FAILED_TOAST)
+            _state.update { it.copy(unitEventsFailed = outcome.showEmptyFailure) }
+            outcome.toast?.let { showToast(it, StampTone.PENDING) }
         } finally {
             _state.update { it.copy(unitEventsLoading = false) }
         }
@@ -1344,6 +1359,7 @@ class AppModel : ViewModel() {
             _state.update {
                 it.copy(
                     userId = userId,
+                    sessionOffline = false,
                     profile = profile,
                     actualRoles = roles,
                     roles = visible,
@@ -1383,17 +1399,57 @@ class AppModel : ViewModel() {
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            _state.update {
-                it.copy(
-                    userId = null,
-                    profile = null,
-                    vehicles = emptyList(),
-                    vehiclesFailed = false,
-                    vehiclesLoading = false,
-                )
+            val failure = if (error.isNetworkFailure()) {
+                com.yahpz.domain.SessionLoadFailure.NETWORK
+            } else {
+                com.yahpz.domain.SessionLoadFailure.AUTH
+            }
+            when (com.yahpz.domain.sessionRestoreOutcome(hasSession = true, failure = failure)) {
+                com.yahpz.domain.SessionRestoreOutcome.KEEP_SIGNED_IN_OFFLINE -> keepSignedInOffline(userId)
+                else -> signOutLocally()
             }
             throw error
         }
+    }
+
+    private fun keepSignedInOffline(userId: String) {
+        _state.update { it.copy(userId = userId, sessionOffline = true) }
+    }
+
+    private fun signOutLocally() {
+        _state.update {
+            it.copy(
+                userId = null,
+                profile = null,
+                sessionOffline = false,
+                vehicles = emptyList(),
+                vehiclesFailed = false,
+                vehiclesLoading = false,
+            )
+        }
+    }
+
+    private var retrySessionJob: Job? = null
+    private var navigationToRestoreOnRetry: Map<String, String>? = null
+
+    fun retrySession() {
+        val id = _state.value.userId ?: return
+        if (retrySessionJob?.isActive == true) return
+        retrySessionJob = viewModelScope.launch { applySessionAfterRetry(id) }
+    }
+
+    private suspend fun applySessionAfterRetry(userId: String) {
+        try {
+            applySession(userId)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            // applySession already set the offline or signed-out state.
+            return
+        }
+        val saved = navigationToRestoreOnRetry ?: return
+        navigationToRestoreOnRetry = null
+        restoreNavigation(saved)
     }
 
     private suspend fun reportAndroidSessionIfDue() {

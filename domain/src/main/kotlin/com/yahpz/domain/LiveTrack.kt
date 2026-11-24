@@ -13,6 +13,29 @@ fun shouldEmitPing(last: LatLngAt?, next: LatLngAt): Boolean {
     return metersBetween(last, next) >= LIVE_PING_MIN_MOVE_M
 }
 
+const val LIVE_PING_FAILED_TEXT = "לא הצלחנו לשתף את המיקום. ננסה שוב בעדכון המיקום הבא."
+const val LOCATION_PERMISSION_REQUIRED_TEXT = "יש לאשר מיקום בהגדרות כדי לשתף מיקום בזמן אירוע."
+const val LIVE_SHARING_ACTIVE_TEXT = "המיקום משותף עם האחמ״ש."
+const val LIVE_SHARING_STOPS_ON_LOCK_NOTE = "השיתוף נעצר כשהמסך ננעל. השאירו את המסך דלוק."
+
+data class SharingStatus(val sharing: Boolean, val failed: String?, val statusText: String)
+
+fun sharingStatusAfterPing(delivered: Boolean): SharingStatus =
+    if (delivered) {
+        SharingStatus(sharing = true, failed = null, statusText = LIVE_SHARING_ACTIVE_TEXT)
+    } else {
+        SharingStatus(sharing = false, failed = LIVE_PING_FAILED_TEXT, statusText = LIVE_PING_FAILED_TEXT)
+    }
+
+fun pingBaselineAfterAttempt(previous: LatLngAt?, attempted: LatLngAt, delivered: Boolean): LatLngAt? =
+    if (delivered) attempted else previous
+
+fun errorAfterPermissionResult(currentError: String?, granted: Boolean): String? = when {
+    !granted -> LOCATION_PERMISSION_REQUIRED_TEXT
+    currentError == LOCATION_PERMISSION_REQUIRED_TEXT -> null
+    else -> currentError
+}
+
 fun parseTrackToken(raw: String): String? {
     val uri = runCatching { URI(raw) }.getOrNull() ?: return null
     val query = uri.query ?: return null

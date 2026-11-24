@@ -57,6 +57,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.yahpz.domain.MOBILE_MORE_LABEL
 import com.yahpz.domain.MobileNavEntry
+import com.yahpz.domain.OFFLINE_RETRY_ACTION
+import com.yahpz.domain.OFFLINE_RETRY_BANNER
 import com.yahpz.domain.canStartImpersonation
 import com.yahpz.domain.normalizeLoginEmail
 import com.yahpz.domain.normalizeLoginSecret
@@ -91,6 +93,11 @@ fun RootScreen(
                 ViewAsBanner(app, ui)
             }
         }
+        val offlineBannerShown = ui.sessionOffline && ui.isSignedIn
+        if (offlineBannerShown) {
+            OfflineRetryBanner(onRetry = app::retrySession, statusBarPadding = !viewAsBannerShown)
+        }
+        val bannerAboveOnShiftBar = viewAsBannerShown || offlineBannerShown
         // The bar is for screens the live screen outranks; update and password gates, and the live screen itself, hide it.
         val barAllowed = ui.forceUpdate == null && !ui.mustChangePassword
         val onShiftBarShown = ui.currentShift?.takeIf { ui.isSignedIn && barAllowed }?.let { shift ->
@@ -99,11 +106,11 @@ fun RootScreen(
                 onShiftScreen = ui.liveShiftScreenId == shift.id && ui.fillEventId == null,
                 // On a fill screen this leaves the fill first, as back does; its draft is flushed as it closes.
                 onOpen = { app.openLiveShift(closingFill = ui.fillEventId != null) },
-                statusBarPadding = !viewAsBannerShown,
+                statusBarPadding = !bannerAboveOnShiftBar,
             )
         } ?: false
         // A banner above already sits under the status bar; the screen below must not leave that room again.
-        val topBannerShown = viewAsBannerShown || onShiftBarShown
+        val topBannerShown = bannerAboveOnShiftBar || onShiftBarShown
         Box(
             Modifier
                 .weight(1f)
@@ -121,6 +128,13 @@ fun RootScreen(
             }
             ui.trackToken != null && !ui.isSignedIn -> SafeEdgeScreen {
                 LiveTrackScreen(ui.trackToken, app::closeTrack)
+            }
+            ui.sessionOffline && !ui.isSignedIn -> SafeEdgeScreen {
+                EmptyState(
+                    title = OFFLINE_RETRY_BANNER,
+                    actionTitle = OFFLINE_RETRY_ACTION,
+                    onAction = app::retrySession,
+                )
             }
             !ui.isSignedIn -> SafeEdgeScreen { LoginGate(app, ui) }
             ui.mustChangePassword -> Box(Modifier.fillMaxSize()) {
@@ -216,6 +230,22 @@ private fun SafeEdgeScreen(content: @Composable () -> Unit) {
             .safeDrawingPadding(),
     ) {
         content()
+    }
+}
+
+@Composable
+private fun OfflineRetryBanner(onRetry: () -> Unit, statusBarPadding: Boolean) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(FieldTheme.partialTint)
+            .then(if (statusBarPadding) Modifier.statusBarsPadding() else Modifier)
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(OFFLINE_RETRY_BANNER, color = FieldTheme.partialOnTint)
+        GhostButton(title = OFFLINE_RETRY_ACTION, onClick = onRetry, modifier = Modifier.heightIn(min = 48.dp))
     }
 }
 
