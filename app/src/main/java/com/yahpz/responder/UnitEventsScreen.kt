@@ -150,6 +150,7 @@ class UnitEventsActions(
     val deleteEvent: suspend (eventId: String) -> String?,
     val showToast: (text: String, tone: StampTone) -> Unit,
     val loadDetailResponders: suspend (eventId: String) -> UnitEventDetailRespondersWrap,
+    val setQuery: (query: String) -> Unit = {},
 )
 
 @Composable
@@ -166,6 +167,7 @@ fun UnitEventsScreen(app: AppModel, ui: AppUiState) {
             openFill = app::openFill,
             deleteEvent = app::deleteUnitEvent,
             showToast = app::showToast,
+            setQuery = app::setUnitEventsQuery,
             loadDetailResponders = YahpazAPI::fetchUnitEventDetailResponders,
         )
     }
@@ -180,7 +182,7 @@ internal fun UnitEventsContent(
     today: LocalDate = LocalDate.now(ISRAEL_ZONE),
 ) {
     val scope = rememberCoroutineScope()
-    var query by remember { mutableStateOf("") }
+    val query = ui.unitEventsQuery
     var detail by remember { mutableStateOf<EventListItem?>(null) }
     var assignedEditBlocked by remember { mutableStateOf(false) }
     var refreshing by remember { mutableStateOf(false) }
@@ -320,7 +322,7 @@ internal fun UnitEventsContent(
         ) {
             UnitEventsHeader(
                 query = query,
-                onQueryChange = { query = it },
+                onQueryChange = actions.setQuery,
                 activeFilterCount = filters.count { it.selected },
                 onOpenFilters = { filtersOpen = true },
             )
@@ -482,7 +484,7 @@ internal fun UnitEventsContent(
                                     else -> null
                                 },
                                 onAction = when {
-                                    trimmed.isNotEmpty() -> ({ query = "" })
+                                    trimmed.isNotEmpty() -> ({ actions.setQuery("") })
                                     olderHidden -> ({ actions.setShowOlderUnitEvents(true) })
                                     else -> null
                                 },

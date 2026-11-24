@@ -66,6 +66,9 @@ import com.yahpz.domain.StampTone
 import com.yahpz.domain.androidSessionRpcParams
 import com.yahpz.domain.parseTrackToken
 import com.yahpz.domain.shouldReportAndroidSession
+import com.yahpz.domain.NavSnapshot
+import com.yahpz.domain.restoreNavSnapshot
+import com.yahpz.domain.toBundleMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
@@ -82,6 +85,19 @@ enum class AppTab { INBOX, SHIFTS, CONTACTS, MAP, UNIT_EVENTS, UNIT_SHIFTS, TOOL
 enum class ToolsDestination {
     HUB, REPORT_CATALOG, REPORT, ADMIN_USERS, NEW_EVENT, EDIT_EVENT, NEW_SHIFT, EDIT_SHIFT, BROADCAST, FUEL_QUARTER, CLOSED_LISTS, COCKPIT
 }
+
+/** Destinations that need no id or report kind kept beside them, so they can reopen alone. */
+private val RESTORABLE_TOOLS_DESTINATIONS = listOf(
+    ToolsDestination.HUB,
+    ToolsDestination.REPORT_CATALOG,
+    ToolsDestination.ADMIN_USERS,
+    ToolsDestination.NEW_EVENT,
+    ToolsDestination.NEW_SHIFT,
+    ToolsDestination.BROADCAST,
+    ToolsDestination.FUEL_QUARTER,
+    ToolsDestination.CLOSED_LISTS,
+    ToolsDestination.COCKPIT,
+)
 
 fun appTabForMobileView(view: String): AppTab = when (view) {
     "mine" -> AppTab.INBOX
@@ -178,6 +194,7 @@ data class AppUiState(
     val currentShift: CurrentShift? = null,
     /** The shift whose live screen is on show: the current shift, or one opened from a shift list. */
     val liveShiftScreenId: String? = null,
+    val unitEventsQuery: String = "",
 ) {
     val isSignedIn: Boolean get() = userId != null && profile != null
     val canManageUnit: Boolean get() = managesUnit(roles)
@@ -191,12 +208,40 @@ class AppModel : ViewModel() {
     private var toastJob: Job? = null
     private var lastAndroidReportAtMs: Long? = null
     private var liveShiftScreenOpenedThisStart = false
+    private var bootstrapJob: Job? = null
 
+    /**
+     * Runs once per process. A recreated activity finds the model signed in or still booting:
+     * it keeps what it has and only refreshes the lists in the background.
+     * [savedNavigation] is the map [navigationMap] gave before the process died.
+     */
     fun bootstrap(
         installedFromPlay: Boolean = false,
         skippedOptionalVersionCode: Int = 0,
+        savedNavigation: Map<String, String>? = null,
     ) {
+        if (_state.value.isSignedIn) {
+            refreshListsInBackground()
+            return
+        }
+        if (bootstrapJob?.isActive == true) return
+        bootstrapJob = launchBootstrap(installedFromPlay, skippedOptionalVersionCode, savedNavigation)
+    }
+
+    private fun refreshListsInBackground() {
         viewModelScope.launch {
+            reloadEvents()
+            reloadShifts()
+            reloadVehicles()
+        }
+    }
+
+    private fun launchBootstrap(
+        installedFromPlay: Boolean,
+        skippedOptionalVersionCode: Int,
+        savedNavigation: Map<String, String>?,
+    ): Job {
+        return viewModelScope.launch {
             _state.update { it.copy(booting = true, installedFromPlay = installedFromPlay) }
             var optionalUpdate: OptionalUpdateAvailable? = null
             val check = checkSideloadUpdates(BuildConfig.VERSION_CODE)
@@ -212,7 +257,8 @@ class AppModel : ViewModel() {
             }
             val id = YahpazAPI.sessionUserId()
             if (id != null) {
-                runCatching { applySession(id) }
+                val applied = runCatching { applySession(id) }.isSuccess
+                if (applied && savedNavigation != null) restoreNavigation(savedNavigation)
             } else {
                 _state.update { it.copy(userId = null, profile = null) }
             }
@@ -224,6 +270,44 @@ class AppModel : ViewModel() {
                 )
             }
         }
+    }
+
+    /** The place the user is at, for the saved state that outlives the process. */
+    fun navigationMap(): Map<String, String> {
+        val state = _state.value
+        return NavSnapshot(
+            tab = state.tab.name,
+            fillEventId = state.fillEventId,
+            fillShiftBorn = state.fillShiftBorn,
+            liveShiftScreenId = state.liveShiftScreenId,
+            toolsDestination = state.toolsDestination.name,
+            unitEventsQuery = state.unitEventsQuery,
+        ).toBundleMap()
+    }
+
+    /** Needs the current shift first: a saved live screen only comes back while it is still that shift. */
+    private suspend fun restoreNavigation(saved: Map<String, String>) {
+        reloadCurrentShift()
+        val snapshot = restoreNavSnapshot(
+            map = saved,
+            validTabs = AppTab.entries.map { it.name }.toSet(),
+            validToolsDestinations = RESTORABLE_TOOLS_DESTINATIONS.map { it.name }.toSet(),
+            currentShiftId = _state.value.currentShift?.id,
+        ) ?: return
+        _state.update {
+            it.copy(
+                tab = AppTab.valueOf(snapshot.tab),
+                toolsDestination = ToolsDestination.valueOf(snapshot.toolsDestination),
+                fillEventId = snapshot.fillEventId,
+                fillShiftBorn = snapshot.fillShiftBorn,
+                liveShiftScreenId = snapshot.liveShiftScreenId,
+                unitEventsQuery = snapshot.unitEventsQuery,
+            )
+        }
+    }
+
+    fun setUnitEventsQuery(query: String) {
+        _state.update { it.copy(unitEventsQuery = query) }
     }
 
     /** Opens the live screen of the current shift. [closingFill] first leaves an open fill, which flushes its draft as it leaves. */
@@ -1273,6 +1357,7 @@ class AppModel : ViewModel() {
                     fillEventId = null,
                     fillShiftBorn = false,
                     liveShiftScreenId = null,
+                    unitEventsQuery = "",
                     currentShift = null,
                     showOthersCreatedEvents = false,
                     showOlderUnitEvents = false,

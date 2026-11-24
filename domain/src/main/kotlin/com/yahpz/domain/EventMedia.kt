@@ -208,3 +208,5 @@ const val EVENT_MEDIA_PLATES_TITLE = "רכבים בתמונה"
 const val EVENT_MEDIA_ASSIGN = "שיוך לרכב"
 const val EVENT_MEDIA_ASSIGN_HINT = "בחרו את הרכבים שמופיעים בתמונה."
 const val EVENT_MEDIA_ASSIGN_SAVED = "השיוך נשמר."
+
+const val EVENT_MEDIA_PHOTO_LOST = "התמונה שצולמה לא נשמרה. צלמו אותה שוב."
