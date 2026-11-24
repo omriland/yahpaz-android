@@ -1,5 +1,6 @@
 package com.yahpz.domain
 
+const val SIGN_IN_FAILED_TEXT = "הכניסה נכשלה. בדקו את החיבור ונסו שוב."
 const val OFFLINE_RETRY_BANNER = "אין חיבור. נסו שוב"
 const val OFFLINE_RETRY_ACTION = "נסו שוב"
 

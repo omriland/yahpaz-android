@@ -39,6 +39,7 @@ class LocationTracker(private val context: Context) {
     private var token: String? = null
     private var last: LatLngAt? = null
     private var started = false
+    private var pingJob: Job? = null
 
     private val listener = object : LocationListener {
         override fun onLocationChanged(location: Location) {
@@ -62,6 +63,7 @@ class LocationTracker(private val context: Context) {
     fun start(token: String) {
         this.token = token
         started = true
+        scope.cancel()
         scope = newScope()
         last = null
         _state.value = TrackUiState()
@@ -94,7 +96,7 @@ class LocationTracker(private val context: Context) {
         val current = _state.value
         val error = errorAfterPermissionResult(current.failed, granted = true)
         if (error == current.failed) return
-        _state.value = current.copy(failed = null, statusText = TrackUiState().statusText)
+        _state.value = current.copy(failed = error, statusText = TrackUiState().statusText)
     }
 
     fun stop() {
@@ -119,7 +121,7 @@ class LocationTracker(private val context: Context) {
             return
         }
         runCatching {
-            manager.requestLocationUpdates(provider, 10_000L, 25f, listener, Looper.getMainLooper())
+            manager.requestLocationUpdates(provider, LOCATION_UPDATE_INTERVAL_MS, 0f, listener, Looper.getMainLooper())
         }.onFailure {
             _state.value = _state.value.copy(
                 failed = "לא הצלחנו לקבל מיקום. בדקו את ההרשאות ונסו שוב.",
@@ -144,9 +146,10 @@ class LocationTracker(private val context: Context) {
     private fun handle(location: Location) {
         if (!started || token == null || _state.value.ended) return
         val next = LatLngAt(location.latitude, location.longitude, location.time)
+        if (pingJob?.isActive == true) return
         if (!shouldEmitPing(last, next)) return
         val token = token ?: return
-        scope.launch {
+        pingJob = scope.launch {
             val result = YahpazAPI.pingTrack(token, next.lat, next.lng, location.accuracy.toDouble())
             if (result.ended == true || result.error == "ended") {
                 _state.value = _state.value.copy(ended = true, statusText = "המעקב הסתיים.", sharing = false)
@@ -172,3 +175,6 @@ class LocationTracker(private val context: Context) {
         }
     }
 }
+
+// No minimum distance: a responder standing still still gets updates, so a failed ping is retried.
+private const val LOCATION_UPDATE_INTERVAL_MS = 10_000L

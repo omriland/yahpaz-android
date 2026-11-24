@@ -55,6 +55,8 @@ import android.net.Uri
 import android.provider.Settings
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
@@ -104,7 +106,7 @@ fun ExperimentalPlateScanScreen(
         )
     }
     var previewHint by remember { mutableStateOf<String?>(null) }
-    var statusText by remember { mutableStateOf("כוונו את המצלמה ללוחית") }
+    var statusText by remember { mutableStateOf(SCAN_READY_TEXT) }
     val confirmState = remember { AtomicReference(PlateScanConfirmState()) }
     val delivered = remember { AtomicBoolean(false) }
     val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
@@ -124,6 +126,9 @@ fun ExperimentalPlateScanScreen(
         cameraAlreadyAsked = true
         if (!granted) statusText = "נדרשת הרשאת מצלמה לסריקה"
     }
+
+    fun cameraPermissionGranted(): Boolean =
+        ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
 
     fun currentCameraAction(): CameraPermissionAction {
         val canStillAsk = context.findActivity()?.let {
@@ -147,6 +152,18 @@ fun ExperimentalPlateScanScreen(
     }
 
     BackHandler(onBack = onClose)
+
+    // The user may grant the camera in app settings and come back.
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME && !hasCameraPermission && cameraPermissionGranted()) {
+                hasCameraPermission = true
+                statusText = SCAN_READY_TEXT
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -297,8 +314,13 @@ fun ExperimentalPlateScanScreen(
                     )
                 }
                 if (!hasCameraPermission) {
+                    val cameraButtonLabel = if (currentCameraAction() == CameraPermissionAction.OPEN_SETTINGS) {
+                        OPEN_SETTINGS_LABEL
+                    } else {
+                        "אפשרו מצלמה"
+                    }
                     TextButton(onClick = ::onCameraButton) {
-                        Text(if (currentCameraAction() == CameraPermissionAction.OPEN_SETTINGS) OPEN_SETTINGS_LABEL else "אפשרו מצלמה", color = FieldTheme.accent, style = TypeScale.bodyStrong)
+                        Text(cameraButtonLabel, color = FieldTheme.accent, style = TypeScale.bodyStrong)
                     }
                 } else {
                     TextButton(onClick = onClose) {
@@ -309,6 +331,8 @@ fun ExperimentalPlateScanScreen(
         }
     }
 }
+
+private const val SCAN_READY_TEXT = "כוונו את המצלמה ללוחית"
 
 fun appSettingsIntent(packageName: String): Intent =
     Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))

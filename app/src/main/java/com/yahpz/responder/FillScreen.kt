@@ -117,6 +117,7 @@ internal const val FILL_NOT_FOUND_TITLE = "אין לך הרשאה לצפות ב�
 
 /** Long enough to not thrash on every keystroke, short enough to survive a kill. */
 private const val FILL_STASH_DEBOUNCE_MS = 600L
+private const val SAVE_GATE_RETRY_MS = 50L
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -233,14 +234,25 @@ fun FillScreen(eventId: String, app: AppModel) {
         }
     }
 
+    /** Waits for an autosave in flight, so a tap right after an edit is carried out, not dropped. */
+    suspend fun awaitSaveGate() {
+        while (!saveGate.tryBegin(FillSaveKind.EXPLICIT)) {
+            delay(SAVE_GATE_RETRY_MS)
+        }
+    }
+
     suspend fun persistFill(fill: FillContext, complete: Boolean) {
-        if (!saveGate.tryBegin(FillSaveKind.EXPLICIT)) return
+        if (completing || savingDraft) return
         if (complete) completing = true else savingDraft = true
         try {
-            persistFillBody(fill, complete)
+            awaitSaveGate()
+            try {
+                persistFillBody(fill, complete)
+            } finally {
+                saveGate.finish()
+            }
         } finally {
             if (complete) completing = false else savingDraft = false
-            saveGate.finish()
         }
     }
 

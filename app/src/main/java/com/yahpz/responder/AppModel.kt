@@ -2,6 +2,7 @@ package com.yahpz.responder
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.yahpz.domain.SIGN_IN_FAILED_TEXT
 import com.yahpz.domain.needsPersonalVehiclePrompt
 import com.yahpz.domain.IMPERSONATION_STARTED
 import com.yahpz.domain.IMPERSONATION_STOPPED
@@ -252,7 +253,11 @@ class AppModel : ViewModel() {
             val id = YahpazAPI.sessionUserId()
             if (id != null) {
                 val applied = runCatching { applySession(id) }.isSuccess
-                if (applied && savedNavigation != null) restoreNavigation(savedNavigation)
+                if (applied && savedNavigation != null) {
+                    restoreNavigation(savedNavigation)
+                } else {
+                    navigationToRestoreOnRetry = savedNavigation
+                }
             } else {
                 _state.update { it.copy(userId = null, profile = null) }
             }
@@ -506,7 +511,7 @@ class AppModel : ViewModel() {
 
     private suspend fun signIn(email: String, password: String): String? {
         YahpazAPI.signIn(email, password)?.let { return it }
-        val id = YahpazAPI.sessionUserId() ?: return "הכניסה נכשלה. בדקו את החיבור ונסו שוב."
+        val id = YahpazAPI.sessionUserId() ?: return SIGN_IN_FAILED_TEXT
         return try {
             applySession(id)
             // A forced password change clears the invite when the new password is saved.
@@ -517,7 +522,13 @@ class AppModel : ViewModel() {
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            error.message ?: "הכניסה נכשלה. בדקו את החיבור ונסו שוב."
+            if (error.isNetworkFailure()) {
+                // Back to the login screen with the reason, not the offline screen that has no way out.
+                signOutLocally()
+                SIGN_IN_FAILED_TEXT
+            } else {
+                error.message ?: SIGN_IN_FAILED_TEXT
+            }
         }
     }
 
@@ -1418,9 +1429,27 @@ class AppModel : ViewModel() {
         }
     }
 
+    private var retrySessionJob: Job? = null
+    private var navigationToRestoreOnRetry: Map<String, String>? = null
+
     fun retrySession() {
         val id = _state.value.userId ?: return
-        viewModelScope.launch { runCatching { applySession(id) } }
+        if (retrySessionJob?.isActive == true) return
+        retrySessionJob = viewModelScope.launch { applySessionAfterRetry(id) }
+    }
+
+    private suspend fun applySessionAfterRetry(userId: String) {
+        try {
+            applySession(userId)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            // applySession already set the offline or signed-out state.
+            return
+        }
+        val saved = navigationToRestoreOnRetry ?: return
+        navigationToRestoreOnRetry = null
+        restoreNavigation(saved)
     }
 
     private suspend fun reportAndroidSessionIfDue() {

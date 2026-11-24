@@ -93,9 +93,11 @@ fun RootScreen(
                 ViewAsBanner(app, ui)
             }
         }
-        if (ui.sessionOffline && ui.isSignedIn) {
-            OfflineRetryBanner(onRetry = app::retrySession)
+        val offlineBannerShown = ui.sessionOffline && ui.isSignedIn
+        if (offlineBannerShown) {
+            OfflineRetryBanner(onRetry = app::retrySession, statusBarPadding = !viewAsBannerShown)
         }
+        val bannerAboveOnShiftBar = viewAsBannerShown || offlineBannerShown
         // The bar is for screens the live screen outranks; update and password gates, and the live screen itself, hide it.
         val barAllowed = ui.forceUpdate == null && !ui.mustChangePassword
         val onShiftBarShown = ui.currentShift?.takeIf { ui.isSignedIn && barAllowed }?.let { shift ->
@@ -104,11 +106,11 @@ fun RootScreen(
                 onShiftScreen = ui.liveShiftScreenId == shift.id && ui.fillEventId == null,
                 // On a fill screen this leaves the fill first, as back does; its draft is flushed as it closes.
                 onOpen = { app.openLiveShift(closingFill = ui.fillEventId != null) },
-                statusBarPadding = !viewAsBannerShown,
+                statusBarPadding = !bannerAboveOnShiftBar,
             )
         } ?: false
         // A banner above already sits under the status bar; the screen below must not leave that room again.
-        val topBannerShown = viewAsBannerShown || onShiftBarShown
+        val topBannerShown = bannerAboveOnShiftBar || onShiftBarShown
         Box(
             Modifier
                 .weight(1f)
@@ -232,12 +234,12 @@ private fun SafeEdgeScreen(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun OfflineRetryBanner(onRetry: () -> Unit) {
+private fun OfflineRetryBanner(onRetry: () -> Unit, statusBarPadding: Boolean) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(FieldTheme.partialTint)
-            .statusBarsPadding()
+            .then(if (statusBarPadding) Modifier.statusBarsPadding() else Modifier)
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
