@@ -22,7 +22,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -882,7 +881,7 @@ fun EventFormScreen(
     }
 
     if (foreignEditPending) {
-        ModalBottomSheet(onDismissRequest = onBack) {
+        AdaptiveBottomSheet(onDismissRequest = onBack) {
             Column(
                 Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -907,7 +906,7 @@ fun EventFormScreen(
     }
 
     if (removeResponder != null) {
-        ModalBottomSheet(onDismissRequest = { removeResponderId = null }) {
+        AdaptiveBottomSheet(onDismissRequest = { removeResponderId = null }) {
             Column(
                 Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -938,7 +937,7 @@ fun EventFormScreen(
     }
 
     if (detailResponder != null && detailProfile != null) {
-        ModalBottomSheet(onDismissRequest = { detailResponderId = null }) {
+        AdaptiveBottomSheet(onDismissRequest = { detailResponderId = null }) {
             EventResponderDetailSheet(
                 profile = detailProfile,
                 responder = detailResponder,

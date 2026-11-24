@@ -36,11 +36,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -78,6 +74,8 @@ fun RootScreen(
     var feedbackOpen by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val liveShiftScreenId = ui.liveShiftScreenId
+    // On a wide screen the My Shifts tab shows the live shift beside its list instead.
+    val liveShiftBesideList = currentAdaptiveLayout().listDetail && ui.tab == AppTab.SHIFTS
     val trackBlocking = ui.trackToken != null && ui.fillEventId == null && !ui.mustChangePassword
     val showFeedbackFab = ui.isSignedIn &&
         ui.forceUpdate == null &&
@@ -151,7 +149,7 @@ fun RootScreen(
             }
             ui.fillEventId != null && ui.fillShiftBorn -> SafeEdgeScreen { ShiftBornFillScreen(ui.fillEventId, app) }
             ui.fillEventId != null -> SafeEdgeScreen { FillScreen(ui.fillEventId, app) }
-            liveShiftScreenId != null -> SafeEdgeScreen { LiveShiftScreen(liveShiftScreenId, app, ui, onBack = app::closeLiveShift) }
+            liveShiftScreenId != null && !liveShiftBesideList -> SafeEdgeScreen { LiveShiftScreen(liveShiftScreenId, app, ui, onBack = app::closeLiveShift) }
             else -> MainTabs(app, ui, showFeedbackFab) { feedbackOpen = true }
         }
         val trackShown = ui.trackToken != null && ui.forceUpdate == null && !ui.booting &&
@@ -229,7 +227,7 @@ private fun SafeEdgeScreen(content: @Composable () -> Unit) {
             .fillMaxSize()
             .safeDrawingPadding(),
     ) {
-        content()
+        AdaptiveContentFrame(currentAdaptiveLayout(), content)
     }
 }
 
@@ -316,7 +314,7 @@ private fun OptionalUpdateSheet(
     onLater: () -> Unit,
 ) {
     var busy by remember { mutableStateOf(false) }
-    ModalBottomSheet(onDismissRequest = { if (!busy) onLater() }) {
+    AdaptiveBottomSheet(onDismissRequest = { if (!busy) onLater() }) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -447,7 +445,7 @@ private fun LoginGate(app: AppModel, ui: AppUiState) {
     )
 }
 
-private fun iconForView(view: String): ImageVector = when (view) {
+internal fun iconForView(view: String): ImageVector = when (view) {
     "mine" -> Icons.AutoMirrored.Outlined.ListAlt
     "my_shifts" -> Icons.Outlined.CalendarMonth
     "contacts" -> Icons.Outlined.Contacts
@@ -460,7 +458,7 @@ private fun iconForView(view: String): ImageVector = when (view) {
     else -> Icons.Outlined.MoreHoriz
 }
 
-private val navItemColors
+internal val navItemColors
     @Composable get() = NavigationBarItemDefaults.colors(
         selectedIconColor = FieldTheme.accent,
         selectedTextColor = FieldTheme.accent,
@@ -513,8 +511,17 @@ private fun MainTabs(
         }
     }
 
-    Scaffold(
-        containerColor = FieldTheme.page,
+    AdaptiveNavigationScaffold(
+        layout = currentAdaptiveLayout(),
+        entries = split.tabs,
+        selectedView = split.tabs.firstOrNull { appTabForMobileView(it.view) == contentTab }?.view,
+        showMore = showMore,
+        moreSelected = split.more.any { appTabForMobileView(it.view) == contentTab },
+        onSelectView = { view ->
+            moreOpen = false
+            app.setTab(appTabForMobileView(view))
+        },
+        onOpenMore = { moreOpen = true },
         floatingActionButton = {
             val showCreate = overlay == ToolsDestination.HUB &&
                 (contentTab == AppTab.UNIT_EVENTS || contentTab == AppTab.UNIT_SHIFTS)
@@ -540,53 +547,22 @@ private fun MainTabs(
                 }
             }
         },
-        bottomBar = {
-            NavigationBar(containerColor = FieldTheme.raised, tonalElevation = 0.dp) {
-                split.tabs.forEach { entry ->
-                    val tab = appTabForMobileView(entry.view)
-                    NavigationBarItem(
-                        selected = contentTab == tab,
-                        onClick = {
-                            moreOpen = false
-                            app.setTab(tab)
-                        },
-                        icon = { Icon(iconForView(entry.view), contentDescription = entry.label) },
-                        label = { Text(entry.label, style = TypeScale.caption) },
-                        colors = navItemColors,
-                        modifier = Modifier.heightIn(min = 44.dp),
-                    )
-                }
-                if (showMore) {
-                    val moreSelected = split.more.any { appTabForMobileView(it.view) == contentTab }
-                    NavigationBarItem(
-                        selected = moreSelected,
-                        onClick = { moreOpen = true },
-                        icon = { Icon(Icons.Outlined.MoreHoriz, contentDescription = MOBILE_MORE_LABEL) },
-                        label = { Text(MOBILE_MORE_LABEL, style = TypeScale.caption) },
-                        colors = navItemColors,
-                        modifier = Modifier.heightIn(min = 44.dp),
-                    )
-                }
+    ) {
+        if (showingMain) {
+            Crossfade(
+                targetState = contentTab,
+                animationSpec = tween(if (reduceMotion) 0 else 200),
+                label = "main-tab",
+            ) { tab ->
+                TabBody(app, ui, tab)
             }
-        },
-    ) { padding ->
-        Box(Modifier.padding(padding).fillMaxSize()) {
-            if (showingMain) {
-                Crossfade(
-                    targetState = contentTab,
-                    animationSpec = tween(if (reduceMotion) 0 else 200),
-                    label = "main-tab",
-                ) { tab ->
-                    TabBody(app, ui, tab)
-                }
-            } else {
-                OverlayBody(app, ui, overlay, contentTab)
-            }
+        } else {
+            OverlayBody(app, ui, overlay, contentTab)
         }
     }
 
     if (moreOpen && showMore) {
-        ModalBottomSheet(onDismissRequest = { moreOpen = false }) {
+        AdaptiveBottomSheet(onDismissRequest = { moreOpen = false }) {
             MoreSheet(
                 rows = split.more,
                 current = contentTab,
@@ -698,7 +674,7 @@ private fun TabBody(app: AppModel, ui: AppUiState, tab: AppTab) {
         AppTab.UNIT_SHIFTS -> UnitShiftsScreen(app, ui)
         AppTab.TOOLS -> AdminShell(app, ui)
         AppTab.REPORTS -> ReportsCatalogScreen(app, ui, title = "דוחות", onBack = null)
-        AppTab.PROFILE -> ProfileScreen(app, ui)
+        AppTab.PROFILE -> AdaptiveContentFrame(currentAdaptiveLayout()) { ProfileScreen(app, ui) }
     }
 }
 
@@ -719,18 +695,22 @@ private fun OverlayBody(app: AppModel, ui: AppUiState, overlay: ToolsDestination
         )
         ToolsDestination.REPORT -> ReportScreen(app, ui, backFromReport)
         ToolsDestination.ADMIN_USERS -> AdminUsersScreen(app, ui, backToHub)
-        ToolsDestination.NEW_EVENT -> EventFormScreen(app, ui, backToHub)
-        ToolsDestination.EDIT_EVENT -> EventFormScreen(
-            app, ui,
-            onBack = { app.setTab(AppTab.UNIT_EVENTS) },
-            eventId = ui.editingEventId,
-        )
-        ToolsDestination.NEW_SHIFT -> ShiftFormScreen(app, ui, backToHub)
-        ToolsDestination.EDIT_SHIFT -> ShiftFormScreen(
-            app, ui,
-            onBack = { app.setTab(AppTab.UNIT_SHIFTS) },
-            shiftId = ui.editingShiftId,
-        )
+        ToolsDestination.NEW_EVENT -> CappedForm { EventFormScreen(app, ui, backToHub) }
+        ToolsDestination.EDIT_EVENT -> CappedForm {
+            EventFormScreen(
+                app, ui,
+                onBack = { app.setTab(AppTab.UNIT_EVENTS) },
+                eventId = ui.editingEventId,
+            )
+        }
+        ToolsDestination.NEW_SHIFT -> CappedForm { ShiftFormScreen(app, ui, backToHub) }
+        ToolsDestination.EDIT_SHIFT -> CappedForm {
+            ShiftFormScreen(
+                app, ui,
+                onBack = { app.setTab(AppTab.UNIT_SHIFTS) },
+                shiftId = ui.editingShiftId,
+            )
+        }
         ToolsDestination.BROADCAST -> BroadcastScreen(
             app, ui,
             onBack = { app.setToolsDestination(ToolsDestination.CLOSED_LISTS) },
@@ -739,4 +719,9 @@ private fun OverlayBody(app: AppModel, ui: AppUiState, overlay: ToolsDestination
         ToolsDestination.CLOSED_LISTS -> ClosedListsScreen(app, backToHub)
         ToolsDestination.COCKPIT -> CockpitScreen(app, ui, backToHub)
     }
+}
+
+@Composable
+private fun CappedForm(content: @Composable () -> Unit) {
+    AdaptiveContentFrame(currentAdaptiveLayout(), content)
 }

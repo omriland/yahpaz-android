@@ -30,7 +30,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
@@ -158,7 +157,7 @@ fun ProfileScreen(app: AppModel, ui: AppUiState) {
     }
 
     if (editingAvailability) {
-        ModalBottomSheet(onDismissRequest = { editingAvailability = false }) {
+        AdaptiveBottomSheet(onDismissRequest = { editingAvailability = false }) {
             AvailabilityScreen(
                 app = app,
                 ui = ui,
@@ -566,7 +565,7 @@ private fun VehiclesSection(
     }
 
     if (confirm != null) {
-        ModalBottomSheet(onDismissRequest = { if (!saving) confirm = null }) {
+        AdaptiveBottomSheet(onDismissRequest = { if (!saving) confirm = null }) {
             Column(
                 Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),

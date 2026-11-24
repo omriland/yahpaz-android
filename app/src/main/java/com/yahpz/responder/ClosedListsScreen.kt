@@ -18,7 +18,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -286,7 +285,7 @@ fun ClosedListsScreen(app: AppModel, onBack: (() -> Unit)? = null) {
 
     actionItem?.let { opened ->
         val key = selectedKey ?: return@let
-        ModalBottomSheet(onDismissRequest = { actionItem = null }) {
+        AdaptiveBottomSheet(onDismissRequest = { actionItem = null }) {
             Column(
                 Modifier
                     .padding(16.dp)

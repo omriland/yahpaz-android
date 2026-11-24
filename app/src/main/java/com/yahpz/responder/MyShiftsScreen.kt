@@ -15,7 +15,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -31,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.yahpz.domain.AdaptiveLayout
 import com.yahpz.domain.MINE_SHIFTS_LOGGED_EMPTY
 import com.yahpz.domain.MINE_SHIFTS_NONE
 import com.yahpz.domain.MINE_SHIFTS_PENDING_EMPTY
@@ -55,7 +55,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MyShiftsScreen(app: AppModel, ui: AppUiState) {
+fun MyShiftsScreen(app: AppModel, ui: AppUiState, layout: AdaptiveLayout = currentAdaptiveLayout()) {
     val scope = rememberCoroutineScope()
     var windowsLoaded by remember { mutableIntStateOf(1) }
     var selected by remember { mutableStateOf<ShiftListItem?>(null) }
@@ -72,70 +72,75 @@ fun MyShiftsScreen(app: AppModel, ui: AppUiState) {
     val future = sections.future.mapNotNull { byId[it.id] }
     val logged = sections.logged.mapNotNull { byId[it.id] }
 
-    PullToRefreshBox(
-        isRefreshing = refreshing,
-        onRefresh = {
-            scope.launch {
-                refreshing = true
-                app.reloadShifts()
-                refreshing = false
-            }
-        },
-        modifier = Modifier
-            .fillMaxSize()
-            .background(FieldTheme.page),
-    ) {
-        Column(
+    val liveShiftPane: (@Composable () -> Unit)? = ui.liveShiftScreenId?.let { shiftId ->
+        { LiveShiftScreen(shiftId, app, ui, onBack = app::closeLiveShift) }
+    }
+    ListDetailLayout(layout = layout, detailPane = liveShiftPane, onCloseDetail = app::closeLiveShift) {
+        PullToRefreshBox(
+            isRefreshing = refreshing,
+            onRefresh = {
+                scope.launch {
+                    refreshing = true
+                    app.reloadShifts()
+                    refreshing = false
+                }
+            },
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 16.dp)
-                .padding(top = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+                .background(FieldTheme.page),
         ) {
-            Text("המשמרות שלי", style = TypeScale.title, color = FieldTheme.textPrimary)
-            when {
-                ui.shiftsFailed -> EmptyState(
-                    title = ui.shiftsFailedMessage,
-                    actionTitle = "רענון",
-                    onAction = { scope.launch { app.reloadShifts() } },
-                )
-                ui.shiftsLoading && ui.shifts.isEmpty() -> Column(
-                    Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    CircularProgressIndicator(color = FieldTheme.accent)
-                    Spacer(Modifier.height(12.dp))
-                    Text("טוען משמרות…", style = TypeScale.body, color = FieldTheme.textSecondary)
-                }
-                ui.shifts.isEmpty() -> EmptyState(title = MINE_SHIFTS_NONE)
-                else -> Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(20.dp),
-                ) {
-                    val today = israelToday()
-                    val fillButton = { shift: ShiftListItem ->
-                        shiftFillButton(shift.shiftDate, shift.status, ui.canManageUnit, today)
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp)
+                    .padding(top = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Text("המשמרות שלי", style = TypeScale.title, color = FieldTheme.textPrimary)
+                when {
+                    ui.shiftsFailed -> EmptyState(
+                        title = ui.shiftsFailedMessage,
+                        actionTitle = "רענון",
+                        onAction = { scope.launch { app.reloadShifts() } },
+                    )
+                    ui.shiftsLoading && ui.shifts.isEmpty() -> Column(
+                        Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        CircularProgressIndicator(color = FieldTheme.accent)
+                        Spacer(Modifier.height(12.dp))
+                        Text("טוען משמרות…", style = TypeScale.body, color = FieldTheme.textSecondary)
                     }
-                    val onFillShift = { shift: ShiftListItem ->
-                        if (shift.isLive) app.openListedLiveShift(shift.id) else odometerShift = shift
+                    ui.shifts.isEmpty() -> EmptyState(title = MINE_SHIFTS_NONE)
+                    else -> Column(
+                        modifier = Modifier.verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(20.dp),
+                    ) {
+                        val today = israelToday()
+                        val fillButton = { shift: ShiftListItem ->
+                            shiftFillButton(shift.shiftDate, shift.status, ui.canManageUnit, today)
+                        }
+                        val onFillShift = { shift: ShiftListItem ->
+                            if (shift.isLive) app.openListedLiveShift(shift.id) else odometerShift = shift
+                        }
+                        ShiftSection("משמרות ממתינות לתיעוד", MINE_SHIFTS_PENDING_EMPTY, pending, fillButton, onFillShift, app::openFill) { selected = it }
+                        if (future.isNotEmpty()) {
+                            ShiftSection("משמרות עתידיות", null, future, fillButton, onFillShift, app::openFill) { selected = it }
+                        }
+                        ShiftSection("משמרות שתועדו", MINE_SHIFTS_LOGGED_EMPTY, logged, fillButton, onFillShift, app::openFill) { selected = it }
+                        if (sections.hasMoreLogged) {
+                            GhostButton(title = "הצג 30 יום נוספים", onClick = { windowsLoaded += 1 })
+                        }
+                        Spacer(Modifier.height(24.dp))
                     }
-                    ShiftSection("משמרות ממתינות לתיעוד", MINE_SHIFTS_PENDING_EMPTY, pending, fillButton, onFillShift, app::openFill) { selected = it }
-                    if (future.isNotEmpty()) {
-                        ShiftSection("משמרות עתידיות", null, future, fillButton, onFillShift, app::openFill) { selected = it }
-                    }
-                    ShiftSection("משמרות שתועדו", MINE_SHIFTS_LOGGED_EMPTY, logged, fillButton, onFillShift, app::openFill) { selected = it }
-                    if (sections.hasMoreLogged) {
-                        GhostButton(title = "הצג 30 יום נוספים", onClick = { windowsLoaded += 1 })
-                    }
-                    Spacer(Modifier.height(24.dp))
                 }
             }
         }
     }
 
     selected?.let { shift ->
-        ModalBottomSheet(onDismissRequest = { selected = null }) {
+        AdaptiveBottomSheet(onDismissRequest = { selected = null }) {
             Column(Modifier.padding(16.dp)) {
                 Text("פרטי המשמרת", style = TypeScale.section, color = FieldTheme.textPrimary)
                 Spacer(Modifier.height(12.dp))
@@ -178,7 +183,7 @@ internal fun ShiftOdometerSheet(shift: ShiftListItem, app: AppModel, onDismiss: 
     var end by remember(shift.id) { mutableStateOf(odometerInput(shift.odometerEnd)) }
     var error by remember(shift.id) { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    AdaptiveBottomSheet(onDismissRequest = onDismiss) {
         Column(
             Modifier
                 .padding(16.dp)

@@ -30,7 +30,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -189,7 +188,7 @@ fun LookupPickerField(
         } else {
             options.filter { textIncludesQuery(it.name, trimmed) }
         }
-        ModalBottomSheet(onDismissRequest = { open = false }) {
+        AdaptiveBottomSheet(onDismissRequest = { open = false }) {
             Column(
                 Modifier
                     .padding(horizontal = 16.dp)
@@ -429,7 +428,7 @@ fun CrewAssignmentSection(
     if (open) {
         val pool = candidates ?: profiles.filter { it.id !in selectedIds }
         val visible = filterAssignableProfiles(pool, query)
-        ModalBottomSheet(onDismissRequest = { open = false }) {
+        AdaptiveBottomSheet(onDismissRequest = { open = false }) {
             Column(
                 Modifier
                     .padding(horizontal = 16.dp)
