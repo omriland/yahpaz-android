@@ -356,11 +356,26 @@ object YahpazAPI {
         )
     """.trimIndent()
 
+    /** One shift with its crew names and each event's opening time, for the live shift screen. */
+    private val liveShiftSelect = """
+        id, shift_date, shift_kind, vehicle_type, status, odometer_start, odometer_end,
+        starts_at, ends_at,
+        personal_vehicle:vehicles!shifts_personal_vehicle_id_fkey(plate_number),
+        shift_lead:profiles!shifts_shift_lead_id_fkey(full_name, callsign),
+        responders:shift_responders(id, responder_id, profile:profiles(full_name, callsign)),
+        born_events:events!events_shift_id_fkey(
+          id, event_date, created_at, police_event_id, status,
+          treatment_detail, treatment_notes, road_id, location,
+          event_type:event_types(name),
+          treated:event_treated_vehicles!event_treated_vehicles_event_id_fkey(id)
+        )
+    """.trimIndent()
+
     private val shiftBornFillSelect = """
         id, origin, status, event_date, police_event_id, treatment_detail, treatment_notes,
         road_id, location, is_cancelled, updated_at,
         event_type:event_types(name),
-        shift:shifts!events_shift_id_fkey(shift_date),
+        shift:shifts!events_shift_id_fkey(shift_date, starts_at, ends_at),
         last_saved:profiles!events_last_saved_by_fkey(full_name),
         responders:event_responders(responder_id)
     """.trimIndent()
@@ -600,6 +615,12 @@ object YahpazAPI {
             eq(BORN_EVENTS_ORIGIN_COLUMN, SHIFT_ORIGIN)
         }
     }
+
+    /** The shift for the live shift screen, or null when it is gone or hidden from the caller. */
+    suspend fun fetchLiveShift(shiftId: String): ShiftListItem? =
+        fetchByIds<ShiftListItem>(listOf(shiftId), "shifts", liveShiftSelect) {
+            eq(BORN_EVENTS_ORIGIN_COLUMN, SHIFT_ORIGIN)
+        }.firstOrNull()
 
     /** Event ids that have at least one photo or video, in chunks of 100. */
     suspend fun fetchEventIdsWithMedia(eventIds: List<String>): Set<String> {
@@ -2550,6 +2571,7 @@ object YahpazAPI {
             status = event.status,
             eventDate = event.eventDate,
             shiftDate = event.shift?.shiftDate ?: event.eventDate,
+            shiftWindow = event.shift?.toShiftWindow(),
             eventTypeName = event.eventType?.name,
             isCancelled = event.isCancelled,
             lastSavedName = event.lastSaved?.fullName,

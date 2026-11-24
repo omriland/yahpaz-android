@@ -3,6 +3,7 @@ package com.yahpz.domain
 import java.time.Instant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -108,10 +109,89 @@ class CurrentShiftTest {
     }
 
     @Test
-    fun leadsAndAdminsAlwaysDelete() {
+    fun leadsAndAdminsDeleteAnEmptyEventInAnyPhaseDoneOrNot() {
         for (phase in ShiftPhase.values()) {
-            assertTrue(canDeleteShiftEvent(canManage = true, phase = phase, empty = false, done = true))
+            assertTrue(canDeleteShiftEvent(canManage = true, phase = phase, empty = true, done = false))
+            assertTrue(canDeleteShiftEvent(canManage = true, phase = phase, empty = true, done = true))
         }
+    }
+
+    @Test
+    fun leadsAndAdminsNeverDeleteAFilledEvent() {
+        for (phase in ShiftPhase.values()) {
+            assertFalse(canDeleteShiftEvent(canManage = true, phase = phase, empty = false, done = false))
+            assertFalse(canDeleteShiftEvent(canManage = true, phase = phase, empty = false, done = true))
+        }
+    }
+
+    private val shiftEnd = Instant.parse("2026-11-22T13:00:00Z")
+
+    @Test
+    fun activeTimeLeftCountsTheHoursUntilTheShiftEnds() {
+        val now = Instant.parse("2026-11-22T10:00:00Z")
+        assertEquals("עוד 3 שעות", shiftTimeLeftLabel(ShiftPhase.ACTIVE, shiftEnd, now))
+    }
+
+    @Test
+    fun activeTimeLeftRoundsUpAndSaysOneHourInTheLastHour() {
+        val fiftyMinutesLeft = Instant.parse("2026-11-22T12:10:00Z")
+        assertEquals("עוד שעה", shiftTimeLeftLabel(ShiftPhase.ACTIVE, shiftEnd, fiftyMinutesLeft))
+        val threeHoursTenLeft = Instant.parse("2026-11-22T09:50:00Z")
+        assertEquals("עוד 4 שעות", shiftTimeLeftLabel(ShiftPhase.ACTIVE, shiftEnd, threeHoursTenLeft))
+    }
+
+    @Test
+    fun finishingTimeLeftCountsTheHoursToDocumentUntilFortyEightHoursAfterTheEnd() {
+        val twoHoursAfterEnd = Instant.parse("2026-11-22T15:00:00Z")
+        assertEquals("עוד 46 שעות", shiftTimeLeftLabel(ShiftPhase.FINISHING, shiftEnd, twoHoursAfterEnd))
+    }
+
+    @Test
+    fun noTimeLeftOutsideActiveAndFinishing() {
+        val now = Instant.parse("2026-11-22T10:00:00Z")
+        for (phase in listOf(ShiftPhase.LEGACY, ShiftPhase.PLANNED, ShiftPhase.CLOSED)) {
+            assertNull(shiftTimeLeftLabel(phase, shiftEnd, now))
+        }
+    }
+
+    @Test
+    fun liveStampSaysOnShiftWhileActive() {
+        assertEquals(LIVE_SHIFT_ACTIVE_STAMP, liveShiftStamp(ShiftPhase.ACTIVE, ShiftStatus.IN_PROGRESS).label)
+        assertEquals("במשמרת", LIVE_SHIFT_ACTIVE_STAMP)
+    }
+
+    @Test
+    fun liveStampSaysPlannedBeforeTheShift() {
+        assertEquals(LIVE_SHIFT_PLANNED_STAMP, liveShiftStamp(ShiftPhase.PLANNED, ShiftStatus.DRAFT).label)
+        assertEquals("מתוכננת", LIVE_SHIFT_PLANNED_STAMP)
+    }
+
+    @Test
+    fun liveStampAfterTheShiftIsTheOrdinaryShiftStamp() {
+        for (phase in listOf(ShiftPhase.FINISHING, ShiftPhase.CLOSED)) {
+            for (status in ShiftStatus.values()) {
+                assertEquals(shiftStamp(status), liveShiftStamp(phase, status))
+            }
+        }
+    }
+
+    @Test
+    fun eventsTitleCarriesTheCount() {
+        assertEquals("אירועי המשמרת (0)", liveShiftEventsTitle(0))
+        assertEquals("אירועי המשמרת (3)", liveShiftEventsTitle(3))
+    }
+
+    @Test
+    fun eventTypeLabelMarksAShiftEventAndHandlesAMissingName() {
+        assertEquals("תאונה (משמרת)", liveShiftEventTypeLabel("תאונה"))
+        assertEquals("(משמרת)", liveShiftEventTypeLabel(""))
+    }
+
+    @Test
+    fun liveShiftTextsAreExact() {
+        assertEquals("אירוע חדש", LIVE_SHIFT_NEW_EVENT_ACTION)
+        assertEquals("קילומטרים", LIVE_SHIFT_ODOMETER_ACTION)
+        assertEquals("למשמרת", ON_SHIFT_BAR_ACTION)
     }
 
     @Test

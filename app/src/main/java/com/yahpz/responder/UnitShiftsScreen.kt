@@ -184,7 +184,7 @@ fun UnitShiftsScreen(app: AppModel, ui: AppUiState) {
                         title = SHIFT_FILL_TITLE,
                         onClick = {
                             detail = null
-                            odometerShift = shift
+                            if (shift.isLive) app.openListedLiveShift(shift.id) else odometerShift = shift
                         },
                     )
                 }
