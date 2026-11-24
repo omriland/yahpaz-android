@@ -176,10 +176,8 @@ data class AppUiState(
     val privacyOpen: Boolean = false,
     val feedbackHiddenUntilRefresh: Boolean = false,
     val currentShift: CurrentShift? = null,
-    /** The live shift screen of [currentShift] is the one on show. */
-    val liveShiftOpen: Boolean = false,
-    /** A live shift opened from a shift list; it has its own screen even when it is not [currentShift]. */
-    val listedLiveShiftId: String? = null,
+    /** The shift whose live screen is on show: the current shift, or one opened from a shift list. */
+    val liveShiftScreenId: String? = null,
 ) {
     val isSignedIn: Boolean get() = userId != null && profile != null
     val canManageUnit: Boolean get() = managesUnit(roles)
@@ -228,23 +226,34 @@ class AppModel : ViewModel() {
         }
     }
 
-    fun openLiveShift() {
-        _state.update { it.copy(liveShiftOpen = true, listedLiveShiftId = null) }
+    /** Opens the live screen of the current shift. [closingFill] first leaves an open fill, which flushes its draft as it leaves. */
+    fun openLiveShift(closingFill: Boolean = false) {
+        _state.update { state ->
+            val id = state.currentShift?.id ?: return@update state
+            if (closingFill) {
+                state.copy(liveShiftScreenId = id, fillEventId = null, fillShiftBorn = false)
+            } else {
+                state.copy(liveShiftScreenId = id)
+            }
+        }
     }
 
     fun openListedLiveShift(shiftId: String) {
-        _state.update { it.copy(listedLiveShiftId = shiftId) }
+        _state.update { it.copy(liveShiftScreenId = shiftId) }
     }
 
     fun closeLiveShift() {
-        _state.update { it.copy(liveShiftOpen = false, listedLiveShiftId = null) }
+        _state.update { it.copy(liveShiftScreenId = null) }
     }
 
     /** A failed fetch keeps the shift already known, so the bar does not blink off on a bad network. */
     private suspend fun reloadCurrentShift() {
         val row = runCatching { YahpazAPI.fetchMyCurrentShift() }.getOrElse { return }
         val shift = row?.let(::currentShiftFromRow)
-        _state.update { it.copy(currentShift = shift, liveShiftOpen = it.liveShiftOpen && shift != null) }
+        _state.update {
+            val screenGone = shift == null && it.liveShiftScreenId != null && it.liveShiftScreenId == it.currentShift?.id
+            it.copy(currentShift = shift, liveShiftScreenId = if (screenGone) null else it.liveShiftScreenId)
+        }
         if (shift != null) openLiveShiftOnFirstActiveStart(shift)
     }
 
@@ -255,14 +264,18 @@ class AppModel : ViewModel() {
         openLiveShift()
     }
 
-    private fun currentShiftFromRow(row: CurrentShiftRow) = CurrentShift(
-        id = row.id,
-        shiftKind = row.shiftKind,
-        shiftDate = row.shiftDate,
-        startsAt = Instant.parse(row.startsAt),
-        endsAt = Instant.parse(row.endsAt),
-        vehicleType = row.vehicleType,
-    )
+    /** A row with unreadable hours is no current shift; it must never throw out of a session or foreground. */
+    private fun currentShiftFromRow(row: CurrentShiftRow): CurrentShift? {
+        val window = parseShiftWindow(row.startsAt, row.endsAt) ?: return null
+        return CurrentShift(
+            id = row.id,
+            shiftKind = row.shiftKind,
+            shiftDate = row.shiftDate,
+            startsAt = window.startsAt,
+            endsAt = window.endsAt,
+            vehicleType = row.vehicleType,
+        )
+    }
 
     fun dismissOptionalUpdate() {
         _state.update { it.copy(optionalUpdate = null) }
@@ -270,7 +283,7 @@ class AppModel : ViewModel() {
 
     fun onForeground() {
         viewModelScope.launch {
-            if (_state.value.isSignedIn) reloadCurrentShift()
+            if (_state.value.isSignedIn) launch { reloadCurrentShift() }
             reportAndroidSessionIfDue()
             val check = checkSideloadUpdates(BuildConfig.VERSION_CODE)
             if (check.force != null && _state.value.forceUpdate == null) {
@@ -440,6 +453,7 @@ class AppModel : ViewModel() {
             YahpazAPI.signOut()
             lastAndroidReportAtMs = null
             personalVehiclePromptShown = false
+            liveShiftScreenOpenedThisStart = false
             _state.value = AppUiState(booting = false)
         }
     }
@@ -1258,6 +1272,8 @@ class AppModel : ViewModel() {
                     vehiclesFailed = false,
                     fillEventId = null,
                     fillShiftBorn = false,
+                    liveShiftScreenId = null,
+                    currentShift = null,
                     showOthersCreatedEvents = false,
                     showOlderUnitEvents = false,
                     showShiftEvents = false,
@@ -1267,9 +1283,9 @@ class AppModel : ViewModel() {
             reloadShifts()
             reloadVehicles()
             maybeOpenPersonalVehiclePrompt()
-            reloadCurrentShift()
             // Secondary surfaces load in the background so boot is not blocked on them.
             viewModelScope.launch { reloadContacts() }
+            viewModelScope.launch { reloadCurrentShift() }
             if (managesUnit(visible)) {
                 viewModelScope.launch { reloadUnitEvents() }
                 viewModelScope.launch { reloadUnitShifts() }

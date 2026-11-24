@@ -67,7 +67,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private val MinTouchTarget = 48.dp
-private const val CLOCK_TICK_MS = 60_000L
+internal const val CLOCK_TICK_MS = 60_000L
 
 data class LiveShiftEvent(
     val id: String,
@@ -103,20 +103,21 @@ private sealed interface LiveShiftLoad {
     data class Ready(val shift: ShiftListItem) : LiveShiftLoad
 }
 
-private fun parseInstant(value: String?): Instant? = value?.let { OffsetDateTime.parse(it).toInstant() }
+private fun parseCreatedAt(value: String?): Instant? =
+    value?.let { runCatching { OffsetDateTime.parse(it).toInstant() }.getOrNull() }
 
 private fun ShiftBornEvent.toLiveShiftEvent() = LiveShiftEvent(
     id = id,
     typeName = eventType?.name.orEmpty(),
     location = location?.takeIf { it.isNotBlank() },
-    openedAt = parseInstant(createdAt),
+    openedAt = parseCreatedAt(createdAt),
     empty = isShiftBornEventEmpty(snapshot),
     done = status == EventStatus.DONE,
 )
 
 private fun ShiftListItem.liveShiftState(now: Instant, canManage: Boolean) = LiveShiftState(
     shift = this,
-    phase = shiftWindowPhase(parseInstant(startsAt), parseInstant(endsAt), now),
+    phase = toShiftWindow().let { shiftWindowPhase(it?.startsAt, it?.endsAt, now) },
     now = now,
     events = bornEvents.map { it.toLiveShiftEvent() }.sortedByDescending { it.openedAt },
     crewNames = responders.map { it.profile?.display ?: LIVE_SHIFT_UNNAMED_CREW_MEMBER },
@@ -124,9 +125,8 @@ private fun ShiftListItem.liveShiftState(now: Instant, canManage: Boolean) = Liv
 )
 
 private fun ShiftListItem.hoursLabel(): String? {
-    val start = parseInstant(startsAt) ?: return null
-    val end = parseInstant(endsAt) ?: return null
-    return "${formatJerusalemTimeOfDay(start)}–${formatJerusalemTimeOfDay(end)}"
+    val window = toShiftWindow() ?: return null
+    return "${formatJerusalemTimeOfDay(window.startsAt)}–${formatJerusalemTimeOfDay(window.endsAt)}"
 }
 
 /** A shift with hours, opened from the shift lists or the on-shift bar. */
@@ -150,6 +150,7 @@ fun LiveShiftScreen(shiftId: String, app: AppModel, ui: AppUiState, onBack: () -
     }
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { scope.launch { reload() } }
+    LaunchedEffect(shiftId) { reload() }
     LaunchedEffect(Unit) {
         if (ui.lookups.isEmpty && !ui.lookupsLoading) app.reloadLookups()
     }
@@ -300,7 +301,7 @@ fun LiveShiftContent(state: LiveShiftState, actions: LiveShiftActions) {
 @Composable
 private fun ShiftHeader(state: LiveShiftState) {
     val shift = state.shift
-    val timeLeft = parseInstant(shift.endsAt)?.let { shiftTimeLeftLabel(state.phase, it, state.now) }
+    val timeLeft = shift.toShiftWindow()?.let { shiftTimeLeftLabel(state.phase, it.endsAt, state.now) }
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,

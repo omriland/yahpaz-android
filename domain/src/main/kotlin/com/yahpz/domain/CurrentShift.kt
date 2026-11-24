@@ -16,7 +16,7 @@ const val LIVE_SHIFT_ODOMETER_ACTION = "קילומטרים"
 const val ON_SHIFT_BAR_ACTION = "למשמרת"
 const val LIVE_SHIFT_ACTIVE_STAMP = "במשמרת"
 const val LIVE_SHIFT_PLANNED_STAMP = "מתוכננת"
-/** Not "ממתין לתיעוד": the shift header already carries that stamp, and one screen must not say it twice. */
+/** Same label as the website gives an empty shift event, so the phone and the site read alike. */
 const val LIVE_SHIFT_EMPTY_EVENT_STAMP = "ממתין לתיעוד"
 const val LIVE_SHIFT_NO_EVENTS = "עוד לא נפתחו אירועים במשמרת."
 const val LIVE_SHIFT_BACK = "חזרה"

@@ -715,11 +715,20 @@ data class ShiftBornEventRow(
     val responders: List<ResponderIdRow> = emptyList(),
 )
 
-fun ShiftSummary.toShiftWindow(): ShiftWindow? {
-    val start = startsAt ?: return null
-    val end = endsAt ?: return null
-    return ShiftWindow(OffsetDateTime.parse(start).toInstant(), OffsetDateTime.parse(end).toInstant())
+/**
+ * The one parser for shift hours. PostgREST sends offsets like "+00:00", which Instant.parse rejects
+ * on Android 13 and older, so this goes through OffsetDateTime. A missing or malformed bound gives null.
+ */
+fun parseShiftWindow(startsAt: String?, endsAt: String?): ShiftWindow? {
+    if (startsAt == null || endsAt == null) return null
+    return runCatching {
+        ShiftWindow(OffsetDateTime.parse(startsAt).toInstant(), OffsetDateTime.parse(endsAt).toInstant())
+    }.getOrNull()
 }
+
+fun ShiftSummary.toShiftWindow(): ShiftWindow? = parseShiftWindow(startsAt, endsAt)
+
+fun ShiftListItem.toShiftWindow(): ShiftWindow? = parseShiftWindow(startsAt, endsAt)
 
 @Serializable
 data class ShiftBornTreatedRow(

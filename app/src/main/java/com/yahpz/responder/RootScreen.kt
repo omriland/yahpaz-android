@@ -17,6 +17,9 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.EventNote
@@ -72,7 +75,7 @@ fun RootScreen(
 ) {
     var feedbackOpen by remember { mutableStateOf(false) }
     val context = LocalContext.current
-    val liveShiftScreenId = ui.listedLiveShiftId ?: ui.currentShift?.id?.takeIf { ui.liveShiftOpen }
+    val liveShiftScreenId = ui.liveShiftScreenId
     val trackBlocking = ui.trackToken != null && ui.fillEventId == null && !ui.mustChangePassword
     val showFeedbackFab = ui.isSignedIn &&
         ui.forceUpdate == null &&
@@ -82,15 +85,31 @@ fun RootScreen(
         !feedbackOpen
     Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize()) {
-        if (ui.isSignedIn && (ui.impersonating || ui.previewRole != null)) {
+        val viewAsBannerShown = ui.isSignedIn && (ui.impersonating || ui.previewRole != null)
+        if (viewAsBannerShown) {
             Box(Modifier.statusBarsPadding()) {
                 ViewAsBanner(app, ui)
             }
         }
-        ui.currentShift?.takeIf { ui.isSignedIn }?.let { shift ->
-            OnShiftBarHost(shift, ui.liveShiftOpen || ui.listedLiveShiftId == shift.id, onOpen = app::openLiveShift)
-        }
-        Box(Modifier.weight(1f).fillMaxSize()) {
+        // The bar is for screens the live screen outranks; update and password gates, and the live screen itself, hide it.
+        val barAllowed = ui.forceUpdate == null && !ui.mustChangePassword
+        val onShiftBarShown = ui.currentShift?.takeIf { ui.isSignedIn && barAllowed }?.let { shift ->
+            OnShiftBarHost(
+                shift = shift,
+                onShiftScreen = ui.liveShiftScreenId == shift.id && ui.fillEventId == null,
+                // On a fill screen this leaves the fill first, as back does; its draft is flushed as it closes.
+                onOpen = { app.openLiveShift(closingFill = ui.fillEventId != null) },
+                statusBarPadding = !viewAsBannerShown,
+            )
+        } ?: false
+        // A banner above already sits under the status bar; the screen below must not leave that room again.
+        val topBannerShown = viewAsBannerShown || onShiftBarShown
+        Box(
+            Modifier
+                .weight(1f)
+                .fillMaxSize()
+                .then(if (topBannerShown) Modifier.consumeWindowInsets(WindowInsets.statusBars) else Modifier),
+        ) {
         when {
             ui.booting -> SafeEdgeScreen { Booting() }
             ui.forceUpdate != null -> SafeEdgeScreen {
