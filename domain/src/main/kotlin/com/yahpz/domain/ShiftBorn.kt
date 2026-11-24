@@ -12,6 +12,8 @@ const val SHIFT_BORN_FILL_TITLE = "תיעוד אירוע ממשמרת"
 const val STALE_SAVE_MESSAGE = "מישהו שמר לפניך — רעננו"
 const val COUNT_DECREASE_BLOCKED = "לא ניתן להקטין — קיימים אירועים שמולאו"
 const val SHIFT_BORN_TOO_EARLY = "ניתן לתעד החל מתאריך המשמרת."
+const val SHIFT_NOT_STARTED = "המשמרת עוד לא התחילה."
+const val SHIFT_WINDOW_CLOSED = "חלון התיעוד של המשמרת נסגר."
 const val SHIFT_BORN_DONE_LOCKED = "התיעוד כבר הושלם. רק אחמ״ש יכול לערוך."
 const val SHIFT_BORN_SAVE_FAILED = "שמירת האירוע נכשלה. בדקו את החיבור ונסו שוב."
 const val SHIFT_BORN_NO_PERMISSION = "אין הרשאה"
@@ -82,13 +84,22 @@ fun lastSavedByLabel(name: String?): String? {
 fun canDocumentShift(shiftDate: String, canManage: Boolean, today: String): Boolean =
     canManage || shiftDate <= today
 
-/** Done is lead-only; before the shift date crew read only. */
+/**
+ * Done is lead-only. A live shift lets crew edit only while its window is open; a
+ * legacy shift (no hours) keeps the shift-date rule.
+ */
 fun shiftBornFillReadOnly(
     eventDone: Boolean,
     canManage: Boolean,
     shiftDate: String,
     today: String,
-): Boolean = if (eventDone) !canManage else !canDocumentShift(shiftDate, canManage, today)
+    phase: ShiftPhase = ShiftPhase.LEGACY,
+): Boolean = when {
+    eventDone -> !canManage
+    canManage -> false
+    phase == ShiftPhase.LEGACY -> !canDocumentShift(shiftDate, canManage, today)
+    else -> !crewCanEdit(phase)
+}
 
 /** Why the report is read-only, in words the reader can act on; null when editable. */
 fun shiftBornReadOnlyNotice(
@@ -96,9 +107,12 @@ fun shiftBornReadOnlyNotice(
     canManage: Boolean,
     shiftDate: String,
     today: String,
+    phase: ShiftPhase = ShiftPhase.LEGACY,
 ): String? = when {
-    !shiftBornFillReadOnly(eventDone, canManage, shiftDate, today) -> null
+    !shiftBornFillReadOnly(eventDone, canManage, shiftDate, today, phase) -> null
     eventDone -> SHIFT_BORN_DONE_LOCKED
+    phase == ShiftPhase.PLANNED -> SHIFT_NOT_STARTED
+    phase == ShiftPhase.CLOSED -> SHIFT_WINDOW_CLOSED
     else -> SHIFT_BORN_TOO_EARLY
 }
 
@@ -163,6 +177,7 @@ fun mapShiftBornFillError(message: String?): String {
         POLICE_EVENT_ID_DUPLICATE_ERROR,
     )
     known.firstOrNull { raw.contains(it) }?.let { return it }
+    knownLiveShiftMessage(raw)?.let { return it }
     if (raw.contains(SHIFT_BORN_NO_PERMISSION)) return SHIFT_BORN_NO_PERMISSION
     return SHIFT_BORN_SAVE_FAILED
 }
