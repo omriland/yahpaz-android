@@ -60,6 +60,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -88,6 +89,7 @@ import com.yahpz.domain.EVENT_MEDIA_ASSIGN_SAVED
 import com.yahpz.domain.EVENT_MEDIA_PLATES_TITLE
 import com.yahpz.domain.EVENT_MEDIA_BAD_TYPE
 import com.yahpz.domain.EVENT_MEDIA_CAMERA_FAILED
+import com.yahpz.domain.EVENT_MEDIA_PHOTO_LOST
 import com.yahpz.domain.EVENT_MEDIA_VIDEO_ADDED
 import com.yahpz.domain.EVENT_MEDIA_VIDEO_DELETED
 import com.yahpz.domain.EventMediaKind
@@ -226,10 +228,12 @@ fun FillMediaTab(
 
     // One add button opens the system chooser: the camera next to the gallery and files apps.
     // A photo taken there lands in a cache file that FileProvider shares with the camera app.
-    var pendingCamera by remember { mutableStateOf<Pair<File, Uri>?>(null) }
+    // The path is saved state: the camera app can outlive this process, and the photo is still found.
+    var pendingCameraPath by rememberSaveable { mutableStateOf<String?>(null) }
     val chooser = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        val camera = pendingCamera
-        pendingCamera = null
+        val cameraFile = pendingCameraPath?.let(::File)
+        val camera = cameraFile?.let { file -> file to cameraFileUri(context, file) }
+        pendingCameraPath = null
         val data = result.data
         val picked = buildList {
             data?.clipData?.let { clip -> for (i in 0 until clip.itemCount) add(clip.getItemAt(i).uri) }
@@ -241,6 +245,7 @@ fun FillMediaTab(
         when {
             picked.isNotEmpty() -> addPicked(picked)
             photo != null -> addPicked(listOf(photo.second))
+            camera != null -> onToast(EVENT_MEDIA_PHOTO_LOST, StampTone.PENDING)
         }
     }
     fun openChooser(withCamera: Boolean) {
@@ -253,8 +258,8 @@ fun FillMediaTab(
         val capture = if (withCamera) {
             val dir = File(context.cacheDir, "event_photos").apply { mkdirs() }
             val file = File(dir, "${UUID.randomUUID()}.jpg")
-            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-            pendingCamera = file to uri
+            val uri = cameraFileUri(context, file)
+            pendingCameraPath = file.absolutePath
             Intent(MediaStore.ACTION_IMAGE_CAPTURE).apply {
                 putExtra(MediaStore.EXTRA_OUTPUT, uri)
                 clipData = ClipData.newRawUri("", uri)
@@ -267,7 +272,7 @@ fun FillMediaTab(
             capture?.let { putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(it)) }
         }
         runCatching { chooser.launch(intent) }.onFailure {
-            pendingCamera = null
+            pendingCameraPath = null
             onToast(EVENT_MEDIA_CAMERA_FAILED, StampTone.PENDING)
         }
     }
@@ -1190,3 +1195,6 @@ private fun PlayVideoButton(url: String, mimeType: String) {
     )
     Text("הקישו כדי להפעיל את הסרטון", style = TypeScale.caption, color = FieldTheme.textMuted)
 }
+
+private fun cameraFileUri(context: Context, file: File): Uri =
+    FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)

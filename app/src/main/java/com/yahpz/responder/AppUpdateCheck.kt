@@ -43,8 +43,13 @@ const val DEFAULT_FORCE_UPDATE_MESSAGE =
 const val DEFAULT_OPTIONAL_UPDATE_MESSAGE =
     "יש עדכון לאבן דרך. אפשר להתקין עכשיו בלי לפתוח את החנות."
 
+/** Test seam: while set, the update check answers with it and never reaches the network. */
+@Volatile
+internal var fakeSideloadUpdateCheck: SideloadUpdateCheck? = null
+
 suspend fun checkSideloadUpdates(currentVersionCode: Int): SideloadUpdateCheck =
     withContext(Dispatchers.IO) {
+        fakeSideloadUpdateCheck?.let { return@withContext it }
         val manifest = fetchPreferredAppVersionManifest() ?: return@withContext SideloadUpdateCheck()
         val apkUrl = manifest.apkUrl.ifBlank { AppConfig.defaultApkUrl }
         if (needsForceUpdate(currentVersionCode, manifest.minVersionCode)) {

@@ -140,6 +140,9 @@ fun RootScreen(
             liveShiftScreenId != null -> SafeEdgeScreen { LiveShiftScreen(liveShiftScreenId, app, ui, onBack = app::closeLiveShift) }
             else -> MainTabs(app, ui, showFeedbackFab) { feedbackOpen = true }
         }
+        val trackShown = ui.trackToken != null && ui.forceUpdate == null && !ui.booting &&
+            (!ui.isSignedIn || (ui.fillEventId == null && !ui.mustChangePassword))
+        BackHandler(enabled = trackShown, onBack = app::closeTrack)
         if (
             ui.forceUpdate == null &&
             ui.isSignedIn &&

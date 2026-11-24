@@ -21,11 +21,13 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        val modelIsFresh = !app.hasBootstrapped
         app.bootstrap(
             installedFromPlay = PlayInstallSource.installedFromPlay(this),
             skippedOptionalVersionCode = OptionalUpdatePrefs.skippedLatestVersionCode(this),
+            savedNavigation = savedInstanceState?.getBundle(NAVIGATION_STATE_KEY)?.toStringMap(),
         )
-        intent?.dataString?.let(app::applyIncomingUrl)
+        if (savedInstanceState == null || modelIsFresh) intent?.dataString?.let(app::applyIncomingUrl)
         setContent {
             val ui by app.state.collectAsState()
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
@@ -49,6 +51,13 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        if (app.state.value.isSignedIn) {
+            outState.putBundle(NAVIGATION_STATE_KEY, app.navigationMap().toBundle())
         }
     }
 
@@ -78,3 +87,11 @@ class MainActivity : ComponentActivity() {
         intent.dataString?.let(app::applyIncomingUrl)
     }
 }
+
+private const val NAVIGATION_STATE_KEY = "navigation_snapshot"
+
+private fun Map<String, String>.toBundle(): Bundle =
+    Bundle().also { bundle -> forEach { (key, value) -> bundle.putString(key, value) } }
+
+private fun Bundle.toStringMap(): Map<String, String> =
+    keySet().mapNotNull { key -> getString(key)?.let { key to it } }.toMap()

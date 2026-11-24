@@ -284,7 +284,18 @@ internal fun edgeErrorMessage(raw: String?, fallback: String): String {
     return message.ifEmpty { fallback }
 }
 
+/** A signed-in session that tests install in place of a real one. */
+data class FakeSignedInSession(
+    val userId: String,
+    val profile: ProfileRecord,
+    val roles: List<String>,
+)
+
 object YahpazAPI {
+    /** Test seam: while set, the session calls answer from it and the list fetches return nothing, offline. */
+    @Volatile
+    internal var fakeSignedInSession: FakeSignedInSession? = null
+
     private const val EVENT_SECONDARY_LEADS_EMBED =
         "secondary_leads:event_secondary_leads(user_id, locked, added_at, profile:profiles!event_secondary_leads_user_id_fkey(full_name, callsign))"
 
@@ -422,17 +433,21 @@ object YahpazAPI {
         )
     """.trimIndent()
 
-    val client = createSupabaseClient(
-        supabaseUrl = AppConfig.supabaseUrl,
-        supabaseKey = AppConfig.supabaseAnonKey,
-    ) {
-        install(Auth)
-        install(Postgrest)
-        install(Functions)
-        install(Storage)
+    /** Built on first use, so a test that installs [fakeSignedInSession] never builds a real client. */
+    val client by lazy {
+        createSupabaseClient(
+            supabaseUrl = AppConfig.supabaseUrl,
+            supabaseKey = AppConfig.supabaseAnonKey,
+        ) {
+            install(Auth)
+            install(Postgrest)
+            install(Functions)
+            install(Storage)
+        }
     }
 
     suspend fun sessionUserId(): String? {
+        fakeSignedInSession?.let { return it.userId }
         client.auth.awaitInitialization()
         return client.auth.currentSessionOrNull()?.user?.id
     }
@@ -571,6 +586,7 @@ object YahpazAPI {
     }
 
     suspend fun loadProfile(): Pair<ProfileRecord, List<String>> {
+        fakeSignedInSession?.let { return it.profile to it.roles }
         val userId = sessionUserId() ?: throw APIException("יש להתחבר מחדש.")
         val profile = client.from("profiles").select(
             Columns.raw(
@@ -590,6 +606,7 @@ object YahpazAPI {
     }
 
     suspend fun reportAndroidSession(versionCode: Int, versionName: String) {
+        if (fakeSignedInSession != null) return
         client.postgrest.rpc(
             "report_android_session",
             ReportAndroidSessionCall(versionCode = versionCode, versionName = versionName),
@@ -597,6 +614,7 @@ object YahpazAPI {
     }
 
     suspend fun fetchMyEvents(): List<EventListItem> {
+        if (fakeSignedInSession != null) return emptyList()
         val userId = sessionUserId() ?: return emptyList()
         val ids = client.from("event_responders").select(Columns.raw("event_id")) {
             filter { eq("responder_id", userId) }
@@ -606,6 +624,7 @@ object YahpazAPI {
     }
 
     suspend fun fetchMyShifts(): List<ShiftListItem> {
+        if (fakeSignedInSession != null) return emptyList()
         val userId = sessionUserId() ?: return emptyList()
         val ids = client.from("shift_responders").select(Columns.raw("shift_id")) {
             filter { eq("responder_id", userId) }
@@ -635,8 +654,10 @@ object YahpazAPI {
         return found
     }
 
-    suspend fun fetchUnitContacts(): List<UnitContact> =
-        client.postgrest.rpc("list_unit_contacts").decodeList<UnitContact>()
+    suspend fun fetchUnitContacts(): List<UnitContact> {
+        if (fakeSignedInSession != null) return emptyList()
+        return client.postgrest.rpc("list_unit_contacts").decodeList<UnitContact>()
+    }
 
     suspend fun fetchUnitMapPins(): List<MapPin> {
         val rows = client.postgrest.rpc("list_unit_map_pins").decodeList<UnitMapPinRowDto>()
@@ -2289,8 +2310,10 @@ object YahpazAPI {
     }
 
     /** The caller's live shift inside its window (a running one first), or null when there is none. */
-    suspend fun fetchMyCurrentShift(): CurrentShiftRow? =
-        client.postgrest.rpc("my_current_shift").decodeList<CurrentShiftRow>().firstOrNull()
+    suspend fun fetchMyCurrentShift(): CurrentShiftRow? {
+        if (fakeSignedInSession != null) return null
+        return client.postgrest.rpc("my_current_shift").decodeList<CurrentShiftRow>().firstOrNull()
+    }
 
     suspend fun loadFuelQuarterWorkbook(year: Int, quarter: Int): FuelQuarterWorkbook {
         require(quarter in 1..4)
@@ -2408,6 +2431,7 @@ object YahpazAPI {
     }
 
     suspend fun fetchMyVehicles(): List<ProfileVehicle> {
+        if (fakeSignedInSession != null) return emptyList()
         val userId = sessionUserId() ?: return emptyList()
         val rows = client.from("vehicles").select(
             Columns.raw("id, plate_number, model, archived, is_default"),
