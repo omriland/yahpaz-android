@@ -61,6 +61,7 @@ import com.yahpz.domain.ParticipationStatus
 import com.yahpz.domain.ResponderFillDraft
 import com.yahpz.domain.SHIFT_KIND_LABELS
 import com.yahpz.domain.ShiftDraft
+import com.yahpz.domain.ShiftWindow
 import com.yahpz.domain.ShiftStatus
 import com.yahpz.domain.SHIFT_ORIGIN
 import com.yahpz.domain.ShiftBornEventSnapshot
@@ -135,6 +136,8 @@ data class PlateRef(
 data class ShiftSummary(
     @SerialName("shift_date") val shiftDate: String? = null,
     @SerialName("shift_kind") val shiftKind: String? = null,
+    @SerialName("starts_at") val startsAt: String? = null,
+    @SerialName("ends_at") val endsAt: String? = null,
     @SerialName("vehicle_type") val vehicleType: String? = null,
     @SerialName("personal_vehicle")
     @Serializable(with = OptionalPlateRefSerializer::class)
@@ -712,6 +715,12 @@ data class ShiftBornEventRow(
     val responders: List<ResponderIdRow> = emptyList(),
 )
 
+fun ShiftSummary.toShiftWindow(): ShiftWindow? {
+    val start = startsAt ?: return null
+    val end = endsAt ?: return null
+    return ShiftWindow(OffsetDateTime.parse(start).toInstant(), OffsetDateTime.parse(end).toInstant())
+}
+
 @Serializable
 data class ShiftBornTreatedRow(
     @SerialName("vehicle_kind_id") val vehicleKindId: String? = null,
@@ -724,6 +733,8 @@ data class ShiftBornFillContext(
     val status: EventStatus,
     val eventDate: String,
     val shiftDate: String,
+    /** Null for a legacy shift, which has no hours. */
+    val shiftWindow: ShiftWindow?,
     val eventTypeName: String?,
     val isCancelled: Boolean,
     val lastSavedName: String?,
@@ -1943,12 +1954,15 @@ fun List<CrewShiftRow>.toCrewLiveShifts(): List<CrewLiveShift> =
 data class ShiftCrewRow(
     val id: String,
     @SerialName("responder_id") val responderId: String,
+    @Serializable(with = OptionalPersonNameSerializer::class)
+    val profile: PersonName? = null,
 )
 
 @Serializable
 data class ShiftBornEvent(
     val id: String,
     @SerialName("event_date") val eventDate: String,
+    @SerialName("created_at") val createdAt: String? = null,
     @SerialName("police_event_id") val policeEventId: String? = null,
     @Serializable(with = EventStatusSerializer::class)
     val status: EventStatus,
@@ -1961,18 +1975,19 @@ data class ShiftBornEvent(
     val location: String? = null,
     val treated: List<IdRow> = emptyList(),
 ) {
-    val stamp: StampDescriptor
-        get() = shiftBornFillStamp(
-            ShiftBornEventSnapshot(
-                status = status,
-                policeEventId = policeEventId,
-                treatmentDetail = treatmentDetail,
-                treatmentNotes = treatmentNotes,
-                roadId = roadId,
-                location = location,
-                treatedCount = treated.size,
-            ),
+    val snapshot: ShiftBornEventSnapshot
+        get() = ShiftBornEventSnapshot(
+            status = status,
+            policeEventId = policeEventId,
+            treatmentDetail = treatmentDetail,
+            treatmentNotes = treatmentNotes,
+            roadId = roadId,
+            location = location,
+            treatedCount = treated.size,
         )
+
+    val stamp: StampDescriptor
+        get() = shiftBornFillStamp(snapshot)
 }
 
 @Serializable
@@ -2011,6 +2026,10 @@ data class ShiftListItem(
                 "$kind · $vehicle"
             }
         }
+
+    /** A shift with hours has the live shift screen; a legacy one has none. */
+    val isLive: Boolean
+        get() = startsAt != null && endsAt != null
 
     val mineItem: MineShiftItem
         get() = MineShiftItem(id, shiftDate, status, odometerStart, odometerEnd)

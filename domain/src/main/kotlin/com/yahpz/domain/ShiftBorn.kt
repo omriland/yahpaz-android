@@ -9,6 +9,7 @@ package com.yahpz.domain
 const val SHIFT_ORIGIN = "shift"
 const val SHIFT_BORN_CHIP = "ממשמרת"
 const val SHIFT_BORN_FILL_TITLE = "תיעוד אירוע ממשמרת"
+const val SHIFT_BORN_REOPEN_ACTION = "פתיחה מחדש"
 const val STALE_SAVE_MESSAGE = "מישהו שמר לפניך — רעננו"
 const val COUNT_DECREASE_BLOCKED = "לא ניתן להקטין — קיימים אירועים שמולאו"
 const val SHIFT_BORN_TOO_EARLY = "ניתן לתעד החל מתאריך המשמרת."
@@ -100,6 +101,10 @@ fun shiftBornFillReadOnly(
     phase == ShiftPhase.LEGACY -> !canDocumentShift(shiftDate, canManage, today)
     else -> !crewCanEdit(phase)
 }
+
+/** Only the crew reopen a done event, and only while the live window is open; leads edit a done event directly. */
+fun shiftBornCanReopen(eventDone: Boolean, canManage: Boolean, assigned: Boolean, phase: ShiftPhase): Boolean =
+    eventDone && !canManage && assigned && crewCanEdit(phase)
 
 /** Why the report is read-only, in words the reader can act on; null when editable. */
 fun shiftBornReadOnlyNotice(

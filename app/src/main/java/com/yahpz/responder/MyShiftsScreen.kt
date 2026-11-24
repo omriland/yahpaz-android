@@ -117,7 +117,9 @@ fun MyShiftsScreen(app: AppModel, ui: AppUiState) {
                     val fillButton = { shift: ShiftListItem ->
                         shiftFillButton(shift.shiftDate, shift.status, ui.canManageUnit, today)
                     }
-                    val onFillShift = { shift: ShiftListItem -> odometerShift = shift }
+                    val onFillShift = { shift: ShiftListItem ->
+                        if (shift.isLive) app.openListedLiveShift(shift.id) else odometerShift = shift
+                    }
                     ShiftSection("משמרות ממתינות לתיעוד", MINE_SHIFTS_PENDING_EMPTY, pending, fillButton, onFillShift, app::openFill) { selected = it }
                     if (future.isNotEmpty()) {
                         ShiftSection("משמרות עתידיות", null, future, fillButton, onFillShift, app::openFill) { selected = it }

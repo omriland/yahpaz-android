@@ -43,6 +43,7 @@ import com.yahpz.domain.FillMode
 import com.yahpz.domain.SHIFT_BORN_CHIP
 import com.yahpz.domain.SHIFT_BORN_COMPLETE_FORM_ERROR
 import com.yahpz.domain.SHIFT_BORN_FILL_TITLE
+import com.yahpz.domain.SHIFT_BORN_REOPEN_ACTION
 import com.yahpz.domain.STALE_SAVE_MESSAGE
 import com.yahpz.domain.ShiftBornFillDraft
 import com.yahpz.domain.ShiftBornFillErrors
@@ -64,6 +65,8 @@ import com.yahpz.domain.plateDigits
 import com.yahpz.domain.policeEventIdForInput
 import com.yahpz.domain.removeTreatedPlate
 import com.yahpz.domain.setTreatedPlateLeftWhere
+import com.yahpz.domain.shiftWindowPhase
+import com.yahpz.domain.shiftBornCanReopen
 import com.yahpz.domain.shiftBornCompleteErrors
 import com.yahpz.domain.shiftBornFillReadOnly
 import com.yahpz.domain.shiftBornReadOnlyNotice
@@ -75,6 +78,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.Instant
 
 private enum class ShiftBornPane { DOCS, MEDIA }
 
@@ -103,6 +107,7 @@ fun ShiftBornFillScreen(eventId: String, app: AppModel) {
     var formError by remember(eventId) { mutableStateOf<String?>(null) }
     var conflict by remember(eventId) { mutableStateOf(false) }
     var restoredFromDevice by remember(eventId) { mutableStateOf(false) }
+    var reopened by remember(eventId) { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var completing by remember { mutableStateOf(false) }
     var platePending by remember(eventId) { mutableStateOf("") }
@@ -154,10 +159,12 @@ fun ShiftBornFillScreen(eventId: String, app: AppModel) {
     val eventDone = ctx?.status == EventStatus.DONE
     val assigned = ctx != null && ui.userId != null && ui.userId in ctx.responderIds
     // Only the shift's crew and leads may save (the RPC says אין הרשאה otherwise), so others just read.
+    val phase = shiftWindowPhase(ctx?.shiftWindow?.startsAt, ctx?.shiftWindow?.endsAt, Instant.now())
+    val canReopen = !reopened && shiftBornCanReopen(eventDone, canManage, assigned, phase)
     val readOnly = ctx == null || (!canManage && !assigned) ||
-        shiftBornFillReadOnly(eventDone, canManage, ctx.shiftDate, today)
-    val readOnlyNotice = ctx?.takeIf { canManage || assigned }
-        ?.let { shiftBornReadOnlyNotice(eventDone, canManage, it.shiftDate, today) }
+        (!reopened && shiftBornFillReadOnly(eventDone, canManage, ctx.shiftDate, today, phase))
+    val readOnlyNotice = ctx?.takeIf { (canManage || assigned) && !reopened }
+        ?.let { shiftBornReadOnlyNotice(eventDone, canManage, it.shiftDate, today, phase) }
 
     LaunchedEffect(draft, ctx?.draft) {
         val loaded = ctx ?: return@LaunchedEffect
@@ -194,11 +201,17 @@ fun ShiftBornFillScreen(eventId: String, app: AppModel) {
 
     suspend fun persist(complete: Boolean): Boolean {
         val token = expectedAt ?: return false
-        when (val result = YahpazAPI.saveShiftBornFill(eventId, token, draft, complete)) {
+        when (val result = YahpazAPI.saveShiftBornFill(eventId, token, draft, complete, reopen = reopened)) {
             is ShiftBornSave.Ok -> {
                 expectedAt = result.updatedAt
-                context = context?.copy(draft = draft, expectedUpdatedAt = result.updatedAt)
+                val statusAfterSave = if (reopened && !complete) EventStatus.IN_PROGRESS else context?.status
+                context = context?.copy(
+                    draft = draft,
+                    expectedUpdatedAt = result.updatedAt,
+                    status = statusAfterSave ?: EventStatus.IN_PROGRESS,
+                )
                 conflict = false
+                reopened = false
                 unsavedShiftBornDrafts.remove(eventId)
                 app.refreshAfterShiftBornSave()
                 return true
@@ -487,6 +500,15 @@ fun ShiftBornFillScreen(eventId: String, app: AppModel) {
                         },
                         onToast = { text, tone -> app.showToast(text, tone) },
                     )
+                }
+                if (canReopen && pane == ShiftBornPane.DOCS) {
+                    Column(
+                        modifier = Modifier
+                            .background(FieldTheme.raised)
+                            .padding(16.dp),
+                    ) {
+                        PrimaryButton(title = SHIFT_BORN_REOPEN_ACTION, onClick = { reopened = true })
+                    }
                 }
                 if (!readOnly && pane == ShiftBornPane.DOCS) {
                     Column(

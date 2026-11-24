@@ -72,6 +72,7 @@ fun RootScreen(
 ) {
     var feedbackOpen by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val liveShiftScreenId = ui.listedLiveShiftId ?: ui.currentShift?.id?.takeIf { ui.liveShiftOpen }
     val trackBlocking = ui.trackToken != null && ui.fillEventId == null && !ui.mustChangePassword
     val showFeedbackFab = ui.isSignedIn &&
         ui.forceUpdate == null &&
@@ -85,6 +86,9 @@ fun RootScreen(
             Box(Modifier.statusBarsPadding()) {
                 ViewAsBanner(app, ui)
             }
+        }
+        ui.currentShift?.takeIf { ui.isSignedIn }?.let { shift ->
+            OnShiftBarHost(shift, ui.liveShiftOpen || ui.listedLiveShiftId == shift.id, onOpen = app::openLiveShift)
         }
         Box(Modifier.weight(1f).fillMaxSize()) {
         when {
@@ -114,6 +118,7 @@ fun RootScreen(
             }
             ui.fillEventId != null && ui.fillShiftBorn -> SafeEdgeScreen { ShiftBornFillScreen(ui.fillEventId, app) }
             ui.fillEventId != null -> SafeEdgeScreen { FillScreen(ui.fillEventId, app) }
+            liveShiftScreenId != null -> SafeEdgeScreen { LiveShiftScreen(liveShiftScreenId, app, ui, onBack = app::closeLiveShift) }
             else -> MainTabs(app, ui, showFeedbackFab) { feedbackOpen = true }
         }
         if (
